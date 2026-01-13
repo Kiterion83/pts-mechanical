@@ -1,0 +1,176 @@
+{
+  "app": {
+    "name": "PTS - Project Tracking System",
+    "tagline": "Mechanical Construction Site Management"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Projects",
+    "personnel": "Personnel",
+    "squads": "Squads",
+    "mto": "MTO",
+    "workPackages": "Work Packages",
+    "dailyReports": "Daily Reports",
+    "materialRequests": "Material Requests",
+    "equipment": "Equipment",
+    "settings": "Settings"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Forgot password?",
+    "loginButton": "Sign In",
+    "loggingIn": "Signing in...",
+    "loginError": "Invalid credentials",
+    "logoutConfirm": "Are you sure you want to logout?"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "import": "Import",
+    "loading": "Loading...",
+    "noData": "No data available",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "none": "None",
+    "actions": "Actions",
+    "status": "Status",
+    "date": "Date",
+    "notes": "Notes",
+    "description": "Description",
+    "code": "Code",
+    "name": "Name",
+    "type": "Type",
+    "priority": "Priority",
+    "progress": "Progress",
+    "total": "Total"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "completed": "Completed",
+    "inProgress": "In Progress",
+    "planned": "Planned",
+    "unassigned": "Unassigned",
+    "created": "Created",
+    "inPreparation": "In Preparation",
+    "readyForPickup": "Ready for Pickup",
+    "pickedUp": "Picked Up"
+  },
+  "spoolStatus": {
+    "not_started": "Not Started",
+    "fitup_in_progress": "Fit-Up in Progress",
+    "fitup_completed": "Fit-Up Completed",
+    "welding_in_progress": "Welding in Progress",
+    "welding_completed": "Welding Completed",
+    "pwht_completed": "PWHT Completed",
+    "ready_for_delivery": "Ready for Delivery",
+    "delivered_to_site": "Delivered to Site"
+  },
+  "project": {
+    "title": "Projects",
+    "newProject": "New Project",
+    "selectProject": "Select Project",
+    "client": "Client",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "dailyHours": "Daily Hours",
+    "holidays": "Holidays"
+  },
+  "personnel": {
+    "title": "Personnel",
+    "badge": "Badge",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "position": "Position",
+    "squad": "Squad",
+    "subcontractor": "Subcontractor"
+  },
+  "positions": {
+    "cm": "Construction Manager",
+    "superintendent": "Superintendent",
+    "supervisor": "Supervisor",
+    "sub_supervisor": "Sub Supervisor",
+    "foreman": "Foreman",
+    "sub_foreman": "Sub Foreman",
+    "operator": "Operator",
+    "helper": "Helper",
+    "storekeeper": "Storekeeper"
+  },
+  "squad": {
+    "title": "Squads",
+    "newSquad": "New Squad",
+    "foreman": "Foreman",
+    "members": "Members",
+    "addMember": "Add Member"
+  },
+  "workPackage": {
+    "title": "Work Packages",
+    "newWP": "New WP",
+    "piping": "Piping WP",
+    "action": "Action WP",
+    "welding": "Welding",
+    "supports": "Supports",
+    "flangeJoints": "Flange Joints",
+    "activities": "Activities",
+    "assignSquad": "Assign Squad",
+    "dissimilarWeld": "Dissimilar Weld"
+  },
+  "dailyReport": {
+    "title": "Daily Report",
+    "week": "Week",
+    "hours": "Hours",
+    "regularHours": "Regular Hours",
+    "overtimeHours": "Overtime",
+    "done": "Done",
+    "extraActivities": "Extra Activities"
+  },
+  "materialRequest": {
+    "title": "Material Requests",
+    "newMR": "New Request",
+    "newIR": "New Internal Request",
+    "scope": "Scope",
+    "all": "All",
+    "erectionOnly": "Erection Only",
+    "supportsOnly": "Supports Only",
+    "requestMaterial": "Request Material"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "kpi": "KPI",
+    "weldsPerDay": "Welds/Day",
+    "supportsKgPerDay": "Supports kg/Day",
+    "jointsPerDay": "Joints/Day",
+    "hoursWorked": "Hours Worked",
+    "last7Days": "Last 7 Days",
+    "lastMonth": "Last Month",
+    "squadComparison": "Squad Comparison"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "noNotifications": "No notifications",
+    "materialReady": "Material ready for pickup",
+    "wpAssigned": "Work Package assigned",
+    "wpCompleted": "Work Package completed"
+  },
+  "errors": {
+    "generic": "An error occurred",
+    "notFound": "Page not found",
+    "unauthorized": "Unauthorized access",
+    "networkError": "Connection error",
+    "validation": "Please check your input"
+  }
+}
