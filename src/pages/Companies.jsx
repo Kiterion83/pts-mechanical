@@ -101,8 +101,7 @@ export default function Companies() {
   }
 
   const filteredCompanies = companies.filter(c =>
-    c.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.code?.toLowerCase().includes(searchTerm.toLowerCase())
+    c.company_name.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const mainCompany = companies.find(c => c.is_main)
@@ -168,7 +167,6 @@ export default function Companies() {
                     </span>
                   </div>
                   <h3 className="text-xl font-bold">{mainCompany.company_name}</h3>
-                  <p className="text-blue-200 mt-1">{mainCompany.code}</p>
                   
                   <div className="mt-4 space-y-1 text-sm text-blue-100">
                     {mainCompany.vat_number && (
@@ -207,10 +205,14 @@ export default function Companies() {
               {t('company.subcontractor')} ({subcontractors.length})
             </h2>
 
-            {subcontractors.length === 0 ? (
+            {subcontractors.length === 0 && !mainCompany ? (
               <div className="card text-center py-8">
                 <Building2 size={40} className="mx-auto text-gray-300 mb-3" />
                 <p className="text-gray-500">{t('company.noCompanies')}</p>
+              </div>
+            ) : subcontractors.length === 0 ? (
+              <div className="card text-center py-8">
+                <p className="text-gray-500">Nessun subappaltatore registrato</p>
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -218,7 +220,6 @@ export default function Companies() {
                   <div key={company.id} className="card">
                     <div className="flex items-start justify-between mb-3">
                       <div>
-                        <span className="text-xs font-mono text-gray-500">{company.code}</span>
                         <h3 className="font-semibold text-gray-800">{company.company_name}</h3>
                       </div>
                       <div className="flex gap-1">
@@ -273,14 +274,13 @@ export default function Companies() {
   )
 }
 
-// Company Form Modal
+// Company Form Modal - SENZA CODICE
 function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
   const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
   const [formData, setFormData] = useState({
-    code: company?.code || '',
     company_name: company?.company_name || '',
     vat_number: company?.vat_number || '',
     contact_person: company?.contact_person || '',
@@ -302,6 +302,12 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    if (!formData.company_name.trim()) {
+      setError(t('validation.required'))
+      setLoading(false)
+      return
+    }
 
     try {
       await onSave(formData)
@@ -332,30 +338,6 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
             <div className="p-3 bg-danger-light text-danger rounded-lg">{error}</div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">{t('common.code')} *</label>
-              <input
-                type="text"
-                name="code"
-                value={formData.code}
-                onChange={handleChange}
-                className="input"
-                required
-              />
-            </div>
-            <div>
-              <label className="label">{t('company.vatNumber')}</label>
-              <input
-                type="text"
-                name="vat_number"
-                value={formData.vat_number}
-                onChange={handleChange}
-                className="input"
-              />
-            </div>
-          </div>
-
           <div>
             <label className="label">{t('company.companyName')} *</label>
             <input
@@ -363,8 +345,21 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
               name="company_name"
               value={formData.company_name}
               onChange={handleChange}
+              placeholder="Es. Rossi Costruzioni S.r.l."
               className="input"
               required
+            />
+          </div>
+
+          <div>
+            <label className="label">{t('company.vatNumber')}</label>
+            <input
+              type="text"
+              name="vat_number"
+              value={formData.vat_number}
+              onChange={handleChange}
+              placeholder="IT12345678901"
+              className="input"
             />
           </div>
 
@@ -375,6 +370,7 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
               name="contact_person"
               value={formData.contact_person}
               onChange={handleChange}
+              placeholder="Mario Rossi"
               className="input"
             />
           </div>
@@ -387,6 +383,7 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
+                placeholder="+39 333 1234567"
                 className="input"
               />
             </div>
@@ -397,6 +394,7 @@ function CompanyFormModal({ company, hasMainCompany, onClose, onSave }) {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
+                placeholder="info@azienda.it"
                 className="input"
               />
             </div>
