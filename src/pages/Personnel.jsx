@@ -79,8 +79,10 @@ export default function Personnel() {
   
   // Form per nuovo/edit persona
   const [formData, setFormData] = useState({
+    idNumber: '',
     firstName: '',
     lastName: '',
+    username: '',
     birthDate: '',
     email: '',
     phone: '',
@@ -133,7 +135,9 @@ export default function Personnel() {
         assignment_id: p.id,
         personnel_id: p.id,
         project_id: p.project_id,
+        id_number: p.id_number,
         badge_number: p.badge_number,
+        username: p.username,
         role: p.position,
         first_name: p.first_name,
         last_name: p.last_name,
@@ -165,12 +169,19 @@ export default function Personnel() {
       p.last_name?.toLowerCase().includes(searchLower) ||
       p.full_name?.toLowerCase().includes(searchLower) ||
       p.company_name?.toLowerCase().includes(searchLower) ||
-      p.badge_number?.toLowerCase().includes(searchLower)
+      p.badge_number?.toLowerCase().includes(searchLower) ||
+      p.username?.toLowerCase().includes(searchLower) ||
+      String(p.id_number || '').includes(searchLower)
     const matchesRole = !filterRole || p.role === filterRole
     const matchesCompany = !filterCompany || p.company_id === filterCompany
     return matchesSearch && matchesRole && matchesCompany
   }).sort((a, b) => {
-    // Ordina per cognome
+    // Ordina per ID Number, poi cognome
+    if (a.id_number && b.id_number) {
+      return a.id_number - b.id_number
+    }
+    if (a.id_number) return -1
+    if (b.id_number) return 1
     return (a.last_name || '').localeCompare(b.last_name || '')
   })
 
@@ -218,8 +229,10 @@ export default function Personnel() {
 
   const openEditModal = (person) => {
     setFormData({
+      idNumber: person.id_number || '',
       firstName: person.first_name || '',
       lastName: person.last_name || '',
+      username: person.username || '',
       birthDate: person.birth_date || '',
       email: person.email || '',
       phone: person.phone || '',
@@ -276,87 +289,50 @@ export default function Personnel() {
     
     try {
       if (selectedPerson) {
-        // Update esistente
-        // Prima aggiorna personnel
+        // Update esistente - aggiorna tutto in personnel
         const { error: personnelError } = await supabase
           .from('personnel')
           .update({
+            id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
             first_name: formData.firstName.trim(),
             last_name: formData.lastName.trim(),
+            username: formData.username.trim() || null,
             birth_date: formData.birthDate || null,
             email: formData.email.trim() || null,
             phone: formData.phone.trim() || null,
+            company_id: formData.companyId,
+            badge_number: formData.badge.trim() || null,
+            position: formData.role,
           })
           .eq('id', selectedPerson.personnel_id)
         
         if (personnelError) throw personnelError
-        
-        // Poi aggiorna assegnazione
-        const { error: assignmentError } = await supabase
-          .from('personnel_project_assignments')
-          .update({
-            company_id: formData.companyId,
-            badge_number: formData.badge.trim(),
-            role: formData.role,
-            notes: formData.notes.trim() || null
-          })
-          .eq('id', selectedPerson.assignment_id)
-        
-        if (assignmentError) {
-          // Fallback per vecchia struttura
-          await supabase
-            .from('personnel')
-            .update({
-              company_id: formData.companyId,
-              badge_number: formData.badge.trim(),
-              position: formData.role,
-            })
-            .eq('id', selectedPerson.personnel_id)
-        }
       } else {
         // Inserimento nuovo
-        // Prima inserisci in personnel
-        const { data: newPerson, error: personnelError } = await supabase
+        // Genera username automaticamente se non specificato
+        let username = formData.username.trim()
+        if (!username && formData.firstName && formData.lastName) {
+          username = (formData.firstName.charAt(0) + '.' + formData.lastName).toLowerCase().replace(/\s/g, '').replace(/'/g, '')
+        }
+        
+        const { error: personnelError } = await supabase
           .from('personnel')
           .insert([{
+            project_id: activeProject.id,
+            id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
             first_name: formData.firstName.trim(),
             last_name: formData.lastName.trim(),
+            username: username || null,
             birth_date: formData.birthDate || null,
             email: formData.email.trim() || null,
             phone: formData.phone.trim() || null,
+            company_id: formData.companyId,
+            badge_number: formData.badge.trim() || null,
+            position: formData.role,
             status: 'active'
           }])
-          .select()
-          .single()
         
         if (personnelError) throw personnelError
-        
-        // Poi inserisci assegnazione
-        const { error: assignmentError } = await supabase
-          .from('personnel_project_assignments')
-          .insert([{
-            personnel_id: newPerson.id,
-            project_id: activeProject.id,
-            company_id: formData.companyId,
-            badge_number: formData.badge.trim(),
-            role: formData.role,
-            start_date: new Date().toISOString().split('T')[0],
-            status: 'active',
-            notes: formData.notes.trim() || null
-          }])
-        
-        if (assignmentError) {
-          // Fallback per vecchia struttura
-          await supabase
-            .from('personnel')
-            .update({
-              project_id: activeProject.id,
-              company_id: formData.companyId,
-              badge_number: formData.badge.trim(),
-              position: formData.role,
-            })
-            .eq('id', newPerson.id)
-        }
       }
       
       // Chiudi modal e ricarica
@@ -375,19 +351,13 @@ export default function Personnel() {
   // ============================================================================
   const handleDelete = async (person) => {
     try {
-      // Disattiva l'assegnazione
-      const { error: assignmentError } = await supabase
-        .from('personnel_project_assignments')
-        .update({ status: 'terminated', end_date: new Date().toISOString().split('T')[0] })
-        .eq('id', person.assignment_id)
+      // Disattiva il record in personnel
+      const { error } = await supabase
+        .from('personnel')
+        .update({ status: 'inactive' })
+        .eq('id', person.personnel_id)
       
-      if (assignmentError) {
-        // Fallback
-        await supabase
-          .from('personnel')
-          .update({ status: 'inactive' })
-          .eq('id', person.personnel_id)
-      }
+      if (error) throw error
       
       setShowDeleteConfirm(null)
       setSelectedPerson(null)
@@ -927,8 +897,10 @@ export default function Personnel() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Badge</th>
+                <th className="px-3 py-3 text-left text-sm font-semibold text-gray-700">ID</th>
+                <th className="px-3 py-3 text-left text-sm font-semibold text-gray-700">Badge</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Nome Completo</th>
+                <th className="px-3 py-3 text-left text-sm font-semibold text-gray-700">Username</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Ruolo</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Azienda</th>
                 <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Contatti</th>
@@ -938,7 +910,7 @@ export default function Personnel() {
             <tbody className="divide-y divide-gray-100">
               {filteredPersonnel.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-4 py-12 text-center text-gray-500">
+                  <td colSpan="8" className="px-4 py-12 text-center text-gray-500">
                     {searchTerm || filterRole || filterCompany 
                       ? 'Nessun risultato trovato con i filtri applicati'
                       : 'Nessun personale registrato'}
@@ -951,7 +923,12 @@ export default function Personnel() {
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => setSelectedPerson(person)}
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3">
+                      <span className="font-mono text-sm text-gray-600">
+                        {person.id_number || '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3">
                       <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
                         {person.badge_number || '—'}
                       </span>
@@ -965,6 +942,11 @@ export default function Personnel() {
                           {new Date(person.birth_date).toLocaleDateString('it-IT')}
                         </div>
                       )}
+                    </td>
+                    <td className="px-3 py-3">
+                      <span className="font-mono text-sm text-blue-600">
+                        {person.username || '—'}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <RoleBadge role={person.role} />
@@ -1051,7 +1033,13 @@ export default function Personnel() {
             
             {/* Content */}
             <div className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm text-gray-500">ID Number</label>
+                  <p className="font-medium text-gray-900">
+                    {selectedPerson.id_number || '—'}
+                  </p>
+                </div>
                 <div>
                   <label className="text-sm text-gray-500">Badge</label>
                   <p className="font-mono bg-gray-100 px-2 py-1 rounded inline-block">
@@ -1059,14 +1047,21 @@ export default function Personnel() {
                   </p>
                 </div>
                 <div>
-                  <label className="text-sm text-gray-500">Azienda</label>
-                  <p className="flex items-center gap-1">
-                    {selectedPerson.is_main_company && (
-                      <Star size={14} className="text-yellow-500 fill-yellow-500" />
-                    )}
-                    {selectedPerson.company_name}
+                  <label className="text-sm text-gray-500">Username</label>
+                  <p className="font-mono text-blue-600">
+                    {selectedPerson.username || '—'}
                   </p>
                 </div>
+              </div>
+              
+              <div>
+                <label className="text-sm text-gray-500">Azienda</label>
+                <p className="flex items-center gap-1">
+                  {selectedPerson.is_main_company && (
+                    <Star size={14} className="text-yellow-500 fill-yellow-500" />
+                  )}
+                  {selectedPerson.company_name}
+                </p>
               </div>
               
               {selectedPerson.birth_date && (
@@ -1144,6 +1139,35 @@ export default function Personnel() {
             
             {/* Form */}
             <div className="p-4 space-y-4">
+              {/* ID Number e Username */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ID Number
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.idNumber}
+                    onChange={(e) => setFormData({...formData, idNumber: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    placeholder="1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Username (login)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={(e) => setFormData({...formData, username: e.target.value.toLowerCase()})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    placeholder="g.pasquale"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Se vuoto, sarà generato automaticamente</p>
+                </div>
+              </div>
+              
               {/* Nome e Cognome */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
