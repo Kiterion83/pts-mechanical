@@ -1,0 +1,176 @@
+{
+  "app": {
+    "name": "PTS - Project Tracking System",
+    "tagline": "Gestione Cantieri Costruzioni Meccaniche"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Progetti",
+    "personnel": "Personale",
+    "squads": "Squadre",
+    "mto": "MTO",
+    "workPackages": "Work Packages",
+    "dailyReports": "Rapportini",
+    "materialRequests": "Richieste Materiale",
+    "equipment": "Mezzi",
+    "settings": "Impostazioni"
+  },
+  "auth": {
+    "login": "Accedi",
+    "logout": "Esci",
+    "email": "Email",
+    "password": "Password",
+    "forgotPassword": "Password dimenticata?",
+    "loginButton": "Accedi",
+    "loggingIn": "Accesso in corso...",
+    "loginError": "Credenziali non valide",
+    "logoutConfirm": "Sei sicuro di voler uscire?"
+  },
+  "common": {
+    "save": "Salva",
+    "cancel": "Annulla",
+    "delete": "Elimina",
+    "edit": "Modifica",
+    "add": "Aggiungi",
+    "search": "Cerca",
+    "filter": "Filtra",
+    "export": "Esporta",
+    "import": "Importa",
+    "loading": "Caricamento...",
+    "noData": "Nessun dato disponibile",
+    "confirm": "Conferma",
+    "back": "Indietro",
+    "next": "Avanti",
+    "yes": "Sì",
+    "no": "No",
+    "all": "Tutti",
+    "none": "Nessuno",
+    "actions": "Azioni",
+    "status": "Stato",
+    "date": "Data",
+    "notes": "Note",
+    "description": "Descrizione",
+    "code": "Codice",
+    "name": "Nome",
+    "type": "Tipo",
+    "priority": "Priorità",
+    "progress": "Avanzamento",
+    "total": "Totale"
+  },
+  "status": {
+    "active": "Attivo",
+    "inactive": "Inattivo",
+    "completed": "Completato",
+    "inProgress": "In Corso",
+    "planned": "Pianificato",
+    "unassigned": "Non Assegnato",
+    "created": "Creata",
+    "inPreparation": "In Preparazione",
+    "readyForPickup": "Pronta per Ritiro",
+    "pickedUp": "Ritirata"
+  },
+  "spoolStatus": {
+    "not_started": "Non Iniziato",
+    "fitup_in_progress": "Fit-Up in Corso",
+    "fitup_completed": "Fit-Up Completato",
+    "welding_in_progress": "Saldatura in Corso",
+    "welding_completed": "Saldatura Completata",
+    "pwht_completed": "PWHT Completato",
+    "ready_for_delivery": "Pronto per Consegna",
+    "delivered_to_site": "Consegnato in Cantiere"
+  },
+  "project": {
+    "title": "Progetti",
+    "newProject": "Nuovo Progetto",
+    "selectProject": "Seleziona Progetto",
+    "client": "Cliente",
+    "startDate": "Data Inizio",
+    "endDate": "Data Fine",
+    "dailyHours": "Ore Giornaliere",
+    "holidays": "Festività"
+  },
+  "personnel": {
+    "title": "Personale",
+    "badge": "Badge",
+    "firstName": "Nome",
+    "lastName": "Cognome",
+    "position": "Posizione",
+    "squad": "Squadra",
+    "subcontractor": "Subappaltatore"
+  },
+  "positions": {
+    "cm": "Construction Manager",
+    "superintendent": "Superintendent",
+    "supervisor": "Supervisor",
+    "sub_supervisor": "Sub Supervisor",
+    "foreman": "Foreman",
+    "sub_foreman": "Sub Foreman",
+    "operator": "Operatore",
+    "helper": "Aiutante",
+    "storekeeper": "Magazziniere"
+  },
+  "squad": {
+    "title": "Squadre",
+    "newSquad": "Nuova Squadra",
+    "foreman": "Caposquadra",
+    "members": "Membri",
+    "addMember": "Aggiungi Membro"
+  },
+  "workPackage": {
+    "title": "Work Packages",
+    "newWP": "Nuovo WP",
+    "piping": "WP Piping",
+    "action": "WP Action",
+    "welding": "Saldature",
+    "supports": "Supporti",
+    "flangeJoints": "Giunti Flangiati",
+    "activities": "Attività",
+    "assignSquad": "Assegna Squadra",
+    "dissimilarWeld": "Saldatura Dissimile"
+  },
+  "dailyReport": {
+    "title": "Rapportino Giornaliero",
+    "week": "Settimana",
+    "hours": "Ore",
+    "regularHours": "Ore Ordinarie",
+    "overtimeHours": "Straordinario",
+    "done": "Fatto",
+    "extraActivities": "Attività Extra"
+  },
+  "materialRequest": {
+    "title": "Richieste Materiale",
+    "newMR": "Nuova Richiesta",
+    "newIR": "Nuova Richiesta Interna",
+    "scope": "Ambito",
+    "all": "Tutto",
+    "erectionOnly": "Solo Erection",
+    "supportsOnly": "Solo Supporti",
+    "requestMaterial": "Richiedi Materiale"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "kpi": "KPI",
+    "weldsPerDay": "Saldature/Giorno",
+    "supportsKgPerDay": "Supporti kg/Giorno",
+    "jointsPerDay": "Giunti/Giorno",
+    "hoursWorked": "Ore Lavorate",
+    "last7Days": "Ultimi 7 Giorni",
+    "lastMonth": "Ultimo Mese",
+    "squadComparison": "Confronto Squadre"
+  },
+  "notifications": {
+    "title": "Notifiche",
+    "markAllRead": "Segna tutte come lette",
+    "noNotifications": "Nessuna notifica",
+    "materialReady": "Materiale pronto per ritiro",
+    "wpAssigned": "Work Package assegnato",
+    "wpCompleted": "Work Package completato"
+  },
+  "errors": {
+    "generic": "Si è verificato un errore",
+    "notFound": "Pagina non trovata",
+    "unauthorized": "Accesso non autorizzato",
+    "networkError": "Errore di connessione",
+    "validation": "Verifica i dati inseriti"
+  }
+}
