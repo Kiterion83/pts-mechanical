@@ -6,15 +6,28 @@ import { supabase } from './lib/supabase'
 // Contexts
 import { ProjectProvider } from './contexts/ProjectContext'
 
-// Pages
+// Pages - Main
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+
+// Pages - Settings (solo ruoli autorizzati)
 import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
+import Companies from './pages/Companies'
+import Personnel from './pages/Personnel'
+import Squads from './pages/Squads'
+import Equipment from './pages/Equipment'
+
+// Pages - Work
+import WorkPackages from './pages/WorkPackages'
+import DailyReports from './pages/DailyReports'
+import MaterialRequests from './pages/MaterialRequests'
+import MTO from './pages/MTO'
 
 // Components
 import Layout from './components/Layout'
 import LoadingScreen from './components/LoadingScreen'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -22,13 +35,11 @@ function App() {
   const { t } = useTranslation()
 
   useEffect(() => {
-    // Check current session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
       setLoading(false)
     })
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session)
@@ -59,16 +70,53 @@ function App() {
               <ProjectProvider userId={session.user.id}>
                 <Layout session={session}>
                   <Routes>
+                    {/* Main Menu - Everyone */}
                     <Route path="/" element={<Dashboard />} />
-                    <Route path="/projects" element={<Projects />} />
-                    <Route path="/projects/:id" element={<ProjectDetail />} />
-                    <Route path="/personnel" element={<ComingSoon title={t('nav.personnel')} />} />
-                    <Route path="/squads" element={<ComingSoon title={t('nav.squads')} />} />
-                    <Route path="/mto" element={<ComingSoon title={t('nav.mto')} />} />
-                    <Route path="/work-packages" element={<ComingSoon title={t('nav.workPackages')} />} />
-                    <Route path="/daily-reports" element={<ComingSoon title={t('nav.dailyReports')} />} />
-                    <Route path="/material-requests" element={<ComingSoon title={t('nav.materialRequests')} />} />
-                    <Route path="/equipment" element={<ComingSoon title={t('nav.equipment')} />} />
+                    <Route path="/mto" element={<MTO />} />
+                    <Route path="/work-packages" element={<WorkPackages />} />
+                    <Route path="/daily-reports" element={<DailyReports />} />
+                    <Route path="/material-requests" element={<MaterialRequests />} />
+                    
+                    {/* Settings - Only authorized roles */}
+                    <Route path="/settings/projects" element={
+                      <ProtectedRoute requiredPermission="canAccessSettings">
+                        <Projects />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/settings/projects/:id" element={
+                      <ProtectedRoute requiredPermission="canAccessSettings">
+                        <ProjectDetail />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/settings/companies" element={
+                      <ProtectedRoute requiredPermission="canManageCompanies">
+                        <Companies />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/settings/personnel" element={
+                      <ProtectedRoute requiredPermission="canManagePersonnel">
+                        <Personnel />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/settings/squads" element={
+                      <ProtectedRoute requiredPermission="canManageSquads">
+                        <Squads />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/settings/equipment" element={
+                      <ProtectedRoute requiredPermission="canAccessSettings">
+                        <Equipment />
+                      </ProtectedRoute>
+                    } />
+
+                    {/* Legacy routes redirect to new structure */}
+                    <Route path="/projects" element={<Navigate to="/settings/projects" replace />} />
+                    <Route path="/projects/:id" element={<Navigate to="/settings/projects/:id" replace />} />
+                    <Route path="/personnel" element={<Navigate to="/settings/personnel" replace />} />
+                    <Route path="/squads" element={<Navigate to="/settings/squads" replace />} />
+                    <Route path="/equipment" element={<Navigate to="/settings/equipment" replace />} />
+                    
+                    {/* 404 */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </Layout>
@@ -83,24 +131,15 @@ function App() {
   )
 }
 
-// Placeholder component for pages not yet implemented
-function ComingSoon({ title }) {
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh]">
-      <div className="text-6xl mb-4">🚧</div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-2">{title}</h1>
-      <p className="text-gray-500">In sviluppo...</p>
-    </div>
-  )
-}
-
 // 404 page
 function NotFound() {
+  const { t } = useTranslation()
+  
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-6xl mb-4">🔍</div>
       <h1 className="text-2xl font-bold text-gray-800 mb-2">404</h1>
-      <p className="text-gray-500">Pagina non trovata</p>
+      <p className="text-gray-500">{t('errors.notFound')}</p>
     </div>
   )
 }
