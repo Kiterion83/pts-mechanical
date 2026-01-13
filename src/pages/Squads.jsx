@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
 import { 
   Users, Plus, Search, Filter, X, Check, Edit, Trash2,
   ChevronDown, ChevronRight, UserPlus, UserMinus, Star,
-  Building2, Hash, User, AlertTriangle, CheckCircle2
+  Building2, Hash, User, AlertTriangle, CheckCircle2, Info
 } from 'lucide-react'
 
 // ============================================================================
@@ -55,6 +55,182 @@ function RoleBadge({ role, size = 'normal' }) {
 }
 
 // ============================================================================
+// COMPONENTE TOOLTIP PERSONALE NON ASSEGNATO
+// ============================================================================
+function UnassignedTooltip({ personnel, role, isVisible, onClose }) {
+  if (!isVisible || personnel.length === 0) return null
+  
+  return (
+    <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-96 max-h-80 overflow-y-auto bg-white rounded-xl shadow-2xl border border-gray-200">
+      <div className="sticky top-0 bg-gray-50 px-4 py-2 border-b flex items-center justify-between">
+        <span className="font-semibold text-gray-700">
+          {role ? `${ROLE_CONFIG[role]?.label || role} da assegnare` : 'Personale da assegnare'}
+        </span>
+        <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="p-2">
+        {personnel.map(p => (
+          <div key={p.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg text-sm">
+            <span className="font-mono text-xs text-gray-500 w-8">{p.id_number || '—'}</span>
+            <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{p.badge_number || '—'}</span>
+            <div className="flex-1">
+              <span className="font-medium">{p.last_name} {p.first_name}</span>
+            </div>
+            <RoleBadge role={p.position} size="small" />
+            <span className="text-xs text-gray-500 flex items-center gap-1 max-w-24 truncate">
+              {p.company?.is_main && <Star size={10} className="text-yellow-500 fill-yellow-500 flex-shrink-0" />}
+              {p.company?.company_name}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// COMPONENTE SEARCHABLE SELECT (Combo ricerca + dropdown)
+// ============================================================================
+function SearchableSelect({ 
+  value, 
+  onChange, 
+  options, 
+  placeholder, 
+  label,
+  required,
+  companyFilter,
+  onCompanyFilterChange,
+  companies,
+  showCompanyFilter
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const wrapperRef = useRef(null)
+  
+  // Chiudi dropdown quando clicco fuori
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+  
+  // Filtra opzioni
+  const filteredOptions = options.filter(opt => {
+    const matchesSearch = searchTerm === '' || 
+      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (opt.badge && opt.badge.toLowerCase().includes(searchTerm.toLowerCase()))
+    const matchesCompany = !companyFilter || opt.company_id === companyFilter
+    return matchesSearch && matchesCompany
+  })
+  
+  // Trova opzione selezionata
+  const selectedOption = options.find(opt => opt.value === value)
+  
+  return (
+    <div ref={wrapperRef} className="relative">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </label>
+      
+      {/* Filtro azienda */}
+      {showCompanyFilter && companies && (
+        <div className="mb-2">
+          <select
+            value={companyFilter || ''}
+            onChange={(e) => onCompanyFilterChange(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-gray-50"
+          >
+            <option value="">Tutte le aziende</option>
+            {companies.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.is_main && '★ '}{c.company_name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      
+      {/* Input con ricerca */}
+      <div 
+        className="relative cursor-pointer"
+        onClick={() => setIsOpen(true)}
+      >
+        <input
+          type="text"
+          value={isOpen ? searchTerm : (selectedOption?.label || '')}
+          onChange={(e) => {
+            setSearchTerm(e.target.value)
+            setIsOpen(true)
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={placeholder}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary pr-10"
+        />
+        <ChevronDown 
+          size={18} 
+          className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </div>
+      
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {/* Opzione vuota */}
+          <div
+            onClick={() => {
+              onChange('')
+              setIsOpen(false)
+              setSearchTerm('')
+            }}
+            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-gray-500 border-b"
+          >
+            {placeholder}
+          </div>
+          
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-4 text-center text-gray-500 text-sm">
+              Nessun risultato
+            </div>
+          ) : (
+            filteredOptions.map(opt => (
+              <div
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value)
+                  setIsOpen(false)
+                  setSearchTerm('')
+                }}
+                className={`px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 ${
+                  value === opt.value ? 'bg-primary/10' : ''
+                }`}
+              >
+                {opt.badge && (
+                  <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{opt.badge}</span>
+                )}
+                <span className="flex-1">{opt.label}</span>
+                <RoleBadge role={opt.role} size="small" />
+                {opt.company?.is_main && (
+                  <Star size={12} className="text-yellow-500 fill-yellow-500" />
+                )}
+                {opt.assigned && (
+                  <span className="text-xs text-amber-600">(assegnato)</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
 // COMPONENTE PRINCIPALE
 // ============================================================================
 export default function Squads() {
@@ -75,6 +251,9 @@ export default function Squads() {
   const [editingSquad, setEditingSquad] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   
+  // Tooltip state
+  const [tooltipVisible, setTooltipVisible] = useState(null) // 'total' | role name | null
+  
   // Form state per nuova squadra
   const [formData, setFormData] = useState({
     name: '',
@@ -82,6 +261,10 @@ export default function Squads() {
     foremanId: '',
     notes: ''
   })
+  
+  // Filtri per form squadra
+  const [supervisorCompanyFilter, setSupervisorCompanyFilter] = useState('')
+  const [foremanCompanyFilter, setForemanCompanyFilter] = useState('')
   
   // Filtri per aggiunta membri
   const [memberSearch, setMemberSearch] = useState('')
@@ -162,30 +345,54 @@ export default function Squads() {
   // Personale diretto totale
   const directPersonnel = personnel.filter(p => DIRECT_ROLES.includes(p.position))
   
-  // Set di ID già assegnati a squadre
-  const assignedIds = new Set()
+  // Set di ID già assegnati a squadre (membri + foreman)
+  const assignedMemberIds = new Set()
   Object.values(squadMembers).forEach(members => {
-    members.forEach(m => assignedIds.add(m.personnel_id))
+    members.forEach(m => assignedMemberIds.add(m.personnel_id))
   })
   // Aggiungi anche foreman delle squadre
   squads.forEach(s => {
-    if (s.foreman_id) assignedIds.add(s.foreman_id)
+    if (s.foreman_id) assignedMemberIds.add(s.foreman_id)
   })
+  
+  // Supervisori/Superintendent assegnati (contati UNA SOLA VOLTA)
+  const assignedSupervisorIds = new Set()
+  squads.forEach(s => {
+    if (s.supervisor_id) assignedSupervisorIds.add(s.supervisor_id)
+  })
+  
+  // Combina tutti gli assegnati (membri + foreman + supervisori unici)
+  const assignedIds = new Set([...assignedMemberIds, ...assignedSupervisorIds])
   
   // Personale assegnato vs da assegnare
   const assignedDirect = directPersonnel.filter(p => assignedIds.has(p.id))
   const unassignedDirect = directPersonnel.filter(p => !assignedIds.has(p.id))
   
-  // Statistiche per ruolo
+  // Statistiche per ruolo (Supervisori contati una sola volta)
   const roleStats = DIRECT_ROLES.map(role => {
-    const total = directPersonnel.filter(p => p.position === role).length
-    const assigned = assignedDirect.filter(p => p.position === role).length
+    const totalInRole = directPersonnel.filter(p => p.position === role)
+    const total = totalInRole.length
+    
+    let assigned
+    if (SUPERVISOR_ROLES.includes(role)) {
+      // Per supervisori, conta solo quelli nel set unico
+      assigned = totalInRole.filter(p => assignedSupervisorIds.has(p.id)).length
+    } else {
+      // Per altri ruoli, conta normalmente
+      assigned = totalInRole.filter(p => assignedMemberIds.has(p.id)).length
+    }
+    
     return {
       role,
       label: ROLE_CONFIG[role]?.label || role,
       total,
       assigned,
-      unassigned: total - assigned
+      unassigned: total - assigned,
+      unassignedList: totalInRole.filter(p => 
+        SUPERVISOR_ROLES.includes(role) 
+          ? !assignedSupervisorIds.has(p.id)
+          : !assignedMemberIds.has(p.id)
+      )
     }
   }).filter(r => r.total > 0)
 
@@ -196,6 +403,12 @@ export default function Squads() {
   const getNextSquadNumber = () => {
     if (squads.length === 0) return 1
     return Math.max(...squads.map(s => s.squad_number)) + 1
+  }
+  
+  const resetForm = () => {
+    setFormData({ name: '', supervisorId: '', foremanId: '', notes: '' })
+    setSupervisorCompanyFilter('')
+    setForemanCompanyFilter('')
   }
   
   const handleCreateSquad = async () => {
@@ -224,7 +437,7 @@ export default function Squads() {
       if (error) throw error
       
       setShowCreateModal(false)
-      setFormData({ name: '', supervisorId: '', foremanId: '', notes: '' })
+      resetForm()
       loadData()
     } catch (err) {
       console.error('Error creating squad:', err)
@@ -250,7 +463,7 @@ export default function Squads() {
       if (error) throw error
       
       setEditingSquad(null)
-      setFormData({ name: '', supervisorId: '', foremanId: '', notes: '' })
+      resetForm()
       loadData()
     } catch (err) {
       console.error('Error updating squad:', err)
@@ -289,6 +502,8 @@ export default function Squads() {
       foremanId: squad.foreman_id || '',
       notes: squad.notes || ''
     })
+    setSupervisorCompanyFilter('')
+    setForemanCompanyFilter('')
     setEditingSquad(squad)
   }
 
@@ -299,7 +514,7 @@ export default function Squads() {
   // Personale disponibile per aggiunta (diretti non ancora assegnati)
   const availableForAssignment = personnel.filter(p => 
     DIRECT_ROLES.includes(p.position) && 
-    !assignedIds.has(p.id) &&
+    !assignedMemberIds.has(p.id) &&
     !SUPERVISOR_ROLES.includes(p.position) // Supervisori gestiti separatamente
   )
   
@@ -368,6 +583,37 @@ export default function Squads() {
   }
 
   // ============================================================================
+  // OPZIONI PER SEARCHABLE SELECT
+  // ============================================================================
+  
+  // Opzioni supervisori
+  const supervisorOptions = personnel
+    .filter(p => SUPERVISOR_ROLES.includes(p.position))
+    .map(p => ({
+      value: p.id,
+      label: `${p.last_name} ${p.first_name}`,
+      badge: p.badge_number,
+      role: p.position,
+      company_id: p.company_id,
+      company: p.company,
+      assigned: assignedSupervisorIds.has(p.id) && p.id !== editingSquad?.supervisor_id
+    }))
+  
+  // Opzioni foreman
+  const foremanOptions = personnel
+    .filter(p => FOREMAN_ROLES.includes(p.position))
+    .filter(p => !assignedMemberIds.has(p.id) || p.id === editingSquad?.foreman_id)
+    .map(p => ({
+      value: p.id,
+      label: `${p.last_name} ${p.first_name}`,
+      badge: p.badge_number,
+      role: p.position,
+      company_id: p.company_id,
+      company: p.company,
+      assigned: assignedMemberIds.has(p.id)
+    }))
+
+  // ============================================================================
   // RENDER
   // ============================================================================
   
@@ -430,9 +676,24 @@ export default function Squads() {
             <div className="text-3xl font-bold text-green-600">{assignedDirect.length}</div>
             <div className="text-sm text-gray-500">Assegnati</div>
           </div>
-          <div className="bg-amber-50 rounded-lg p-4 text-center">
-            <div className="text-3xl font-bold text-amber-600">{unassignedDirect.length}</div>
+          
+          {/* Da Assegnare con Tooltip */}
+          <div 
+            className="bg-amber-50 rounded-lg p-4 text-center relative cursor-pointer"
+            onMouseEnter={() => setTooltipVisible('total')}
+            onMouseLeave={() => setTooltipVisible(null)}
+          >
+            <div className="text-3xl font-bold text-amber-600 flex items-center justify-center gap-2">
+              {unassignedDirect.length}
+              <Info size={16} className="text-amber-400" />
+            </div>
             <div className="text-sm text-gray-500">Da Assegnare</div>
+            
+            <UnassignedTooltip 
+              personnel={unassignedDirect}
+              isVisible={tooltipVisible === 'total'}
+              onClose={() => setTooltipVisible(null)}
+            />
           </div>
         </div>
         
@@ -456,7 +717,23 @@ export default function Squads() {
                   </td>
                   <td className="py-2 px-3 text-center font-medium">{stat.total}</td>
                   <td className="py-2 px-3 text-center text-green-600">{stat.assigned}</td>
-                  <td className="py-2 px-3 text-center text-amber-600">{stat.unassigned}</td>
+                  <td className="py-2 px-3 text-center relative">
+                    <span 
+                      className="text-amber-600 cursor-pointer hover:underline inline-flex items-center gap-1"
+                      onMouseEnter={() => setTooltipVisible(stat.role)}
+                      onMouseLeave={() => setTooltipVisible(null)}
+                    >
+                      {stat.unassigned}
+                      {stat.unassigned > 0 && <Info size={12} className="text-amber-400" />}
+                    </span>
+                    
+                    <UnassignedTooltip 
+                      personnel={stat.unassignedList}
+                      role={stat.role}
+                      isVisible={tooltipVisible === stat.role}
+                      onClose={() => setTooltipVisible(null)}
+                    />
+                  </td>
                   <td className="py-2 px-3">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
@@ -627,13 +904,13 @@ export default function Squads() {
       {/* ============ MODAL CREA/MODIFICA SQUADRA ============ */}
       {(showCreateModal || editingSquad) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-4 border-b">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
               <h2 className="text-xl font-bold text-gray-800">
                 {editingSquad ? `Modifica Squadra ${editingSquad.squad_number}` : 'Nuova Squadra'}
               </h2>
               <button 
-                onClick={() => { setShowCreateModal(false); setEditingSquad(null); }}
+                onClick={() => { setShowCreateModal(false); setEditingSquad(null); resetForm(); }}
                 className="p-2 hover:bg-gray-100 rounded-lg"
               >
                 <X size={20} />
@@ -655,48 +932,32 @@ export default function Squads() {
                 />
               </div>
               
-              {/* Supervisore */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Supervisore Responsabile
-                </label>
-                <select
-                  value={formData.supervisorId}
-                  onChange={(e) => setFormData({...formData, supervisorId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">-- Seleziona Supervisore --</option>
-                  {personnel.filter(p => SUPERVISOR_ROLES.includes(p.position)).map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.last_name} {p.first_name} - {ROLE_CONFIG[p.position]?.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Supervisore con SearchableSelect */}
+              <SearchableSelect
+                value={formData.supervisorId}
+                onChange={(val) => setFormData({...formData, supervisorId: val})}
+                options={supervisorOptions}
+                placeholder="-- Seleziona Supervisore --"
+                label="Supervisore Responsabile"
+                companyFilter={supervisorCompanyFilter}
+                onCompanyFilterChange={setSupervisorCompanyFilter}
+                companies={companies}
+                showCompanyFilter={true}
+              />
               
-              {/* Foreman */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Foreman Caposquadra <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={formData.foremanId}
-                  onChange={(e) => setFormData({...formData, foremanId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">-- Seleziona Foreman --</option>
-                  {personnel
-                    .filter(p => FOREMAN_ROLES.includes(p.position))
-                    .filter(p => !assignedIds.has(p.id) || p.id === editingSquad?.foreman_id)
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.badge_number} - {p.last_name} {p.first_name}
-                        {assignedIds.has(p.id) ? ' (già assegnato)' : ''}
-                      </option>
-                    ))
-                  }
-                </select>
-              </div>
+              {/* Foreman con SearchableSelect */}
+              <SearchableSelect
+                value={formData.foremanId}
+                onChange={(val) => setFormData({...formData, foremanId: val})}
+                options={foremanOptions}
+                placeholder="-- Seleziona Foreman --"
+                label="Foreman Caposquadra"
+                required={true}
+                companyFilter={foremanCompanyFilter}
+                onCompanyFilterChange={setForemanCompanyFilter}
+                companies={companies}
+                showCompanyFilter={true}
+              />
               
               {/* Note */}
               <div>
@@ -713,9 +974,9 @@ export default function Squads() {
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
               <button
-                onClick={() => { setShowCreateModal(false); setEditingSquad(null); }}
+                onClick={() => { setShowCreateModal(false); setEditingSquad(null); resetForm(); }}
                 className="btn-secondary"
               >
                 Annulla
