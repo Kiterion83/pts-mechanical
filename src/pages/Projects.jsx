@@ -1,22 +1,26 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useProject } from '../contexts/ProjectContext'
+import ProjectFormModal from '../components/ProjectFormModal'
 import { 
   FolderKanban, 
   Calendar, 
-  Users, 
   CheckCircle2, 
   Clock,
   Building2,
   ChevronRight,
+  Search,
   Plus,
-  Search
+  Settings
 } from 'lucide-react'
 
 export default function Projects() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { projects, activeProject, selectProject, loading } = useProject()
   const [searchTerm, setSearchTerm] = useState('')
+  const [showNewProjectModal, setShowNewProjectModal] = useState(false)
 
   const filteredProjects = projects.filter(project =>
     project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -71,6 +75,20 @@ export default function Projects() {
     )
   }
 
+  const handleProjectClick = (project, e) => {
+    // If clicking on the settings button, go to detail
+    if (e.target.closest('.settings-btn')) {
+      navigate(`/projects/${project.id}`)
+      return
+    }
+    // Otherwise, select as active
+    selectProject(project)
+  }
+
+  const handleProjectCreated = () => {
+    setShowNewProjectModal(false)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -93,16 +111,27 @@ export default function Projects() {
           </p>
         </div>
         
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder={t('common.search') + '...'}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="input pl-10 w-full sm:w-64"
-          />
+        <div className="flex gap-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <input
+              type="text"
+              placeholder={t('common.search') + '...'}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="input pl-10 w-full sm:w-64"
+            />
+          </div>
+          
+          {/* New Project Button */}
+          <button 
+            onClick={() => setShowNewProjectModal(true)}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus size={20} />
+            <span className="hidden sm:inline">{t('project.newProject')}</span>
+          </button>
         </div>
       </div>
 
@@ -115,7 +144,16 @@ export default function Projects() {
               <p className="text-xl font-bold">{activeProject.name}</p>
               <p className="text-blue-200">{activeProject.code} • {activeProject.client}</p>
             </div>
-            <CheckCircle2 size={40} className="text-blue-200" />
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => navigate(`/projects/${activeProject.id}`)}
+                className="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition"
+                title="Modifica progetto"
+              >
+                <Settings size={24} />
+              </button>
+              <CheckCircle2 size={40} className="text-blue-200" />
+            </div>
           </div>
         </div>
       )}
@@ -124,16 +162,23 @@ export default function Projects() {
       {filteredProjects.length === 0 ? (
         <div className="card text-center py-12">
           <FolderKanban size={48} className="mx-auto text-gray-300 mb-4" />
-          <p className="text-gray-500">
+          <p className="text-gray-500 mb-4">
             {searchTerm ? 'Nessun progetto trovato' : 'Nessun progetto disponibile'}
           </p>
+          <button 
+            onClick={() => setShowNewProjectModal(true)}
+            className="btn-primary"
+          >
+            <Plus size={20} className="mr-2" />
+            Crea il tuo primo progetto
+          </button>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              onClick={() => selectProject(project)}
+              onClick={(e) => handleProjectClick(project, e)}
               className={`card cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1 ${
                 activeProject?.id === project.id 
                   ? 'ring-2 ring-primary border-primary' 
@@ -149,9 +194,17 @@ export default function Projects() {
                   </div>
                   <h3 className="font-semibold text-gray-800 truncate">{project.name}</h3>
                 </div>
-                {activeProject?.id === project.id && (
-                  <CheckCircle2 className="text-primary flex-shrink-0" size={24} />
-                )}
+                <div className="flex items-center gap-2">
+                  <button 
+                    className="settings-btn p-2 hover:bg-gray-100 rounded-lg transition"
+                    title="Impostazioni progetto"
+                  >
+                    <Settings size={18} className="text-gray-400" />
+                  </button>
+                  {activeProject?.id === project.id && (
+                    <CheckCircle2 className="text-primary flex-shrink-0" size={24} />
+                  )}
+                </div>
               </div>
 
               {/* Project Details */}
@@ -184,8 +237,16 @@ export default function Projects() {
 
       {/* Help Text */}
       <div className="text-center text-sm text-gray-500">
-        💡 Clicca su un progetto per selezionarlo come attivo
+        💡 Clicca su un progetto per selezionarlo come attivo, oppure clicca ⚙️ per modificarlo
       </div>
+
+      {/* New Project Modal */}
+      {showNewProjectModal && (
+        <ProjectFormModal
+          onClose={() => setShowNewProjectModal(false)}
+          onSuccess={handleProjectCreated}
+        />
+      )}
     </div>
   )
 }

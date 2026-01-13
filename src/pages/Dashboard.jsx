@@ -12,7 +12,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Activity,
-  FolderKanban
+  FolderKanban,
+  Calendar
 } from 'lucide-react'
 
 export default function Dashboard() {
@@ -26,13 +27,17 @@ export default function Dashboard() {
     totalWP: 0,
     wpInProgress: 0,
     wpCompleted: 0,
-    pendingMR: 0
+    pendingMR: 0,
+    totalAreas: 0
   })
+  const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (activeProject) {
       loadDashboardData()
+    } else {
+      setLoading(false)
     }
   }, [activeProject])
 
@@ -53,6 +58,12 @@ export default function Dashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('project_id', activeProject.id)
         .eq('status', 'active')
+
+      // Load areas count
+      const { count: areasCount } = await supabase
+        .from('areas')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', activeProject.id)
 
       // Load work packages
       const { data: wpData } = await supabase
@@ -76,7 +87,8 @@ export default function Dashboard() {
         totalWP: wpData?.length || 0,
         wpInProgress,
         wpCompleted,
-        pendingMR: mrCount || 0
+        pendingMR: mrCount || 0,
+        totalAreas: areasCount || 0
       })
 
     } catch (err) {
@@ -94,7 +106,7 @@ export default function Dashboard() {
         <h2 className="text-xl font-semibold text-gray-700 mb-2">
           Nessun Progetto Selezionato
         </h2>
-        <p className="text-gray-500 mb-6">
+        <p className="text-gray-500 mb-6 text-center">
           Seleziona un progetto per visualizzare la dashboard
         </p>
         <button 
@@ -103,6 +115,15 @@ export default function Dashboard() {
         >
           Vai ai Progetti
         </button>
+      </div>
+    )
+  }
+
+  // Loading state
+  if (projectLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 spinner border-4"></div>
       </div>
     )
   }
@@ -140,14 +161,59 @@ export default function Dashboard() {
     },
   ]
 
+  // Calculate project progress (days)
+  const startDate = new Date(activeProject.start_date)
+  const endDate = new Date(activeProject.end_date)
+  const today = new Date()
+  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+  const elapsedDays = Math.ceil((today - startDate) / (1000 * 60 * 60 * 24))
+  const progressPercent = Math.min(Math.max(Math.round((elapsedDays / totalDays) * 100), 0), 100)
+  const daysRemaining = Math.max(Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)), 0)
+
   return (
     <div className="space-y-6">
       {/* Page Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">{t('dashboard.title')}</h1>
-        <p className="text-gray-500">
-          {activeProject?.name} • {activeProject?.code}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">{t('dashboard.title')}</h1>
+          <p className="text-gray-500">
+            {activeProject.name} • {activeProject.code}
+          </p>
+        </div>
+        <button 
+          onClick={() => navigate(`/projects/${activeProject.id}`)}
+          className="btn-secondary text-sm"
+        >
+          <FolderKanban size={16} className="mr-2" />
+          Dettagli Progetto
+        </button>
+      </div>
+
+      {/* Project Timeline */}
+      <div className="card bg-gradient-to-r from-primary to-primary-light text-white">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p className="text-blue-200 text-sm">Timeline Progetto</p>
+            <p className="text-lg font-semibold">{activeProject.client}</p>
+          </div>
+          <div className="flex-1 max-w-md">
+            <div className="flex justify-between text-sm text-blue-200 mb-1">
+              <span>{new Date(activeProject.start_date).toLocaleDateString('it-IT')}</span>
+              <span>{progressPercent}%</span>
+              <span>{new Date(activeProject.end_date).toLocaleDateString('it-IT')}</span>
+            </div>
+            <div className="h-3 bg-white/20 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-white rounded-full transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-3xl font-bold">{daysRemaining}</p>
+            <p className="text-blue-200 text-sm">giorni rimasti</p>
+          </div>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -156,7 +222,7 @@ export default function Dashboard() {
           <div 
             key={index} 
             onClick={() => navigate(stat.link)}
-            className="card cursor-pointer hover:shadow-xl transition-shadow"
+            className="card cursor-pointer hover:shadow-xl transition-all hover:-translate-y-1"
           >
             <div className="flex items-start justify-between">
               <div>
@@ -186,18 +252,19 @@ export default function Dashboard() {
           </h2>
           
           <div className="space-y-3">
-            <InfoRow label="Codice" value={activeProject?.code} />
-            <InfoRow label="Cliente" value={activeProject?.client} />
+            <InfoRow label="Codice" value={activeProject.code} />
+            <InfoRow label="Cliente" value={activeProject.client} />
             <InfoRow 
               label="Data Inizio" 
-              value={new Date(activeProject?.start_date).toLocaleDateString('it-IT')} 
+              value={new Date(activeProject.start_date).toLocaleDateString('it-IT')} 
             />
             <InfoRow 
               label="Data Fine" 
-              value={new Date(activeProject?.end_date).toLocaleDateString('it-IT')} 
+              value={new Date(activeProject.end_date).toLocaleDateString('it-IT')} 
             />
-            <InfoRow label="Ore Giornaliere" value={`${activeProject?.daily_hours}h`} />
-            <InfoRow label="Il Tuo Ruolo" value={activeProject?.userRole?.toUpperCase()} />
+            <InfoRow label="Ore Giornaliere" value={`${activeProject.daily_hours}h`} />
+            <InfoRow label="Aree" value={stats.totalAreas} />
+            <InfoRow label="Il Tuo Ruolo" value={activeProject.userRole?.toUpperCase()} />
           </div>
         </div>
 
@@ -253,7 +320,7 @@ export default function Dashboard() {
           />
           <StatusCard 
             label="Pianificati" 
-            value={loading ? '...' : (stats.totalWP - stats.wpInProgress - stats.wpCompleted)} 
+            value={loading ? '...' : Math.max(0, stats.totalWP - stats.wpInProgress - stats.wpCompleted)} 
             icon={Clock} 
             className="bg-warning-light text-yellow-700" 
           />
