@@ -11,7 +11,10 @@ import {
   Building2,
   ChevronRight,
   Search,
-  Plus
+  Plus,
+  PauseCircle,
+  Lock,
+  User
 } from 'lucide-react'
 
 export default function Projects() {
@@ -38,11 +41,26 @@ export default function Projects() {
   const getStatusBadge = (status) => {
     switch (status) {
       case 'active':
-        return <span className="badge-success">{t('status.active')}</span>
+        return (
+          <span className="badge-success flex items-center gap-1">
+            <CheckCircle2 size={10} />
+            {t('status.active')}
+          </span>
+        )
       case 'suspended':
-        return <span className="badge-warning">{t('status.suspended')}</span>
+        return (
+          <span className="badge-warning flex items-center gap-1">
+            <PauseCircle size={10} />
+            {t('status.suspended')}
+          </span>
+        )
       case 'closed':
-        return <span className="badge-info">{t('status.closed')}</span>
+        return (
+          <span className="badge-info flex items-center gap-1">
+            <Lock size={10} />
+            {t('status.closed')}
+          </span>
+        )
       default:
         return null
     }
@@ -203,9 +221,13 @@ export default function Projects() {
                 </div>
               </div>
 
-              {/* Footer */}
+              {/* Footer - CON ETICHETTA RUOLO MIGLIORATA */}
               <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between">
-                {getRoleBadge(project.userRole)}
+                <div className="flex items-center gap-2">
+                  <User size={14} className="text-gray-400" />
+                  <span className="text-xs text-gray-500">Ruolo:</span>
+                  {getRoleBadge(project.userRole)}
+                </div>
                 <ChevronRight size={20} className="text-gray-400" />
               </div>
             </div>
