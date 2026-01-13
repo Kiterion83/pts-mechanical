@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import * as XLSX from 'xlsx'
 import { 
   Users, Search, Upload, Download, Plus, Filter, ChevronRight,
-  Edit, Trash2, X, Check, Save, Mail, Phone, Calendar, Building2,
+  Edit, Trash2, X, Check, Save, Mail, Phone, Building2,
   User, AlertTriangle, FileSpreadsheet, CheckCircle2, AlertCircle,
   MinusCircle, Star, ChevronDown, Info
 } from 'lucide-react'
@@ -83,7 +83,6 @@ export default function Personnel() {
     firstName: '',
     lastName: '',
     username: '',
-    birthDate: '',
     email: '',
     phone: '',
     role: 'operator',
@@ -144,7 +143,6 @@ export default function Personnel() {
         full_name: `${p.first_name} ${p.last_name}`,
         email: p.email,
         phone: p.phone,
-        birth_date: p.birth_date,
         company_id: p.company_id,
         company_name: p.company?.company_name,
         is_main_company: p.company?.is_main
@@ -210,9 +208,10 @@ export default function Personnel() {
   // ============================================================================
   const resetForm = () => {
     setFormData({
+      idNumber: '',
       firstName: '',
       lastName: '',
-      birthDate: '',
+      username: '',
       email: '',
       phone: '',
       role: 'operator',
@@ -233,7 +232,6 @@ export default function Personnel() {
       firstName: person.first_name || '',
       lastName: person.last_name || '',
       username: person.username || '',
-      birthDate: person.birth_date || '',
       email: person.email || '',
       phone: person.phone || '',
       role: person.role || 'operator',
@@ -297,7 +295,6 @@ export default function Personnel() {
             first_name: formData.firstName.trim(),
             last_name: formData.lastName.trim(),
             username: formData.username.trim() || null,
-            birth_date: formData.birthDate || null,
             email: formData.email.trim() || null,
             phone: formData.phone.trim() || null,
             company_id: formData.companyId,
@@ -323,7 +320,6 @@ export default function Personnel() {
             first_name: formData.firstName.trim(),
             last_name: formData.lastName.trim(),
             username: username || null,
-            birth_date: formData.birthDate || null,
             email: formData.email.trim() || null,
             phone: formData.phone.trim() || null,
             company_id: formData.companyId,
@@ -437,7 +433,6 @@ export default function Personnel() {
           person: {
             firstName,
             lastName,
-            birthDate: row['Data Nascita'] || row.DataNascita || null,
             email: (row.Email || row.email || '').toString(),
             phone: (row.Telefono || row.telefono || '').toString(),
             role: mapRoleFromImport(row.Ruolo || row.ruolo),
@@ -581,34 +576,21 @@ export default function Personnel() {
             )
             
             // Inserisci in personnel
-            const { data: newPerson, error: personnelError } = await supabase
+            const { error: personnelError } = await supabase
               .from('personnel')
               .insert([{
+                project_id: activeProject.id,
                 first_name: diff.person.firstName,
                 last_name: diff.person.lastName,
-                birth_date: diff.person.birthDate || null,
                 email: diff.person.email || null,
                 phone: diff.person.phone || null,
+                company_id: company?.id || null,
+                badge_number: diff.person.badge || null,
+                position: diff.person.role,
                 status: 'active'
               }])
-              .select()
-              .single()
             
             if (personnelError) throw personnelError
-            
-            // Inserisci assegnazione
-            await supabase
-              .from('personnel_project_assignments')
-              .insert([{
-                personnel_id: newPerson.id,
-                project_id: activeProject.id,
-                company_id: company?.id || null,
-                badge_number: diff.person.badge,
-                role: diff.person.role,
-                start_date: new Date().toISOString().split('T')[0],
-                status: 'active',
-                notes: diff.person.notes || null
-              }])
             
             successCount++
           } else if (diff.type === 'modified') {
@@ -697,23 +679,23 @@ export default function Personnel() {
   // ============================================================================
   const handleExport = () => {
     const exportData = personnel.map(p => ({
-      Nome: p.first_name,
-      Cognome: p.last_name,
-      'Data Nascita': p.birth_date || '',
-      Email: p.email || '',
-      Telefono: p.phone || '',
-      Ruolo: p.role,
-      Azienda: p.company_name || '',
-      Badge: p.badge_number || '',
-      Note: ''
+      'ID': p.id_number || '',
+      'Badge': p.badge_number || '',
+      'Cognome': p.last_name,
+      'Nome': p.first_name,
+      'Username': p.username || '',
+      'Ruolo': p.role,
+      'Azienda': p.company_name || '',
+      'Email': p.email || '',
+      'Telefono': p.phone || ''
     }))
     
     const ws = XLSX.utils.json_to_sheet(exportData)
     
     // Imposta larghezza colonne
     ws['!cols'] = [
-      { wch: 15 }, { wch: 15 }, { wch: 12 }, { wch: 30 },
-      { wch: 15 }, { wch: 15 }, { wch: 25 }, { wch: 10 }, { wch: 30 }
+      { wch: 6 }, { wch: 10 }, { wch: 15 }, { wch: 15 },
+      { wch: 15 }, { wch: 18 }, { wch: 25 }, { wch: 30 }, { wch: 15 }
     ]
     
     const wb = XLSX.utils.book_new()
@@ -937,11 +919,6 @@ export default function Personnel() {
                       <div className="font-medium text-gray-900">
                         {person.last_name} {person.first_name}
                       </div>
-                      {person.birth_date && (
-                        <div className="text-xs text-gray-500">
-                          {new Date(person.birth_date).toLocaleDateString('it-IT')}
-                        </div>
-                      )}
                     </td>
                     <td className="px-3 py-3">
                       <span className="font-mono text-sm text-blue-600">
@@ -1064,16 +1041,6 @@ export default function Personnel() {
                 </p>
               </div>
               
-              {selectedPerson.birth_date && (
-                <div>
-                  <label className="text-sm text-gray-500">Data di Nascita</label>
-                  <p className="flex items-center gap-2">
-                    <Calendar size={16} className="text-gray-400" />
-                    {new Date(selectedPerson.birth_date).toLocaleDateString('it-IT')}
-                  </p>
-                </div>
-              )}
-              
               {selectedPerson.email && (
                 <div>
                   <label className="text-sm text-gray-500">Email</label>
@@ -1194,19 +1161,6 @@ export default function Personnel() {
                     placeholder="Rossi"
                   />
                 </div>
-              </div>
-              
-              {/* Data di Nascita */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Data di Nascita
-                </label>
-                <input
-                  type="date"
-                  value={formData.birthDate}
-                  onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
               </div>
               
               {/* Email e Telefono */}
