@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { supabase } from '../lib/supabase'
-import { Mail, Lock, AlertCircle } from 'lucide-react'
+import { Mail, Lock, AlertCircle, User } from 'lucide-react'
 
 export default function Login() {
   const { t, i18n } = useTranslation()
-  const [email, setEmail] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -15,8 +15,11 @@ export default function Login() {
     setLoading(true)
     setError('')
 
+    // Check if identifier is email or username
+    const isEmail = identifier.includes('@')
+    
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: isEmail ? identifier : `${identifier}@pts.local`,
       password,
     })
 
@@ -59,15 +62,15 @@ export default function Login() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="label">{t('auth.email')}</label>
+              <label className="label">{t('auth.email')} / {t('auth.username')}</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   className="input pl-10"
-                  placeholder="nome@azienda.com"
+                  placeholder={t('auth.email')}
                   required
                 />
               </div>
@@ -116,7 +119,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-blue-200 text-sm mt-6">
-          PTS v2.0 - © 2026
+          PTS v3.0 - © 2026
         </p>
       </div>
     </div>

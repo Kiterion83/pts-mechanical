@@ -4,21 +4,24 @@
     "tagline": "Mechanical Construction Site Management"
   },
   "nav": {
+    "mainMenu": "Main Menu",
+    "settings": "Settings",
     "dashboard": "Dashboard",
     "projects": "Projects",
+    "companies": "Companies",
     "personnel": "Personnel",
     "squads": "Squads",
     "mto": "MTO",
     "workPackages": "Work Packages",
     "dailyReports": "Daily Reports",
     "materialRequests": "Material Requests",
-    "equipment": "Equipment",
-    "settings": "Settings"
+    "equipment": "Equipment"
   },
   "auth": {
     "login": "Login",
     "logout": "Logout",
     "email": "Email",
+    "username": "Username",
     "password": "Password",
     "forgotPassword": "Forgot password?",
     "loginButton": "Sign In",
@@ -28,10 +31,13 @@
   },
   "common": {
     "save": "Save",
+    "saving": "Saving...",
     "cancel": "Cancel",
     "delete": "Delete",
+    "deleting": "Deleting...",
     "edit": "Edit",
     "add": "Add",
+    "new": "New",
     "search": "Search",
     "filter": "Filter",
     "export": "Export",
@@ -55,7 +61,12 @@
     "type": "Type",
     "priority": "Priority",
     "progress": "Progress",
-    "total": "Total"
+    "total": "Total",
+    "from": "From",
+    "to": "To",
+    "active": "Active",
+    "inactive": "Inactive",
+    "required": "Required"
   },
   "status": {
     "active": "Active",
@@ -67,58 +78,125 @@
     "created": "Created",
     "inPreparation": "In Preparation",
     "readyForPickup": "Ready for Pickup",
-    "pickedUp": "Picked Up"
+    "pickedUp": "Picked Up",
+    "suspended": "Suspended",
+    "closed": "Closed",
+    "transferred": "Transferred",
+    "terminated": "Terminated"
   },
-  "spoolStatus": {
-    "not_started": "Not Started",
-    "fitup_in_progress": "Fit-Up in Progress",
-    "fitup_completed": "Fit-Up Completed",
-    "welding_in_progress": "Welding in Progress",
-    "welding_completed": "Welding Completed",
-    "pwht_completed": "PWHT Completed",
-    "ready_for_delivery": "Ready for Delivery",
-    "delivered_to_site": "Delivered to Site"
-  },
-  "project": {
-    "title": "Projects",
-    "newProject": "New Project",
-    "selectProject": "Select Project",
-    "client": "Client",
-    "startDate": "Start Date",
-    "endDate": "End Date",
-    "dailyHours": "Daily Hours",
-    "holidays": "Holidays"
-  },
-  "personnel": {
-    "title": "Personnel",
-    "badge": "Badge",
-    "firstName": "First Name",
-    "lastName": "Last Name",
-    "position": "Position",
-    "squad": "Squad",
-    "subcontractor": "Subcontractor"
-  },
-  "positions": {
+  "roles": {
+    "admin": "Admin",
+    "pm": "Project Manager",
+    "site_manager": "Site Manager",
     "cm": "Construction Manager",
-    "superintendent": "Superintendent",
+    "pem": "Project Engineering Manager",
+    "engineer": "Engineer",
+    "planner": "Planner",
     "supervisor": "Supervisor",
-    "sub_supervisor": "Sub Supervisor",
     "foreman": "Foreman",
     "sub_foreman": "Sub Foreman",
     "operator": "Operator",
     "helper": "Helper",
     "storekeeper": "Storekeeper"
   },
+  "project": {
+    "title": "Projects",
+    "newProject": "New Project",
+    "editProject": "Edit Project",
+    "deleteProject": "Delete Project",
+    "selectProject": "Select Project",
+    "activeProject": "Active Project",
+    "setActive": "Set Active",
+    "projectCode": "Project Code",
+    "projectName": "Project Name",
+    "client": "Client",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "dailyHours": "Daily Hours",
+    "defaultLanguage": "Default Language",
+    "holidays": "Holidays",
+    "addHoliday": "Add Holiday",
+    "holidayDate": "Holiday Date",
+    "holidayDescription": "Description",
+    "noHolidays": "No holidays configured",
+    "projectInfo": "Project Information",
+    "projectStats": "Statistics",
+    "daysRemaining": "days remaining",
+    "timeline": "Project Timeline",
+    "deleteConfirm": "Are you sure you want to delete this project?",
+    "deleteWarning": "This action will also delete all holidays, user roles and other associated data. This action cannot be undone.",
+    "available": "projects available",
+    "clickToSelect": "Click on a project to view details",
+    "codeNotEditable": "Code cannot be modified"
+  },
+  "company": {
+    "title": "Companies",
+    "newCompany": "New Company",
+    "editCompany": "Edit Company",
+    "mainCompany": "Main Company",
+    "subcontractor": "Subcontractor",
+    "companyName": "Company Name",
+    "vatNumber": "VAT Number",
+    "contactPerson": "Contact Person",
+    "phone": "Phone",
+    "email": "Email",
+    "isMain": "Main Company",
+    "isMainHelp": "Select if this is the main company of the project",
+    "noCompanies": "No companies registered",
+    "oneMainRequired": "There must be at least one main company per project"
+  },
+  "personnel": {
+    "title": "Personnel",
+    "newPerson": "New Personnel",
+    "editPerson": "Edit Personnel",
+    "badge": "Badge",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "fullName": "Full Name",
+    "position": "Position",
+    "role": "Role",
+    "squad": "Squad",
+    "company": "Company",
+    "email": "Email",
+    "phone": "Phone",
+    "username": "Username",
+    "canLogin": "Can access system",
+    "startDate": "Start Date",
+    "endDate": "End Date",
+    "assignToProject": "Assign to Project",
+    "transferToProject": "Transfer to Project",
+    "changeRole": "Change Role",
+    "history": "Assignment History",
+    "noPersonnel": "No personnel registered"
+  },
   "squad": {
     "title": "Squads",
     "newSquad": "New Squad",
+    "editSquad": "Edit Squad",
+    "squadName": "Squad Name",
+    "squadType": "Squad Type",
     "foreman": "Foreman",
     "members": "Members",
-    "addMember": "Add Member"
+    "memberCount": "Member Count",
+    "addMember": "Add Member",
+    "removeMember": "Remove Member",
+    "changeForeman": "Change Foreman",
+    "foremanHistory": "Foreman History",
+    "noSquads": "No squads registered",
+    "types": {
+      "piping": "Piping",
+      "welding": "Welding",
+      "supports": "Supports",
+      "mechanical": "Mechanical",
+      "electrical": "Electrical",
+      "instrumentation": "Instrumentation"
+    }
   },
   "workPackage": {
     "title": "Work Packages",
     "newWP": "New WP",
+    "editWP": "Edit WP",
+    "wpCode": "WP Code",
     "piping": "Piping WP",
     "action": "Action WP",
     "welding": "Welding",
@@ -126,10 +204,12 @@
     "flangeJoints": "Flange Joints",
     "activities": "Activities",
     "assignSquad": "Assign Squad",
-    "dissimilarWeld": "Dissimilar Weld"
+    "dissimilarWeld": "Dissimilar Weld",
+    "noWP": "No Work Packages"
   },
   "dailyReport": {
     "title": "Daily Report",
+    "newReport": "New Report",
     "week": "Week",
     "hours": "Hours",
     "regularHours": "Regular Hours",
@@ -147,6 +227,15 @@
     "supportsOnly": "Supports Only",
     "requestMaterial": "Request Material"
   },
+  "equipment": {
+    "title": "Equipment",
+    "newEquipment": "New Equipment",
+    "editEquipment": "Edit Equipment",
+    "equipmentType": "Equipment Type",
+    "licensePlate": "License Plate",
+    "model": "Model",
+    "noEquipment": "No equipment registered"
+  },
   "dashboard": {
     "title": "Dashboard",
     "kpi": "KPI",
@@ -156,7 +245,12 @@
     "hoursWorked": "Hours Worked",
     "last7Days": "Last 7 Days",
     "lastMonth": "Last Month",
-    "squadComparison": "Squad Comparison"
+    "squadComparison": "Squad Comparison",
+    "quickActions": "Quick Actions",
+    "wpStatus": "Work Package Status",
+    "projectDetails": "Project Details",
+    "activePersonnel": "Active Personnel",
+    "pendingRequests": "pending"
   },
   "notifications": {
     "title": "Notifications",
@@ -171,6 +265,15 @@
     "notFound": "Page not found",
     "unauthorized": "Unauthorized access",
     "networkError": "Connection error",
-    "validation": "Please check your input"
+    "validation": "Please check your input",
+    "required": "This field is required",
+    "invalidDate": "Invalid date",
+    "endDateBeforeStart": "End date must be after start date"
+  },
+  "validation": {
+    "required": "Required field",
+    "invalidEmail": "Invalid email",
+    "minLength": "Minimum {min} characters",
+    "maxLength": "Maximum {max} characters"
   }
 }

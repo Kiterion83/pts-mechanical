@@ -1,74 +1,191 @@
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
+import { useProject } from '../contexts/ProjectContext'
+import { usePermissions } from '../hooks/usePermissions'
+import { supabase } from '../lib/supabase'
 import { 
-  TrendingUp, 
   Users, 
   Wrench, 
   Package,
   Clock,
   CheckCircle2,
-  AlertCircle,
-  Activity
+  Activity,
+  FolderKanban
 } from 'lucide-react'
 
 export default function Dashboard() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
+  const { activeProject, loading: projectLoading } = useProject()
+  const permissions = usePermissions()
+  
+  const [stats, setStats] = useState({
+    totalPersonnel: 0,
+    totalSquads: 0,
+    totalWP: 0,
+    wpInProgress: 0,
+    wpCompleted: 0,
+    pendingMR: 0,
+    totalAreas: 0
+  })
+  const [loading, setLoading] = useState(true)
 
-  // Mock data - will be replaced with real data from Supabase
-  const stats = [
-    { 
-      label: t('dashboard.hoursWorked'), 
-      value: '1,248', 
-      change: '+12%', 
-      icon: Clock,
-      color: 'bg-blue-500'
-    },
-    { 
-      label: 'Work Packages', 
-      value: '24', 
-      change: '8 in corso', 
-      icon: Wrench,
-      color: 'bg-green-500'
-    },
-    { 
-      label: t('nav.squads'), 
-      value: '6', 
-      change: '32 operatori', 
-      icon: Users,
-      color: 'bg-purple-500'
-    },
-    { 
-      label: t('nav.materialRequests'), 
-      value: '12', 
-      change: '3 pronte', 
-      icon: Package,
-      color: 'bg-orange-500'
-    },
-  ]
+  useEffect(() => {
+    if (activeProject) {
+      loadDashboardData()
+    } else {
+      setLoading(false)
+    }
+  }, [activeProject])
 
-  const recentActivities = [
-    { type: 'wp_completed', message: 'WP-P-0012 completato', squad: 'Piping A', time: '10 min fa' },
-    { type: 'material_ready', message: 'MR-0045 pronta per ritiro', squad: 'Piping B', time: '25 min fa' },
-    { type: 'wp_started', message: 'WP-P-0015 iniziato', squad: 'Piping C', time: '1 ora fa' },
-    { type: 'daily_submitted', message: 'Rapportino inviato', squad: 'Support A', time: '2 ore fa' },
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true)
+
+      const { count: personnelCount } = await supabase
+        .from('personnel')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+
+      const { count: squadsCount } = await supabase
+        .from('squads')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+
+      const { count: areasCount } = await supabase
+        .from('areas')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', activeProject.id)
+
+      const { data: wpData } = await supabase
+        .from('work_packages')
+        .select('status')
+        .eq('project_id', activeProject.id)
+
+      const wpInProgress = wpData?.filter(wp => wp.status === 'in_progress').length || 0
+      const wpCompleted = wpData?.filter(wp => wp.status === 'completed').length || 0
+
+      const { count: mrCount } = await supabase
+        .from('material_requests')
+        .select('*', { count: 'exact', head: true })
+        .eq('project_id', activeProject.id)
+        .in('status', ['created', 'in_preparation', 'ready_for_pickup'])
+
+      setStats({
+        totalPersonnel: personnelCount || 0,
+        totalSquads: squadsCount || 0,
+        totalWP: wpData?.length || 0,
+        wpInProgress,
+        wpCompleted,
+        pendingMR: mrCount || 0,
+        totalAreas: areasCount || 0
+      })
+
+    } catch (err) {
+      console.error('Error loading dashboard data:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!projectLoading && !activeProject) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh]">
+        <FolderKanban size={64} className="text-gray-300 mb-4" />
+        <h2 className="text-xl font-semibold text-gray-700 mb-2">
+          {t('project.selectProject')}
+        </h2>
+        <p className="text-gray-500 mb-6 text-center">
+          {t('project.selectProject')}
+        </p>
+        {permissions.canAccessSettings && (
+          <button onClick={() => navigate('/settings/projects')} className="btn-primary">
+            {t('project.title')}
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  if (projectLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 spinner border-4"></div>
+      </div>
+    )
+  }
+
+  // Calculate timeline
+  const startDate = new Date(activeProject.start_date)
+  const endDate = new Date(activeProject.end_date)
+  const today = new Date()
+  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24))
+  const elapsedDays = Math.ceil((today - startDate) / (1000 * 60 * 60 * 24))
+  const progressPercent = Math.min(Math.max(Math.round((elapsedDays / totalDays) * 100), 0), 100)
+  const daysRemaining = Math.max(Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)), 0)
+
+  const statCards = [
+    { label: t('dashboard.activePersonnel'), value: stats.totalPersonnel, icon: Users, color: 'bg-blue-500', link: '/settings/personnel' },
+    { label: t('nav.squads'), value: stats.totalSquads, icon: Users, color: 'bg-purple-500', link: '/settings/squads' },
+    { label: t('nav.workPackages'), value: stats.totalWP, subtitle: `${stats.wpInProgress} ${t('status.inProgress').toLowerCase()}`, icon: Wrench, color: 'bg-green-500', link: '/work-packages' },
+    { label: t('nav.materialRequests'), value: stats.pendingMR, subtitle: t('dashboard.pendingRequests'), icon: Package, color: 'bg-orange-500', link: '/material-requests' },
   ]
 
   return (
     <div className="space-y-6">
-      {/* Page Title */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-800">{t('dashboard.title')}</h1>
-        <p className="text-gray-500">Progetto Demo - Gennaio 2026</p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-800">{t('dashboard.title')}</h1>
+          <p className="text-gray-500">{activeProject.name} • {activeProject.code}</p>
+        </div>
+        {permissions.canAccessSettings && (
+          <button 
+            onClick={() => navigate(`/settings/projects/${activeProject.id}`)}
+            className="btn-secondary text-sm"
+          >
+            <FolderKanban size={16} className="mr-2" />
+            {t('dashboard.projectDetails')}
+          </button>
+        )}
       </div>
 
-      {/* Stats Grid */}
+      {/* Timeline */}
+      <div className="card bg-gradient-to-r from-primary to-primary-light text-white">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <p className="text-blue-200 text-sm">{t('project.timeline')}</p>
+            <p className="text-lg font-semibold">{activeProject.client}</p>
+          </div>
+          <div className="flex-1 max-w-md">
+            <div className="flex justify-between text-sm text-blue-200 mb-1">
+              <span>{new Date(activeProject.start_date).toLocaleDateString()}</span>
+              <span>{progressPercent}%</span>
+              <span>{new Date(activeProject.end_date).toLocaleDateString()}</span>
+            </div>
+            <div className="h-3 bg-white/20 rounded-full overflow-hidden">
+              <div className="h-full bg-white rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }} />
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-3xl font-bold">{daysRemaining}</p>
+            <p className="text-blue-200 text-sm">{t('project.daysRemaining')}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, index) => (
-          <div key={index} className="card">
+        {statCards.map((stat, i) => (
+          <div key={i} onClick={() => navigate(stat.link)} className="card cursor-pointer hover:shadow-xl transition-all hover:-translate-y-1">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-sm text-gray-500">{stat.label}</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stat.value}</p>
-                <p className="text-xs text-gray-400 mt-1">{stat.change}</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">{loading ? '...' : stat.value}</p>
+                {stat.subtitle && <p className="text-xs text-gray-400 mt-1">{stat.subtitle}</p>}
               </div>
               <div className={`${stat.color} p-3 rounded-lg text-white`}>
                 <stat.icon size={24} />
@@ -78,107 +195,15 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Two Column Layout */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Progress Overview */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <TrendingUp size={20} className="text-primary" />
-            {t('common.progress')} Generale
-          </h2>
-          
-          <div className="space-y-4">
-            <ProgressBar label="Saldature" value={68} color="bg-blue-500" />
-            <ProgressBar label="Supporti" value={45} color="bg-green-500" />
-            <ProgressBar label="Giunti Flangiati" value={52} color="bg-purple-500" />
-          </div>
-          
-          <div className="mt-6 pt-4 border-t border-gray-100">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Progress Totale</span>
-              <span className="text-2xl font-bold text-primary">55%</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Recent Activities */}
-        <div className="card">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-            <Activity size={20} className="text-primary" />
-            Attività Recenti
-          </h2>
-          
-          <div className="space-y-3">
-            {recentActivities.map((activity, index) => (
-              <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                <div className={`p-2 rounded-full ${
-                  activity.type === 'wp_completed' ? 'bg-success-light text-success' :
-                  activity.type === 'material_ready' ? 'bg-warning-light text-yellow-700' :
-                  'bg-info-light text-info'
-                }`}>
-                  {activity.type === 'wp_completed' ? <CheckCircle2 size={16} /> :
-                   activity.type === 'material_ready' ? <Package size={16} /> :
-                   <AlertCircle size={16} />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{activity.message}</p>
-                  <p className="text-xs text-gray-500">{activity.squad} • {activity.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Status Summary */}
+      {/* WP Status */}
       <div className="card">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">
-          Stato Work Packages
-        </h2>
+        <h2 className="text-lg font-semibold text-gray-800 mb-4">{t('dashboard.wpStatus')}</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatusCard 
-            label="Completati" 
-            value={8} 
-            icon={CheckCircle2} 
-            className="bg-success-light text-success" 
-          />
-          <StatusCard 
-            label="In Corso" 
-            value={12} 
-            icon={Activity} 
-            className="bg-info-light text-info" 
-          />
-          <StatusCard 
-            label="Pianificati" 
-            value={6} 
-            icon={Clock} 
-            className="bg-warning-light text-yellow-700" 
-          />
-          <StatusCard 
-            label="Non Assegnati" 
-            value={3} 
-            icon={AlertCircle} 
-            className="bg-danger-light text-danger" 
-          />
+          <StatusCard label={t('status.completed')} value={loading ? '...' : stats.wpCompleted} icon={CheckCircle2} className="bg-success-light text-success" />
+          <StatusCard label={t('status.inProgress')} value={loading ? '...' : stats.wpInProgress} icon={Activity} className="bg-info-light text-info" />
+          <StatusCard label={t('status.planned')} value={loading ? '...' : Math.max(0, stats.totalWP - stats.wpInProgress - stats.wpCompleted)} icon={Clock} className="bg-warning-light text-yellow-700" />
+          <StatusCard label={t('common.total')} value={loading ? '...' : stats.totalWP} icon={Wrench} className="bg-gray-100 text-gray-700" />
         </div>
-      </div>
-    </div>
-  )
-}
-
-// Helper Components
-function ProgressBar({ label, value, color }) {
-  return (
-    <div>
-      <div className="flex justify-between text-sm mb-1">
-        <span className="text-gray-600">{label}</span>
-        <span className="font-medium text-gray-800">{value}%</span>
-      </div>
-      <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
-        <div 
-          className={`h-full ${color} rounded-full transition-all duration-500`}
-          style={{ width: `${value}%` }}
-        />
       </div>
     </div>
   )

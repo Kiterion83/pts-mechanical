@@ -4,21 +4,24 @@
     "tagline": "Gestione Cantieri Costruzioni Meccaniche"
   },
   "nav": {
+    "mainMenu": "Menu Principale",
+    "settings": "Impostazioni",
     "dashboard": "Dashboard",
     "projects": "Progetti",
+    "companies": "Aziende",
     "personnel": "Personale",
     "squads": "Squadre",
     "mto": "MTO",
     "workPackages": "Work Packages",
     "dailyReports": "Rapportini",
     "materialRequests": "Richieste Materiale",
-    "equipment": "Mezzi",
-    "settings": "Impostazioni"
+    "equipment": "Mezzi"
   },
   "auth": {
     "login": "Accedi",
     "logout": "Esci",
     "email": "Email",
+    "username": "Nome Utente",
     "password": "Password",
     "forgotPassword": "Password dimenticata?",
     "loginButton": "Accedi",
@@ -28,10 +31,13 @@
   },
   "common": {
     "save": "Salva",
+    "saving": "Salvataggio...",
     "cancel": "Annulla",
     "delete": "Elimina",
+    "deleting": "Eliminazione...",
     "edit": "Modifica",
     "add": "Aggiungi",
+    "new": "Nuovo",
     "search": "Cerca",
     "filter": "Filtra",
     "export": "Esporta",
@@ -55,7 +61,12 @@
     "type": "Tipo",
     "priority": "Priorità",
     "progress": "Avanzamento",
-    "total": "Totale"
+    "total": "Totale",
+    "from": "Da",
+    "to": "A",
+    "active": "Attivo",
+    "inactive": "Inattivo",
+    "required": "Obbligatorio"
   },
   "status": {
     "active": "Attivo",
@@ -67,58 +78,125 @@
     "created": "Creata",
     "inPreparation": "In Preparazione",
     "readyForPickup": "Pronta per Ritiro",
-    "pickedUp": "Ritirata"
+    "pickedUp": "Ritirata",
+    "suspended": "Sospeso",
+    "closed": "Chiuso",
+    "transferred": "Trasferito",
+    "terminated": "Terminato"
   },
-  "spoolStatus": {
-    "not_started": "Non Iniziato",
-    "fitup_in_progress": "Fit-Up in Corso",
-    "fitup_completed": "Fit-Up Completato",
-    "welding_in_progress": "Saldatura in Corso",
-    "welding_completed": "Saldatura Completata",
-    "pwht_completed": "PWHT Completato",
-    "ready_for_delivery": "Pronto per Consegna",
-    "delivered_to_site": "Consegnato in Cantiere"
-  },
-  "project": {
-    "title": "Progetti",
-    "newProject": "Nuovo Progetto",
-    "selectProject": "Seleziona Progetto",
-    "client": "Cliente",
-    "startDate": "Data Inizio",
-    "endDate": "Data Fine",
-    "dailyHours": "Ore Giornaliere",
-    "holidays": "Festività"
-  },
-  "personnel": {
-    "title": "Personale",
-    "badge": "Badge",
-    "firstName": "Nome",
-    "lastName": "Cognome",
-    "position": "Posizione",
-    "squad": "Squadra",
-    "subcontractor": "Subappaltatore"
-  },
-  "positions": {
+  "roles": {
+    "admin": "Admin",
+    "pm": "Project Manager",
+    "site_manager": "Site Manager",
     "cm": "Construction Manager",
-    "superintendent": "Superintendent",
+    "pem": "Project Engineering Manager",
+    "engineer": "Engineer",
+    "planner": "Planner",
     "supervisor": "Supervisor",
-    "sub_supervisor": "Sub Supervisor",
     "foreman": "Foreman",
     "sub_foreman": "Sub Foreman",
     "operator": "Operatore",
     "helper": "Aiutante",
     "storekeeper": "Magazziniere"
   },
+  "project": {
+    "title": "Progetti",
+    "newProject": "Nuovo Progetto",
+    "editProject": "Modifica Progetto",
+    "deleteProject": "Elimina Progetto",
+    "selectProject": "Seleziona Progetto",
+    "activeProject": "Progetto Attivo",
+    "setActive": "Imposta Attivo",
+    "projectCode": "Codice Progetto",
+    "projectName": "Nome Progetto",
+    "client": "Cliente",
+    "startDate": "Data Inizio",
+    "endDate": "Data Fine",
+    "dailyHours": "Ore Giornaliere",
+    "defaultLanguage": "Lingua Default",
+    "holidays": "Festività",
+    "addHoliday": "Aggiungi Festività",
+    "holidayDate": "Data Festività",
+    "holidayDescription": "Descrizione",
+    "noHolidays": "Nessuna festività configurata",
+    "projectInfo": "Informazioni Progetto",
+    "projectStats": "Statistiche",
+    "daysRemaining": "giorni rimasti",
+    "timeline": "Timeline Progetto",
+    "deleteConfirm": "Sei sicuro di voler eliminare questo progetto?",
+    "deleteWarning": "Questa azione eliminerà anche tutte le festività, ruoli utente e altri dati associati. L'azione non può essere annullata.",
+    "available": "progetti disponibili",
+    "clickToSelect": "Clicca su un progetto per entrare nei dettagli",
+    "codeNotEditable": "Il codice non può essere modificato"
+  },
+  "company": {
+    "title": "Aziende",
+    "newCompany": "Nuova Azienda",
+    "editCompany": "Modifica Azienda",
+    "mainCompany": "Azienda Principale",
+    "subcontractor": "Subappaltatore",
+    "companyName": "Ragione Sociale",
+    "vatNumber": "Partita IVA",
+    "contactPerson": "Referente",
+    "phone": "Telefono",
+    "email": "Email",
+    "isMain": "Azienda Principale",
+    "isMainHelp": "Seleziona se questa è l'azienda principale del progetto",
+    "noCompanies": "Nessuna azienda registrata",
+    "oneMainRequired": "Deve esserci almeno un'azienda principale per progetto"
+  },
+  "personnel": {
+    "title": "Personale",
+    "newPerson": "Nuovo Personale",
+    "editPerson": "Modifica Personale",
+    "badge": "Badge",
+    "firstName": "Nome",
+    "lastName": "Cognome",
+    "fullName": "Nome Completo",
+    "position": "Posizione",
+    "role": "Ruolo",
+    "squad": "Squadra",
+    "company": "Azienda",
+    "email": "Email",
+    "phone": "Telefono",
+    "username": "Nome Utente",
+    "canLogin": "Può accedere al sistema",
+    "startDate": "Data Inizio",
+    "endDate": "Data Fine",
+    "assignToProject": "Assegna a Progetto",
+    "transferToProject": "Trasferisci a Progetto",
+    "changeRole": "Cambia Ruolo",
+    "history": "Storico Assegnazioni",
+    "noPersonnel": "Nessun personale registrato"
+  },
   "squad": {
     "title": "Squadre",
     "newSquad": "Nuova Squadra",
+    "editSquad": "Modifica Squadra",
+    "squadName": "Nome Squadra",
+    "squadType": "Tipo Squadra",
     "foreman": "Caposquadra",
     "members": "Membri",
-    "addMember": "Aggiungi Membro"
+    "memberCount": "Numero Membri",
+    "addMember": "Aggiungi Membro",
+    "removeMember": "Rimuovi Membro",
+    "changeForeman": "Cambia Caposquadra",
+    "foremanHistory": "Storico Caposquadra",
+    "noSquads": "Nessuna squadra registrata",
+    "types": {
+      "piping": "Piping",
+      "welding": "Saldatura",
+      "supports": "Supporti",
+      "mechanical": "Meccanica",
+      "electrical": "Elettrica",
+      "instrumentation": "Strumentazione"
+    }
   },
   "workPackage": {
     "title": "Work Packages",
     "newWP": "Nuovo WP",
+    "editWP": "Modifica WP",
+    "wpCode": "Codice WP",
     "piping": "WP Piping",
     "action": "WP Action",
     "welding": "Saldature",
@@ -126,10 +204,12 @@
     "flangeJoints": "Giunti Flangiati",
     "activities": "Attività",
     "assignSquad": "Assegna Squadra",
-    "dissimilarWeld": "Saldatura Dissimile"
+    "dissimilarWeld": "Saldatura Dissimile",
+    "noWP": "Nessun Work Package"
   },
   "dailyReport": {
     "title": "Rapportino Giornaliero",
+    "newReport": "Nuovo Rapportino",
     "week": "Settimana",
     "hours": "Ore",
     "regularHours": "Ore Ordinarie",
@@ -147,6 +227,15 @@
     "supportsOnly": "Solo Supporti",
     "requestMaterial": "Richiedi Materiale"
   },
+  "equipment": {
+    "title": "Mezzi",
+    "newEquipment": "Nuovo Mezzo",
+    "editEquipment": "Modifica Mezzo",
+    "equipmentType": "Tipo Mezzo",
+    "licensePlate": "Targa",
+    "model": "Modello",
+    "noEquipment": "Nessun mezzo registrato"
+  },
   "dashboard": {
     "title": "Dashboard",
     "kpi": "KPI",
@@ -156,7 +245,12 @@
     "hoursWorked": "Ore Lavorate",
     "last7Days": "Ultimi 7 Giorni",
     "lastMonth": "Ultimo Mese",
-    "squadComparison": "Confronto Squadre"
+    "squadComparison": "Confronto Squadre",
+    "quickActions": "Azioni Rapide",
+    "wpStatus": "Stato Work Packages",
+    "projectDetails": "Dettagli Progetto",
+    "activePersonnel": "Personale Attivo",
+    "pendingRequests": "in attesa"
   },
   "notifications": {
     "title": "Notifiche",
@@ -171,6 +265,15 @@
     "notFound": "Pagina non trovata",
     "unauthorized": "Accesso non autorizzato",
     "networkError": "Errore di connessione",
-    "validation": "Verifica i dati inseriti"
+    "validation": "Verifica i dati inseriti",
+    "required": "Questo campo è obbligatorio",
+    "invalidDate": "Data non valida",
+    "endDateBeforeStart": "La data fine deve essere successiva alla data inizio"
+  },
+  "validation": {
+    "required": "Campo obbligatorio",
+    "invalidEmail": "Email non valida",
+    "minLength": "Minimo {min} caratteri",
+    "maxLength": "Massimo {max} caratteri"
   }
 }
