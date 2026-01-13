@@ -106,11 +106,8 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
                 placeholder="es. PRJ-001"
                 className="input"
                 required
-                disabled={isEditing}
+                /* RIMOSSO disabled={isEditing} - ORA È MODIFICABILE */
               />
-              {isEditing && (
-                <p className="text-xs text-gray-500 mt-1">{t('project.codeNotEditable')}</p>
-              )}
             </div>
             <div>
               <label className="label">
