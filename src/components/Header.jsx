@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Menu, Bell, User, LogOut, ChevronDown, FolderKanban, Check } from 'lucide-react'
+import { Menu, Bell, User, LogOut, ChevronDown, FolderKanban, Check, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useProject } from '../contexts/ProjectContext'
 
@@ -41,6 +41,9 @@ export default function Header({ session, onMenuClick }) {
     setShowProjectMenu(false)
   }
 
+  // Count active projects (all non-closed projects the user has access to)
+  const activeProjectsCount = projects.filter(p => p.status === 'active').length
+
   return (
     <>
       {/* Backdrop to close menus */}
@@ -63,7 +66,10 @@ export default function Header({ session, onMenuClick }) {
               <Menu size={24} />
             </button>
             
-            <div className="flex items-center gap-2">
+            <div 
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => navigate('/')}
+            >
               <span className="text-2xl">🏗️</span>
               <span className="font-bold text-lg hidden sm:block">PTS</span>
             </div>
@@ -83,41 +89,59 @@ export default function Header({ session, onMenuClick }) {
             </button>
             
             {showProjectMenu && (
-              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-72 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
-                <div className="px-4 py-2 border-b border-gray-100">
+              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-80 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
                   <p className="text-xs font-medium text-gray-500 uppercase">
                     {t('project.selectProject')}
                   </p>
+                  <span className="text-xs bg-primary text-white px-2 py-0.5 rounded-full">
+                    {activeProjectsCount} attivi
+                  </span>
                 </div>
                 
                 <div className="max-h-64 overflow-y-auto">
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      onClick={() => handleProjectSelect(project)}
-                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 ${
-                        activeProject?.id === project.id ? 'bg-blue-50' : ''
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{project.name}</p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {project.code} • {project.client}
-                        </p>
-                      </div>
-                      {activeProject?.id === project.id && (
-                        <Check size={18} className="text-primary flex-shrink-0" />
-                      )}
-                    </button>
-                  ))}
+                  {projects.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-gray-500">
+                      <FolderKanban size={32} className="mx-auto mb-2 text-gray-300" />
+                      <p>Nessun progetto</p>
+                    </div>
+                  ) : (
+                    projects.map((project) => (
+                      <button
+                        key={project.id}
+                        onClick={() => handleProjectSelect(project)}
+                        className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 ${
+                          activeProject?.id === project.id ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium truncate">{project.name}</p>
+                            {project.status !== 'active' && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
+                                {project.status === 'suspended' ? 'Sospeso' : 'Chiuso'}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">
+                            {project.code} • {project.client}
+                          </p>
+                        </div>
+                        {activeProject?.id === project.id && (
+                          <Check size={18} className="text-primary flex-shrink-0" />
+                        )}
+                      </button>
+                    ))
+                  )}
                 </div>
                 
                 <div className="border-t border-gray-100">
                   <button
                     onClick={handleProjectsPageClick}
-                    className="w-full px-4 py-3 text-left hover:bg-gray-50 text-primary font-medium text-sm"
+                    className="w-full px-4 py-3 text-left hover:bg-gray-50 text-primary font-medium text-sm flex items-center gap-2"
                   >
-                    Gestisci Progetti →
+                    <Settings size={16} />
+                    Gestisci Progetti
                   </button>
                 </div>
               </div>
@@ -157,7 +181,7 @@ export default function Header({ session, onMenuClick }) {
             <button className="p-2 hover:bg-primary-light rounded-lg touch-target relative">
               <Bell size={22} />
               <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white text-xs rounded-full flex items-center justify-center">
-                3
+                0
               </span>
             </button>
 
@@ -171,20 +195,26 @@ export default function Header({ session, onMenuClick }) {
               </button>
               
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
-                  <div className="px-4 py-2 border-b border-gray-100">
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
+                  <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-sm font-medium truncate">
                       {session?.user?.email}
                     </p>
                     {activeProject && (
-                      <p className="text-xs text-gray-500 truncate">
-                        {activeProject.userRole}
-                      </p>
+                      <div className="mt-1">
+                        <p className="text-xs text-gray-500">Progetto attivo</p>
+                        <p className="text-xs font-medium text-primary truncate">
+                          {activeProject.name}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          Ruolo: {activeProject.userRole?.toUpperCase()}
+                        </p>
+                      </div>
                     )}
                   </div>
                   <button 
                     onClick={handleLogout}
-                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-danger"
+                    className="w-full px-4 py-3 text-left hover:bg-gray-100 flex items-center gap-2 text-danger"
                   >
                     <LogOut size={18} />
                     {t('auth.logout')}
