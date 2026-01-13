@@ -72,7 +72,6 @@ export function ProjectProvider({ children, userId }) {
 
   const createProject = async (projectData) => {
     try {
-      // Create project
       const { data: newProject, error: createError } = await supabase
         .from('projects')
         .insert([projectData])
@@ -92,7 +91,6 @@ export function ProjectProvider({ children, userId }) {
 
       if (roleError) throw roleError
 
-      // Reload projects
       await loadProjects()
       
       return { data: newProject, error: null }
@@ -113,12 +111,10 @@ export function ProjectProvider({ children, userId }) {
 
       if (updateError) throw updateError
 
-      // Reload projects
       await loadProjects()
       
-      // Update active project if it was the one updated
       if (activeProject?.id === projectId) {
-        setActiveProject({ ...activeProject, ...data })
+        setActiveProject(prev => ({ ...prev, ...data }))
       }
 
       return { data, error: null }
@@ -130,7 +126,6 @@ export function ProjectProvider({ children, userId }) {
 
   const deleteProject = async (projectId) => {
     try {
-      // First delete related data (cascade should handle most, but let's be explicit)
       await supabase.from('project_holidays').delete().eq('project_id', projectId)
       await supabase.from('user_project_roles').delete().eq('project_id', projectId)
       
@@ -141,7 +136,6 @@ export function ProjectProvider({ children, userId }) {
 
       if (deleteError) throw deleteError
 
-      // If deleted project was active, select another
       if (activeProject?.id === projectId) {
         const remainingProjects = projects.filter(p => p.id !== projectId)
         if (remainingProjects.length > 0) {
@@ -152,7 +146,6 @@ export function ProjectProvider({ children, userId }) {
         }
       }
 
-      // Reload projects
       await loadProjects()
 
       return { error: null }
