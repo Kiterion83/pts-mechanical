@@ -34,7 +34,8 @@ export default function ProjectDetail() {
   const [deleting, setDeleting] = useState(false)
   
   // New holiday form
-  const [newHoliday, setNewHoliday] = useState({ date: '', description: '' })
+  const [holidayDate, setHolidayDate] = useState('')
+  const [holidayDescription, setHolidayDescription] = useState('')
   const [addingHoliday, setAddingHoliday] = useState(false)
 
   useEffect(() => {
@@ -98,31 +99,33 @@ export default function ProjectDetail() {
     }
   }
 
-  const handleAddHoliday = async (e) => {
-    e.preventDefault()
-    if (!newHoliday.date) return
+  const handleAddHoliday = async () => {
+    if (!holidayDate) return
 
     setAddingHoliday(true)
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('project_holidays')
         .insert([{
           project_id: id,
-          holiday_date: newHoliday.date,
-          description: newHoliday.description || null
+          holiday_date: holidayDate,
+          description: holidayDescription || null
         }])
+        .select()
 
       if (error) throw error
 
       // Reload holidays
-      const { data } = await supabase
+      const { data: holidaysData } = await supabase
         .from('project_holidays')
         .select('*')
         .eq('project_id', id)
         .order('holiday_date')
-      setHolidays(data || [])
+      setHolidays(holidaysData || [])
       
-      setNewHoliday({ date: '', description: '' })
+      // Reset form
+      setHolidayDate('')
+      setHolidayDescription('')
     } catch (err) {
       console.error('Error adding holiday:', err)
       alert('Errore: ' + err.message)
@@ -132,7 +135,7 @@ export default function ProjectDetail() {
   }
 
   const handleDeleteHoliday = async (holidayId) => {
-    if (!confirm('Eliminare questa festività?')) return
+    if (!confirm(t('common.confirm') + '?')) return
 
     try {
       const { error } = await supabase
@@ -155,7 +158,7 @@ export default function ProjectDetail() {
       alert('Errore durante l\'eliminazione: ' + error)
       setDeleting(false)
     } else {
-      navigate('/projects')
+      navigate('/settings/projects')
     }
   }
 
@@ -194,9 +197,9 @@ export default function ProjectDetail() {
     return (
       <div className="text-center py-12">
         <FolderKanban size={48} className="mx-auto text-gray-300 mb-4" />
-        <p className="text-gray-500">Progetto non trovato</p>
-        <button onClick={() => navigate('/projects')} className="btn-primary mt-4">
-          Torna ai Progetti
+        <p className="text-gray-500">{t('errors.notFound')}</p>
+        <button onClick={() => navigate('/settings/projects')} className="btn-primary mt-4">
+          {t('common.back')}
         </button>
       </div>
     )
@@ -207,10 +210,10 @@ export default function ProjectDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => navigate('/projects')}
+            onClick={() => navigate('/settings/projects')}
             className="p-2 hover:bg-gray-100 rounded-lg transition"
           >
             <ArrowLeft size={24} />
@@ -221,7 +224,7 @@ export default function ProjectDetail() {
               {isActive && (
                 <span className="badge-success flex items-center gap-1">
                   <CheckCircle2 size={12} />
-                  Attivo
+                  {t('status.active')}
                 </span>
               )}
             </div>
@@ -236,7 +239,7 @@ export default function ProjectDetail() {
               className="btn-primary"
             >
               <CheckCircle2 size={18} className="mr-2" />
-              Imposta Attivo
+              {t('project.setActive')}
             </button>
           )}
           <button 
@@ -244,7 +247,7 @@ export default function ProjectDetail() {
             className="btn-secondary"
           >
             <Edit size={18} className="mr-2" />
-            Modifica
+            {t('common.edit')}
           </button>
           <button 
             onClick={() => setShowDeleteConfirm(true)}
@@ -262,79 +265,84 @@ export default function ProjectDetail() {
           {/* Details Card */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">
-              Informazioni Progetto
+              {t('project.projectInfo')}
             </h2>
             
             <div className="grid md:grid-cols-2 gap-4">
               <InfoItem 
                 icon={Building2} 
-                label="Cliente" 
+                label={t('project.client')} 
                 value={project.client} 
               />
               <InfoItem 
                 icon={Calendar} 
-                label="Data Inizio" 
+                label={t('project.startDate')} 
                 value={formatDateShort(project.start_date)} 
               />
               <InfoItem 
                 icon={Calendar} 
-                label="Data Fine" 
+                label={t('project.endDate')} 
                 value={formatDateShort(project.end_date)} 
               />
               <InfoItem 
                 icon={Clock} 
-                label="Ore Giornaliere" 
-                value={`${project.daily_hours} ore`} 
+                label={t('project.dailyHours')} 
+                value={`${project.daily_hours} ${t('dailyReport.hours').toLowerCase()}`} 
               />
               <InfoItem 
                 icon={FolderKanban} 
-                label="Stato" 
-                value={project.status === 'active' ? 'Attivo' : project.status === 'suspended' ? 'Sospeso' : 'Chiuso'} 
+                label={t('common.status')} 
+                value={t(`status.${project.status}`)} 
               />
               <InfoItem 
                 icon={FolderKanban} 
-                label="Lingua Default" 
+                label={t('project.defaultLanguage')} 
                 value={project.default_language === 'IT' ? '🇮🇹 Italiano' : '🇬🇧 English'} 
               />
             </div>
           </div>
 
-          {/* Holidays Card */}
+          {/* Holidays Card - FIXED */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
               <Calendar className="text-primary" />
-              Festività Progetto ({holidays.length})
+              {t('project.holidays')} ({holidays.length})
             </h2>
             
-            {/* Add Holiday Form */}
-            <form onSubmit={handleAddHoliday} className="flex gap-3 mb-4">
-              <input
-                type="date"
-                value={newHoliday.date}
-                onChange={(e) => setNewHoliday({ ...newHoliday, date: e.target.value })}
-                className="input flex-shrink-0"
-                required
-              />
-              <input
-                type="text"
-                value={newHoliday.description}
-                onChange={(e) => setNewHoliday({ ...newHoliday, description: e.target.value })}
-                placeholder="Descrizione (opzionale)"
-                className="input flex-1"
-              />
+            {/* Add Holiday Form - FIXED LAYOUT */}
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1">
+                <input
+                  type="date"
+                  value={holidayDate}
+                  onChange={(e) => setHolidayDate(e.target.value)}
+                  className="input w-full"
+                  placeholder={t('project.holidayDate')}
+                />
+              </div>
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={holidayDescription}
+                  onChange={(e) => setHolidayDescription(e.target.value)}
+                  placeholder={t('project.holidayDescription') + ' (' + t('common.notes').toLowerCase() + ')'}
+                  className="input w-full"
+                />
+              </div>
               <button 
-                type="submit" 
-                disabled={addingHoliday || !newHoliday.date}
-                className="btn-primary flex-shrink-0"
+                type="button"
+                onClick={handleAddHoliday}
+                disabled={addingHoliday || !holidayDate}
+                className="btn-primary flex-shrink-0 min-w-[48px]"
               >
-                <Plus size={18} />
+                {addingHoliday ? '...' : <Plus size={20} />}
               </button>
-            </form>
+            </div>
 
             {/* Holidays List */}
             {holidays.length === 0 ? (
               <p className="text-gray-500 text-center py-4">
-                Nessuna festività configurata
+                {t('project.noHolidays')}
               </p>
             ) : (
               <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -365,18 +373,18 @@ export default function ProjectDetail() {
         {/* Stats Sidebar */}
         <div className="space-y-4">
           <div className="card">
-            <h3 className="font-semibold text-gray-800 mb-4">Statistiche</h3>
+            <h3 className="font-semibold text-gray-800 mb-4">{t('project.projectStats')}</h3>
             <div className="space-y-3">
-              <StatItem icon={Users} label="Personale" value={stats.personnel} />
-              <StatItem icon={Users} label="Squadre" value={stats.squads} />
+              <StatItem icon={Users} label={t('nav.personnel')} value={stats.personnel} />
+              <StatItem icon={Users} label={t('nav.squads')} value={stats.squads} />
               <StatItem icon={FolderKanban} label="Aree" value={stats.areas} />
             </div>
           </div>
 
           <div className="card bg-blue-50 border-blue-200">
-            <h3 className="font-semibold text-blue-800 mb-2">Ruolo</h3>
-            <p className="text-blue-600 text-lg font-bold uppercase">
-              {project.userRole || 'Admin'}
+            <h3 className="font-semibold text-blue-800 mb-2">{t('personnel.role')}</h3>
+            <p className="text-blue-600 text-lg font-bold">
+              {t(`roles.${project.userRole}`) || project.userRole}
             </p>
           </div>
 
@@ -384,10 +392,10 @@ export default function ProjectDetail() {
             <div className="card bg-green-50 border-green-200">
               <div className="flex items-center gap-2 text-green-800">
                 <CheckCircle2 size={20} />
-                <span className="font-semibold">Progetto Attivo</span>
+                <span className="font-semibold">{t('project.activeProject')}</span>
               </div>
               <p className="text-green-600 text-sm mt-1">
-                Questo è il progetto su cui stai lavorando
+                {t('project.activeProject')}
               </p>
             </div>
           )}
@@ -409,15 +417,14 @@ export default function ProjectDetail() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <div className="flex items-center gap-3 text-danger mb-4">
               <AlertTriangle size={32} />
-              <h2 className="text-xl font-bold">Elimina Progetto</h2>
+              <h2 className="text-xl font-bold">{t('project.deleteProject')}</h2>
             </div>
             
             <p className="text-gray-600 mb-2">
-              Sei sicuro di voler eliminare <strong>{project.name}</strong>?
+              {t('project.deleteConfirm')} <strong>{project.name}</strong>?
             </p>
             <p className="text-sm text-gray-500 mb-6">
-              Questa azione eliminerà anche tutte le festività, ruoli utente e altri dati associati.
-              L'azione non può essere annullata.
+              {t('project.deleteWarning')}
             </p>
             
             <div className="flex gap-3 justify-end">
@@ -426,14 +433,14 @@ export default function ProjectDetail() {
                 className="btn-secondary"
                 disabled={deleting}
               >
-                Annulla
+                {t('common.cancel')}
               </button>
               <button 
                 onClick={handleDelete}
                 className="btn-danger"
                 disabled={deleting}
               >
-                {deleting ? 'Eliminazione...' : 'Elimina'}
+                {deleting ? t('common.deleting') : t('common.delete')}
               </button>
             </div>
           </div>
@@ -447,10 +454,10 @@ export default function ProjectDetail() {
 function InfoItem({ icon: Icon, label, value }) {
   return (
     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-      <Icon size={20} className="text-gray-400" />
-      <div>
+      <Icon size={20} className="text-gray-400 flex-shrink-0" />
+      <div className="min-w-0">
         <p className="text-xs text-gray-500">{label}</p>
-        <p className="font-medium text-gray-800">{value}</p>
+        <p className="font-medium text-gray-800 truncate">{value}</p>
       </div>
     </div>
   )

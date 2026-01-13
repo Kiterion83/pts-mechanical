@@ -11,8 +11,7 @@ import {
   Building2,
   ChevronRight,
   Search,
-  Plus,
-  Settings
+  Plus
 } from 'lucide-react'
 
 export default function Projects() {
@@ -41,9 +40,9 @@ export default function Projects() {
       case 'active':
         return <span className="badge-success">{t('status.active')}</span>
       case 'suspended':
-        return <span className="badge-warning">Sospeso</span>
+        return <span className="badge-warning">{t('status.suspended')}</span>
       case 'closed':
-        return <span className="badge-info">Chiuso</span>
+        return <span className="badge-info">{t('status.closed')}</span>
       default:
         return null
     }
@@ -52,37 +51,30 @@ export default function Projects() {
   const getRoleBadge = (role) => {
     const roleColors = {
       admin: 'bg-purple-100 text-purple-800',
+      pm: 'bg-blue-100 text-blue-800',
+      site_manager: 'bg-indigo-100 text-indigo-800',
       cm: 'bg-blue-100 text-blue-800',
-      superintendent: 'bg-indigo-100 text-indigo-800',
+      pem: 'bg-teal-100 text-teal-800',
+      engineer: 'bg-cyan-100 text-cyan-800',
+      planner: 'bg-orange-100 text-orange-800',
       supervisor: 'bg-green-100 text-green-800',
       foreman: 'bg-yellow-100 text-yellow-800',
       storekeeper: 'bg-gray-100 text-gray-800',
     }
-    
-    const roleLabels = {
-      admin: 'Admin',
-      cm: 'CM',
-      superintendent: 'Superintendent',
-      supervisor: 'Supervisor',
-      foreman: 'Foreman',
-      storekeeper: 'Magazziniere',
-    }
 
     return (
       <span className={`badge ${roleColors[role] || 'bg-gray-100 text-gray-800'}`}>
-        {roleLabels[role] || role}
+        {t(`roles.${role}`) || role}
       </span>
     )
   }
 
-  const handleProjectClick = (project, e) => {
-    // If clicking on the settings button, go to detail
-    if (e.target.closest('.settings-btn')) {
-      navigate(`/projects/${project.id}`)
-      return
-    }
-    // Otherwise, select as active
+  // Click su card -> vai al dettaglio
+  const handleProjectClick = (project) => {
+    // Prima seleziona come attivo
     selectProject(project)
+    // Poi naviga al dettaglio
+    navigate(`/settings/projects/${project.id}`)
   }
 
   const handleProjectCreated = () => {
@@ -107,7 +99,7 @@ export default function Projects() {
             {t('project.title')}
           </h1>
           <p className="text-gray-500 mt-1">
-            {projects.length} progetti disponibili
+            {projects.length} {t('project.available')}
           </p>
         </div>
         
@@ -137,23 +129,17 @@ export default function Projects() {
 
       {/* Active Project Banner */}
       {activeProject && (
-        <div className="bg-primary text-white rounded-xl p-4 shadow-lg">
+        <div 
+          className="bg-primary text-white rounded-xl p-4 shadow-lg cursor-pointer hover:bg-primary-light transition"
+          onClick={() => navigate(`/settings/projects/${activeProject.id}`)}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-blue-200 text-sm">Progetto Attivo</p>
+              <p className="text-blue-200 text-sm">{t('project.activeProject')}</p>
               <p className="text-xl font-bold">{activeProject.name}</p>
               <p className="text-blue-200">{activeProject.code} • {activeProject.client}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <button 
-                onClick={() => navigate(`/projects/${activeProject.id}`)}
-                className="p-2 bg-white/20 rounded-lg hover:bg-white/30 transition"
-                title="Modifica progetto"
-              >
-                <Settings size={24} />
-              </button>
-              <CheckCircle2 size={40} className="text-blue-200" />
-            </div>
+            <CheckCircle2 size={40} className="text-blue-200" />
           </div>
         </div>
       )}
@@ -163,14 +149,14 @@ export default function Projects() {
         <div className="card text-center py-12">
           <FolderKanban size={48} className="mx-auto text-gray-300 mb-4" />
           <p className="text-gray-500 mb-4">
-            {searchTerm ? 'Nessun progetto trovato' : 'Nessun progetto disponibile'}
+            {searchTerm ? t('common.noData') : t('common.noData')}
           </p>
           <button 
             onClick={() => setShowNewProjectModal(true)}
             className="btn-primary"
           >
             <Plus size={20} className="mr-2" />
-            Crea il tuo primo progetto
+            {t('project.newProject')}
           </button>
         </div>
       ) : (
@@ -178,7 +164,7 @@ export default function Projects() {
           {filteredProjects.map((project) => (
             <div
               key={project.id}
-              onClick={(e) => handleProjectClick(project, e)}
+              onClick={() => handleProjectClick(project)}
               className={`card cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1 ${
                 activeProject?.id === project.id 
                   ? 'ring-2 ring-primary border-primary' 
@@ -194,34 +180,26 @@ export default function Projects() {
                   </div>
                   <h3 className="font-semibold text-gray-800 truncate">{project.name}</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button 
-                    className="settings-btn p-2 hover:bg-gray-100 rounded-lg transition"
-                    title="Impostazioni progetto"
-                  >
-                    <Settings size={18} className="text-gray-400" />
-                  </button>
-                  {activeProject?.id === project.id && (
-                    <CheckCircle2 className="text-primary flex-shrink-0" size={24} />
-                  )}
-                </div>
+                {activeProject?.id === project.id && (
+                  <CheckCircle2 className="text-primary flex-shrink-0 ml-2" size={24} />
+                )}
               </div>
 
               {/* Project Details */}
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-gray-600">
-                  <Building2 size={16} className="text-gray-400" />
+                  <Building2 size={16} className="text-gray-400 flex-shrink-0" />
                   <span className="truncate">{project.client}</span>
                 </div>
                 
                 <div className="flex items-center gap-2 text-gray-600">
-                  <Calendar size={16} className="text-gray-400" />
+                  <Calendar size={16} className="text-gray-400 flex-shrink-0" />
                   <span>{formatDate(project.start_date)} - {formatDate(project.end_date)}</span>
                 </div>
 
                 <div className="flex items-center gap-2 text-gray-600">
-                  <Clock size={16} className="text-gray-400" />
-                  <span>{project.daily_hours}h/giorno</span>
+                  <Clock size={16} className="text-gray-400 flex-shrink-0" />
+                  <span>{project.daily_hours}h/{t('common.date').toLowerCase()}</span>
                 </div>
               </div>
 
@@ -237,7 +215,7 @@ export default function Projects() {
 
       {/* Help Text */}
       <div className="text-center text-sm text-gray-500">
-        💡 Clicca su un progetto per selezionarlo come attivo, oppure clicca ⚙️ per modificarlo
+        💡 {t('project.clickToSelect')}
       </div>
 
       {/* New Project Modal */}
