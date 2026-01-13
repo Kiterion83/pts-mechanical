@@ -34,13 +34,13 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
 
     // Validation
     if (!formData.code || !formData.name || !formData.client || !formData.start_date || !formData.end_date) {
-      setError('Compila tutti i campi obbligatori')
+      setError(t('errors.validation'))
       setLoading(false)
       return
     }
 
     if (new Date(formData.end_date) <= new Date(formData.start_date)) {
-      setError('La data fine deve essere successiva alla data inizio')
+      setError(t('errors.endDateBeforeStart'))
       setLoading(false)
       return
     }
@@ -73,7 +73,7 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
           <div className="flex items-center gap-3">
             <FolderKanban className="text-primary" size={24} />
             <h2 className="text-xl font-bold text-gray-800">
-              {isEditing ? 'Modifica Progetto' : 'Nuovo Progetto'}
+              {isEditing ? t('project.editProject') : t('project.newProject')}
             </h2>
           </div>
           <button 
@@ -96,7 +96,7 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="label">
-                Codice Progetto <span className="text-danger">*</span>
+                {t('project.projectCode')} <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -106,22 +106,22 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
                 placeholder="es. PRJ-001"
                 className="input"
                 required
-                disabled={isEditing} // Code non modificabile dopo creazione
+                disabled={isEditing}
               />
               {isEditing && (
-                <p className="text-xs text-gray-500 mt-1">Il codice non può essere modificato</p>
+                <p className="text-xs text-gray-500 mt-1">{t('project.codeNotEditable')}</p>
               )}
             </div>
             <div>
               <label className="label">
-                Nome Progetto <span className="text-danger">*</span>
+                {t('project.projectName')} <span className="text-danger">*</span>
               </label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="es. Centrale Gas Parma"
+                placeholder={t('project.projectName')}
                 className="input"
                 required
               />
@@ -131,14 +131,14 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
           {/* Client */}
           <div>
             <label className="label">
-              Cliente <span className="text-danger">*</span>
+              {t('project.client')} <span className="text-danger">*</span>
             </label>
             <input
               type="text"
               name="client"
               value={formData.client}
               onChange={handleChange}
-              placeholder="es. Snam Rete Gas S.p.A."
+              placeholder={t('project.client')}
               className="input"
               required
             />
@@ -148,7 +148,7 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
           <div className="grid md:grid-cols-2 gap-4">
             <div>
               <label className="label">
-                Data Inizio <span className="text-danger">*</span>
+                {t('project.startDate')} <span className="text-danger">*</span>
               </label>
               <input
                 type="date"
@@ -161,7 +161,7 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
             </div>
             <div>
               <label className="label">
-                Data Fine <span className="text-danger">*</span>
+                {t('project.endDate')} <span className="text-danger">*</span>
               </label>
               <input
                 type="date"
@@ -177,24 +177,24 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
           {/* Settings Row */}
           <div className="grid md:grid-cols-3 gap-4">
             <div>
-              <label className="label">Ore Giornaliere</label>
+              <label className="label">{t('project.dailyHours')}</label>
               <select
                 name="daily_hours"
                 value={formData.daily_hours}
                 onChange={handleChange}
                 className="select"
               >
-                <option value={6}>6 ore</option>
-                <option value={7}>7 ore</option>
-                <option value={8}>8 ore</option>
-                <option value={9}>9 ore</option>
-                <option value={10}>10 ore</option>
-                <option value={11}>11 ore</option>
-                <option value={12}>12 ore</option>
+                <option value={6}>6 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={7}>7 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={8}>8 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={9}>9 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={10}>10 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={11}>11 {t('dailyReport.hours').toLowerCase()}</option>
+                <option value={12}>12 {t('dailyReport.hours').toLowerCase()}</option>
               </select>
             </div>
             <div>
-              <label className="label">Lingua Default</label>
+              <label className="label">{t('project.defaultLanguage')}</label>
               <select
                 name="default_language"
                 value={formData.default_language}
@@ -206,16 +206,16 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
               </select>
             </div>
             <div>
-              <label className="label">Stato</label>
+              <label className="label">{t('common.status')}</label>
               <select
                 name="status"
                 value={formData.status}
                 onChange={handleChange}
                 className="select"
               >
-                <option value="active">✅ Attivo</option>
-                <option value="suspended">⏸️ Sospeso</option>
-                <option value="closed">🔒 Chiuso</option>
+                <option value="active">✅ {t('status.active')}</option>
+                <option value="suspended">⏸️ {t('status.suspended')}</option>
+                <option value="closed">🔒 {t('status.closed')}</option>
               </select>
             </div>
           </div>
@@ -228,7 +228,7 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
               className="btn-secondary"
               disabled={loading}
             >
-              Annulla
+              {t('common.cancel')}
             </button>
             <button 
               type="submit"
@@ -236,11 +236,11 @@ export default function ProjectFormModal({ project, onClose, onSuccess }) {
               disabled={loading}
             >
               {loading ? (
-                'Salvataggio...'
+                t('common.saving')
               ) : (
                 <>
                   <Save size={18} className="mr-2" />
-                  {isEditing ? 'Salva Modifiche' : 'Crea Progetto'}
+                  {isEditing ? t('common.save') : t('project.newProject')}
                 </>
               )}
             </button>

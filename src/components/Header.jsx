@@ -4,11 +4,13 @@ import { useTranslation } from 'react-i18next'
 import { Menu, Bell, User, LogOut, ChevronDown, FolderKanban, Check, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useProject } from '../contexts/ProjectContext'
+import { usePermissions } from '../hooks/usePermissions'
 
 export default function Header({ session, onMenuClick }) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { projects, activeProject, selectProject } = useProject()
+  const permissions = usePermissions()
   
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
@@ -31,32 +33,29 @@ export default function Header({ session, onMenuClick }) {
 
   const handleProjectsPageClick = () => {
     setShowProjectMenu(false)
-    navigate('/projects')
+    navigate('/settings/projects')
   }
 
-  // Close menus when clicking outside
   const closeAllMenus = () => {
     setShowUserMenu(false)
     setShowLangMenu(false)
     setShowProjectMenu(false)
   }
 
-  // Count active projects (all non-closed projects the user has access to)
-  const activeProjectsCount = projects.filter(p => p.status === 'active').length
+  // For non-admin users, only show their assigned project
+  const visibleProjects = permissions.canViewAllProjects 
+    ? projects 
+    : projects.filter(p => p.id === activeProject?.id)
 
   return (
     <>
-      {/* Backdrop to close menus */}
       {(showUserMenu || showLangMenu || showProjectMenu) && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={closeAllMenus}
-        />
+        <div className="fixed inset-0 z-40" onClick={closeAllMenus} />
       )}
       
       <header className="fixed top-0 left-0 right-0 h-16 bg-primary text-white shadow-lg z-50">
         <div className="h-full px-4 flex items-center justify-between">
-          {/* Left: Menu button + Logo */}
+          {/* Left: Menu + Logo */}
           <div className="flex items-center gap-3">
             <button 
               onClick={onMenuClick}
@@ -83,7 +82,7 @@ export default function Header({ session, onMenuClick }) {
             >
               <FolderKanban size={18} className="flex-shrink-0" />
               <span className="text-sm font-medium truncate">
-                {activeProject ? activeProject.name : 'Seleziona Progetto'}
+                {activeProject ? activeProject.name : t('project.selectProject')}
               </span>
               <ChevronDown size={16} className="flex-shrink-0" />
             </button>
@@ -95,18 +94,18 @@ export default function Header({ session, onMenuClick }) {
                     {t('project.selectProject')}
                   </p>
                   <span className="text-xs bg-primary text-white px-2 py-0.5 rounded-full">
-                    {activeProjectsCount} attivi
+                    {visibleProjects.length}
                   </span>
                 </div>
                 
                 <div className="max-h-64 overflow-y-auto">
-                  {projects.length === 0 ? (
+                  {visibleProjects.length === 0 ? (
                     <div className="px-4 py-6 text-center text-gray-500">
                       <FolderKanban size={32} className="mx-auto mb-2 text-gray-300" />
-                      <p>Nessun progetto</p>
+                      <p>{t('common.noData')}</p>
                     </div>
                   ) : (
-                    projects.map((project) => (
+                    visibleProjects.map((project) => (
                       <button
                         key={project.id}
                         onClick={() => handleProjectSelect(project)}
@@ -119,7 +118,7 @@ export default function Header({ session, onMenuClick }) {
                             <p className="font-medium truncate">{project.name}</p>
                             {project.status !== 'active' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-gray-200 text-gray-600">
-                                {project.status === 'suspended' ? 'Sospeso' : 'Chiuso'}
+                                {t(`status.${project.status}`)}
                               </span>
                             )}
                           </div>
@@ -135,28 +134,32 @@ export default function Header({ session, onMenuClick }) {
                   )}
                 </div>
                 
-                <div className="border-t border-gray-100">
-                  <button
-                    onClick={handleProjectsPageClick}
-                    className="w-full px-4 py-3 text-left hover:bg-gray-50 text-primary font-medium text-sm flex items-center gap-2"
-                  >
-                    <Settings size={16} />
-                    Gestisci Progetti
-                  </button>
-                </div>
+                {permissions.canAccessSettings && (
+                  <div className="border-t border-gray-100">
+                    <button
+                      onClick={handleProjectsPageClick}
+                      className="w-full px-4 py-3 text-left hover:bg-gray-50 text-primary font-medium text-sm flex items-center gap-2"
+                    >
+                      <Settings size={16} />
+                      {t('nav.settings')} {t('nav.projects')}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Right: Language, Notifications, User */}
+          {/* Right: Lang, Notifications, User */}
           <div className="flex items-center gap-1 sm:gap-2">
-            {/* Language Switcher */}
+            {/* Language */}
             <div className="relative">
               <button 
                 onClick={() => setShowLangMenu(!showLangMenu)}
-                className="p-2 hover:bg-primary-light rounded-lg touch-target flex items-center gap-1"
+                className="p-2 hover:bg-primary-light rounded-lg touch-target"
               >
-                <span className="text-lg">{i18n.language === 'it' ? '🇮🇹' : '🇬🇧'}</span>
+                <span className="text-sm font-medium">
+                  {i18n.language === 'it' ? 'IT' : 'EN'}
+                </span>
               </button>
               
               {showLangMenu && (
@@ -165,13 +168,13 @@ export default function Header({ session, onMenuClick }) {
                     onClick={() => changeLanguage('it')}
                     className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'it' ? 'bg-gray-100' : ''}`}
                   >
-                    <span>🇮🇹</span> Italiano
+                    🇮🇹 Italiano
                   </button>
                   <button 
                     onClick={() => changeLanguage('en')}
                     className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'en' ? 'bg-gray-100' : ''}`}
                   >
-                    <span>🇬🇧</span> English
+                    🇬🇧 English
                   </button>
                 </div>
               )}
@@ -180,9 +183,6 @@ export default function Header({ session, onMenuClick }) {
             {/* Notifications */}
             <button className="p-2 hover:bg-primary-light rounded-lg touch-target relative">
               <Bell size={22} />
-              <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white text-xs rounded-full flex items-center justify-center">
-                0
-              </span>
             </button>
 
             {/* User Menu */}
@@ -201,15 +201,9 @@ export default function Header({ session, onMenuClick }) {
                       {session?.user?.email}
                     </p>
                     {activeProject && (
-                      <div className="mt-1">
-                        <p className="text-xs text-gray-500">Progetto attivo</p>
-                        <p className="text-xs font-medium text-primary truncate">
-                          {activeProject.name}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          Ruolo: {activeProject.userRole?.toUpperCase()}
-                        </p>
-                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {t(`roles.${activeProject.userRole}`) || activeProject.userRole}
+                      </p>
                     )}
                   </div>
                   <button 
