@@ -1,12 +1,18 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Menu, Bell, User, LogOut, ChevronDown } from 'lucide-react'
+import { Menu, Bell, User, LogOut, ChevronDown, FolderKanban, Check } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useProject } from '../contexts/ProjectContext'
 
 export default function Header({ session, onMenuClick }) {
   const { t, i18n } = useTranslation()
+  const navigate = useNavigate()
+  const { projects, activeProject, selectProject } = useProject()
+  
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
+  const [showProjectMenu, setShowProjectMenu] = useState(false)
 
   const changeLanguage = (lng) => {
     i18n.changeLanguage(lng)
@@ -18,98 +24,177 @@ export default function Header({ session, onMenuClick }) {
     await supabase.auth.signOut()
   }
 
+  const handleProjectSelect = (project) => {
+    selectProject(project)
+    setShowProjectMenu(false)
+  }
+
+  const handleProjectsPageClick = () => {
+    setShowProjectMenu(false)
+    navigate('/projects')
+  }
+
+  // Close menus when clicking outside
+  const closeAllMenus = () => {
+    setShowUserMenu(false)
+    setShowLangMenu(false)
+    setShowProjectMenu(false)
+  }
+
   return (
-    <header className="fixed top-0 left-0 right-0 h-16 bg-primary text-white shadow-lg z-50">
-      <div className="h-full px-4 flex items-center justify-between">
-        {/* Left: Menu button + Logo */}
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={onMenuClick}
-            className="lg:hidden p-2 hover:bg-primary-light rounded-lg touch-target"
-            aria-label="Menu"
-          >
-            <Menu size={24} />
-          </button>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🏗️</span>
-            <span className="font-bold text-lg hidden sm:block">PTS</span>
-          </div>
-        </div>
-
-        {/* Center: Project Selector (placeholder) */}
-        <div className="hidden md:flex items-center">
-          <button className="flex items-center gap-2 px-4 py-2 bg-primary-light rounded-lg hover:bg-blue-600 transition">
-            <span className="text-sm font-medium">Progetto Demo</span>
-            <ChevronDown size={16} />
-          </button>
-        </div>
-
-        {/* Right: Language, Notifications, User */}
-        <div className="flex items-center gap-2">
-          {/* Language Switcher */}
-          <div className="relative">
+    <>
+      {/* Backdrop to close menus */}
+      {(showUserMenu || showLangMenu || showProjectMenu) && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={closeAllMenus}
+        />
+      )}
+      
+      <header className="fixed top-0 left-0 right-0 h-16 bg-primary text-white shadow-lg z-50">
+        <div className="h-full px-4 flex items-center justify-between">
+          {/* Left: Menu button + Logo */}
+          <div className="flex items-center gap-3">
             <button 
-              onClick={() => setShowLangMenu(!showLangMenu)}
-              className="p-2 hover:bg-primary-light rounded-lg touch-target flex items-center gap-1"
+              onClick={onMenuClick}
+              className="lg:hidden p-2 hover:bg-primary-light rounded-lg touch-target"
+              aria-label="Menu"
             >
-              <span className="text-lg">{i18n.language === 'it' ? '🇮🇹' : '🇬🇧'}</span>
+              <Menu size={24} />
             </button>
             
-            {showLangMenu && (
-              <div className="absolute right-0 mt-2 w-36 bg-white rounded-lg shadow-lg py-1 text-gray-800">
-                <button 
-                  onClick={() => changeLanguage('it')}
-                  className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'it' ? 'bg-gray-100' : ''}`}
-                >
-                  <span>🇮🇹</span> Italiano
-                </button>
-                <button 
-                  onClick={() => changeLanguage('en')}
-                  className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'en' ? 'bg-gray-100' : ''}`}
-                >
-                  <span>🇬🇧</span> English
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🏗️</span>
+              <span className="font-bold text-lg hidden sm:block">PTS</span>
+            </div>
           </div>
 
-          {/* Notifications */}
-          <button className="p-2 hover:bg-primary-light rounded-lg touch-target relative">
-            <Bell size={22} />
-            <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white text-xs rounded-full flex items-center justify-center">
-              3
-            </span>
-          </button>
-
-          {/* User Menu */}
+          {/* Center: Project Selector */}
           <div className="relative">
             <button 
-              onClick={() => setShowUserMenu(!showUserMenu)}
-              className="p-2 hover:bg-primary-light rounded-lg touch-target"
+              onClick={() => setShowProjectMenu(!showProjectMenu)}
+              className="flex items-center gap-2 px-4 py-2 bg-primary-light rounded-lg hover:bg-blue-600 transition max-w-[200px] md:max-w-[300px]"
             >
-              <User size={22} />
+              <FolderKanban size={18} className="flex-shrink-0" />
+              <span className="text-sm font-medium truncate">
+                {activeProject ? activeProject.name : 'Seleziona Progetto'}
+              </span>
+              <ChevronDown size={16} className="flex-shrink-0" />
             </button>
             
-            {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 text-gray-800">
+            {showProjectMenu && (
+              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-72 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
                 <div className="px-4 py-2 border-b border-gray-100">
-                  <p className="text-sm font-medium truncate">
-                    {session?.user?.email}
+                  <p className="text-xs font-medium text-gray-500 uppercase">
+                    {t('project.selectProject')}
                   </p>
                 </div>
-                <button 
-                  onClick={handleLogout}
-                  className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-danger"
-                >
-                  <LogOut size={18} />
-                  {t('auth.logout')}
-                </button>
+                
+                <div className="max-h-64 overflow-y-auto">
+                  {projects.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => handleProjectSelect(project)}
+                      className={`w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center gap-3 ${
+                        activeProject?.id === project.id ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{project.name}</p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {project.code} • {project.client}
+                        </p>
+                      </div>
+                      {activeProject?.id === project.id && (
+                        <Check size={18} className="text-primary flex-shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="border-t border-gray-100">
+                  <button
+                    onClick={handleProjectsPageClick}
+                    className="w-full px-4 py-3 text-left hover:bg-gray-50 text-primary font-medium text-sm"
+                  >
+                    Gestisci Progetti →
+                  </button>
+                </div>
               </div>
             )}
           </div>
+
+          {/* Right: Language, Notifications, User */}
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Language Switcher */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowLangMenu(!showLangMenu)}
+                className="p-2 hover:bg-primary-light rounded-lg touch-target flex items-center gap-1"
+              >
+                <span className="text-lg">{i18n.language === 'it' ? '🇮🇹' : '🇬🇧'}</span>
+              </button>
+              
+              {showLangMenu && (
+                <div className="absolute right-0 mt-2 w-36 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
+                  <button 
+                    onClick={() => changeLanguage('it')}
+                    className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'it' ? 'bg-gray-100' : ''}`}
+                  >
+                    <span>🇮🇹</span> Italiano
+                  </button>
+                  <button 
+                    onClick={() => changeLanguage('en')}
+                    className={`w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 ${i18n.language === 'en' ? 'bg-gray-100' : ''}`}
+                  >
+                    <span>🇬🇧</span> English
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Notifications */}
+            <button className="p-2 hover:bg-primary-light rounded-lg touch-target relative">
+              <Bell size={22} />
+              <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white text-xs rounded-full flex items-center justify-center">
+                3
+              </span>
+            </button>
+
+            {/* User Menu */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="p-2 hover:bg-primary-light rounded-lg touch-target"
+              >
+                <User size={22} />
+              </button>
+              
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium truncate">
+                      {session?.user?.email}
+                    </p>
+                    {activeProject && (
+                      <p className="text-xs text-gray-500 truncate">
+                        {activeProject.userRole}
+                      </p>
+                    )}
+                  </div>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-danger"
+                  >
+                    <LogOut size={18} />
+                    {t('auth.logout')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </header>
+      </header>
+    </>
   )
 }
