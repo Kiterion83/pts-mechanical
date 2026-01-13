@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import { 
   Users, Plus, Search, Filter, X, Check, Edit, Trash2,
   ChevronDown, ChevronRight, UserPlus, UserMinus, Star,
-  Building2, Hash, User, AlertTriangle, CheckCircle2, Info
+  Building2, Hash, User, AlertTriangle, CheckCircle2
 } from 'lucide-react'
 
 // ============================================================================
@@ -55,36 +55,62 @@ function RoleBadge({ role, size = 'normal' }) {
 }
 
 // ============================================================================
-// COMPONENTE TOOLTIP PERSONALE NON ASSEGNATO
+// COMPONENTE MODAL LISTA PERSONALE (per Assegnati e Da Assegnare)
 // ============================================================================
-function UnassignedTooltip({ personnel, role, isVisible, onClose }) {
-  if (!isVisible || personnel.length === 0) return null
+function PersonnelListModal({ personnel, title, isOpen, onClose, type }) {
+  if (!isOpen) return null
+  
+  const bgColor = type === 'assigned' ? 'bg-green-600' : 'bg-amber-500'
   
   return (
-    <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-2 w-96 max-h-80 overflow-y-auto bg-white rounded-xl shadow-2xl border border-gray-200">
-      <div className="sticky top-0 bg-gray-50 px-4 py-2 border-b flex items-center justify-between">
-        <span className="font-semibold text-gray-700">
-          {role ? `${ROLE_CONFIG[role]?.label || role} da assegnare` : 'Personale da assegnare'}
-        </span>
-        <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded">
-          <X size={16} />
-        </button>
-      </div>
-      <div className="p-2">
-        {personnel.map(p => (
-          <div key={p.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg text-sm">
-            <span className="font-mono text-xs text-gray-500 w-8">{p.id_number || '—'}</span>
-            <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{p.badge_number || '—'}</span>
-            <div className="flex-1">
-              <span className="font-medium">{p.last_name} {p.first_name}</span>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className={`${bgColor} px-4 py-3 rounded-t-xl flex items-center justify-between`}>
+          <span className="font-semibold text-white text-lg">
+            {title} ({personnel.length})
+          </span>
+          <button 
+            onClick={onClose} 
+            className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
+          >
+            <X size={20} className="text-white" />
+          </button>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {personnel.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">Nessun personale</p>
+          ) : (
+            <div className="space-y-2">
+              {personnel.map(p => (
+                <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg">
+                  <span className="font-mono text-sm text-gray-600 w-10 text-center">{p.id_number || '—'}</span>
+                  <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">{p.badge_number || '—'}</span>
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-800">{p.last_name} {p.first_name}</span>
+                  </div>
+                  <RoleBadge role={p.position} size="small" />
+                  <span className="text-sm text-gray-500 flex items-center gap-1">
+                    {p.company?.is_main && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
+                    <span className="max-w-32 truncate">{p.company?.company_name}</span>
+                  </span>
+                </div>
+              ))}
             </div>
-            <RoleBadge role={p.position} size="small" />
-            <span className="text-xs text-gray-500 flex items-center gap-1 max-w-24 truncate">
-              {p.company?.is_main && <Star size={10} className="text-yellow-500 fill-yellow-500 flex-shrink-0" />}
-              {p.company?.company_name}
-            </span>
-          </div>
-        ))}
+          )}
+        </div>
+        
+        {/* Footer */}
+        <div className="border-t px-4 py-3 bg-gray-50 rounded-b-xl">
+          <button
+            onClick={onClose}
+            className="w-full btn-secondary"
+          >
+            Chiudi
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -251,8 +277,8 @@ export default function Squads() {
   const [editingSquad, setEditingSquad] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   
-  // Tooltip state
-  const [tooltipVisible, setTooltipVisible] = useState(null) // 'total' | role name | null
+  // Popup state (click-based)
+  const [popupData, setPopupData] = useState(null) // { type: 'assigned'|'unassigned', role?: string, personnel: [], title: string }
   
   // Form state per nuova squadra
   const [formData, setFormData] = useState({
@@ -374,13 +400,18 @@ export default function Squads() {
     const total = totalInRole.length
     
     let assigned
+    let assignedList
     if (SUPERVISOR_ROLES.includes(role)) {
       // Per supervisori, conta solo quelli nel set unico
-      assigned = totalInRole.filter(p => assignedSupervisorIds.has(p.id)).length
+      assignedList = totalInRole.filter(p => assignedSupervisorIds.has(p.id))
+      assigned = assignedList.length
     } else {
       // Per altri ruoli, conta normalmente
-      assigned = totalInRole.filter(p => assignedMemberIds.has(p.id)).length
+      assignedList = totalInRole.filter(p => assignedMemberIds.has(p.id))
+      assigned = assignedList.length
     }
+    
+    const percentage = total > 0 ? Math.round((assigned / total) * 100) : 0
     
     return {
       role,
@@ -388,6 +419,8 @@ export default function Squads() {
       total,
       assigned,
       unassigned: total - assigned,
+      percentage,
+      assignedList,
       unassignedList: totalInRole.filter(p => 
         SUPERVISOR_ROLES.includes(role) 
           ? !assignedSupervisorIds.has(p.id)
@@ -672,28 +705,31 @@ export default function Squads() {
             <div className="text-3xl font-bold text-gray-800">{directPersonnel.length}</div>
             <div className="text-sm text-gray-500">Totale</div>
           </div>
-          <div className="bg-green-50 rounded-lg p-4 text-center">
+          
+          {/* Assegnati - Click per vedere lista */}
+          <div 
+            className="bg-green-50 rounded-lg p-4 text-center cursor-pointer hover:bg-green-100 transition-colors"
+            onClick={() => setPopupData({
+              type: 'assigned',
+              personnel: assignedDirect,
+              title: 'Personale Assegnato'
+            })}
+          >
             <div className="text-3xl font-bold text-green-600">{assignedDirect.length}</div>
             <div className="text-sm text-gray-500">Assegnati</div>
           </div>
           
-          {/* Da Assegnare con Tooltip */}
+          {/* Da Assegnare - Click per vedere lista */}
           <div 
-            className="bg-amber-50 rounded-lg p-4 text-center relative cursor-pointer"
-            onMouseEnter={() => setTooltipVisible('total')}
-            onMouseLeave={() => setTooltipVisible(null)}
+            className="bg-amber-50 rounded-lg p-4 text-center cursor-pointer hover:bg-amber-100 transition-colors"
+            onClick={() => setPopupData({
+              type: 'unassigned',
+              personnel: unassignedDirect,
+              title: 'Personale Da Assegnare'
+            })}
           >
-            <div className="text-3xl font-bold text-amber-600 flex items-center justify-center gap-2">
-              {unassignedDirect.length}
-              <Info size={16} className="text-amber-400" />
-            </div>
+            <div className="text-3xl font-bold text-amber-600">{unassignedDirect.length}</div>
             <div className="text-sm text-gray-500">Da Assegnare</div>
-            
-            <UnassignedTooltip 
-              personnel={unassignedDirect}
-              isVisible={tooltipVisible === 'total'}
-              onClose={() => setTooltipVisible(null)}
-            />
           </div>
         </div>
         
@@ -716,30 +752,45 @@ export default function Squads() {
                     <RoleBadge role={stat.role} />
                   </td>
                   <td className="py-2 px-3 text-center font-medium">{stat.total}</td>
-                  <td className="py-2 px-3 text-center text-green-600">{stat.assigned}</td>
-                  <td className="py-2 px-3 text-center relative">
+                  
+                  {/* Assegnati - Click */}
+                  <td className="py-2 px-3 text-center">
                     <span 
-                      className="text-amber-600 cursor-pointer hover:underline inline-flex items-center gap-1"
-                      onMouseEnter={() => setTooltipVisible(stat.role)}
-                      onMouseLeave={() => setTooltipVisible(null)}
+                      className={`text-green-600 ${stat.assigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
+                      onClick={() => stat.assigned > 0 && setPopupData({
+                        type: 'assigned',
+                        personnel: stat.assignedList,
+                        title: `${ROLE_CONFIG[stat.role]?.label || stat.role} Assegnati`
+                      })}
+                    >
+                      {stat.assigned}
+                    </span>
+                  </td>
+                  
+                  {/* Da Assegnare - Click */}
+                  <td className="py-2 px-3 text-center">
+                    <span 
+                      className={`text-amber-600 ${stat.unassigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
+                      onClick={() => stat.unassigned > 0 && setPopupData({
+                        type: 'unassigned',
+                        personnel: stat.unassignedList,
+                        title: `${ROLE_CONFIG[stat.role]?.label || stat.role} Da Assegnare`
+                      })}
                     >
                       {stat.unassigned}
-                      {stat.unassigned > 0 && <Info size={12} className="text-amber-400" />}
                     </span>
-                    
-                    <UnassignedTooltip 
-                      personnel={stat.unassignedList}
-                      role={stat.role}
-                      isVisible={tooltipVisible === stat.role}
-                      onClose={() => setTooltipVisible(null)}
-                    />
                   </td>
+                  
+                  {/* Progresso con percentuale */}
                   <td className="py-2 px-3">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-green-500 h-2 rounded-full transition-all"
-                        style={{ width: `${stat.total > 0 ? (stat.assigned / stat.total) * 100 : 0}%` }}
-                      />
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-green-500 h-2 rounded-full transition-all"
+                          style={{ width: `${stat.percentage}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium text-gray-600 w-10 text-right">{stat.percentage}%</span>
                     </div>
                   </td>
                 </tr>
@@ -1184,6 +1235,15 @@ export default function Squads() {
           </div>
         </div>
       )}
+
+      {/* ============ POPUP LISTA PERSONALE ============ */}
+      <PersonnelListModal
+        personnel={popupData?.personnel || []}
+        title={popupData?.title || ''}
+        isOpen={popupData !== null}
+        onClose={() => setPopupData(null)}
+        type={popupData?.type || 'unassigned'}
+      />
     </div>
   )
 }
