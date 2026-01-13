@@ -10,6 +10,7 @@ import { ProjectProvider } from './contexts/ProjectContext'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
 
 // Components
 import Layout from './components/Layout'
@@ -60,6 +61,7 @@ function App() {
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/projects" element={<Projects />} />
+                    <Route path="/projects/:id" element={<ProjectDetail />} />
                     <Route path="/personnel" element={<ComingSoon title={t('nav.personnel')} />} />
                     <Route path="/squads" element={<ComingSoon title={t('nav.squads')} />} />
                     <Route path="/mto" element={<ComingSoon title={t('nav.mto')} />} />
@@ -83,8 +85,6 @@ function App() {
 
 // Placeholder component for pages not yet implemented
 function ComingSoon({ title }) {
-  const { t } = useTranslation()
-  
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-6xl mb-4">🚧</div>
@@ -96,13 +96,11 @@ function ComingSoon({ title }) {
 
 // 404 page
 function NotFound() {
-  const { t } = useTranslation()
-  
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-6xl mb-4">🔍</div>
       <h1 className="text-2xl font-bold text-gray-800 mb-2">404</h1>
-      <p className="text-gray-500">{t('errors.notFound')}</p>
+      <p className="text-gray-500">Pagina non trovata</p>
     </div>
   )
 }
