@@ -16,7 +16,9 @@ import {
   Plus,
   X,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  PauseCircle,
+  Lock
 } from 'lucide-react'
 
 export default function ProjectDetail() {
@@ -185,6 +187,35 @@ export default function ProjectDetail() {
     })
   }
 
+  // Funzione per ottenere il badge dello stato
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'active':
+        return (
+          <span className="badge-success flex items-center gap-1">
+            <CheckCircle2 size={12} />
+            {t('status.active')}
+          </span>
+        )
+      case 'suspended':
+        return (
+          <span className="badge-warning flex items-center gap-1">
+            <PauseCircle size={12} />
+            {t('status.suspended')}
+          </span>
+        )
+      case 'closed':
+        return (
+          <span className="badge-info flex items-center gap-1">
+            <Lock size={12} />
+            {t('status.closed')}
+          </span>
+        )
+      default:
+        return null
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -221,12 +252,8 @@ export default function ProjectDetail() {
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-mono text-gray-500">{project.code}</span>
-              {isActive && (
-                <span className="badge-success flex items-center gap-1">
-                  <CheckCircle2 size={12} />
-                  {t('status.active')}
-                </span>
-              )}
+              {/* BADGE STATO CORRETTO - usa project.status */}
+              {getStatusBadge(project.status)}
             </div>
             <h1 className="text-2xl font-bold text-gray-800">{project.name}</h1>
           </div>
@@ -302,14 +329,14 @@ export default function ProjectDetail() {
             </div>
           </div>
 
-          {/* Holidays Card - FIXED */}
+          {/* Holidays Card */}
           <div className="card">
             <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
               <Calendar className="text-primary" />
               {t('project.holidays')} ({holidays.length})
             </h2>
             
-            {/* Add Holiday Form - FIXED LAYOUT */}
+            {/* Add Holiday Form */}
             <div className="flex flex-col sm:flex-row gap-3 mb-4">
               <div className="flex-1">
                 <input
@@ -382,20 +409,21 @@ export default function ProjectDetail() {
           </div>
 
           <div className="card bg-blue-50 border-blue-200">
-            <h3 className="font-semibold text-blue-800 mb-2">{t('personnel.role')}</h3>
+            <h3 className="font-semibold text-blue-800 mb-2">Il tuo Ruolo</h3>
             <p className="text-blue-600 text-lg font-bold">
               {t(`roles.${project.userRole}`) || project.userRole}
             </p>
+            <p className="text-blue-500 text-xs mt-1">in questo progetto</p>
           </div>
 
           {isActive && (
             <div className="card bg-green-50 border-green-200">
               <div className="flex items-center gap-2 text-green-800">
                 <CheckCircle2 size={20} />
-                <span className="font-semibold">{t('project.activeProject')}</span>
+                <span className="font-semibold">Progetto Selezionato</span>
               </div>
               <p className="text-green-600 text-sm mt-1">
-                {t('project.activeProject')}
+                Stai lavorando su questo progetto
               </p>
             </div>
           )}
