@@ -115,48 +115,38 @@ export default function Personnel() {
       if (companiesError) throw companiesError
       setCompanies(companiesData || [])
       
-      // Carica personale con assegnazioni
+      // Carica personale direttamente dalla tabella personnel
       const { data: personnelData, error: personnelError } = await supabase
-        .from('v_project_personnel')
-        .select('*')
+        .from('personnel')
+        .select(`
+          *,
+          company:companies(id, company_name, is_main)
+        `)
         .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+        .order('last_name')
       
-      if (personnelError) {
-        // Fallback alla vecchia query se la view non esiste
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('personnel')
-          .select(`
-            *,
-            company:companies(id, company_name, is_main)
-          `)
-          .eq('project_id', activeProject.id)
-          .eq('status', 'active')
-          .order('last_name')
-        
-        if (fallbackError) throw fallbackError
-        
-        // Normalizza i dati
-        const normalizedData = (fallbackData || []).map(p => ({
-          assignment_id: p.id,
-          personnel_id: p.id,
-          project_id: p.project_id,
-          badge_number: p.badge_number,
-          role: p.position,
-          first_name: p.first_name,
-          last_name: p.last_name,
-          full_name: `${p.first_name} ${p.last_name}`,
-          email: p.email,
-          phone: p.phone,
-          birth_date: p.birth_date,
-          company_id: p.company_id,
-          company_name: p.company?.company_name,
-          is_main_company: p.company?.is_main
-        }))
-        
-        setPersonnel(normalizedData)
-      } else {
-        setPersonnel(personnelData || [])
-      }
+      if (personnelError) throw personnelError
+      
+      // Normalizza i dati
+      const normalizedData = (personnelData || []).map(p => ({
+        assignment_id: p.id,
+        personnel_id: p.id,
+        project_id: p.project_id,
+        badge_number: p.badge_number,
+        role: p.position,
+        first_name: p.first_name,
+        last_name: p.last_name,
+        full_name: `${p.first_name} ${p.last_name}`,
+        email: p.email,
+        phone: p.phone,
+        birth_date: p.birth_date,
+        company_id: p.company_id,
+        company_name: p.company?.company_name,
+        is_main_company: p.company?.is_main
+      }))
+      
+      setPersonnel(normalizedData)
       
     } catch (err) {
       console.error('Error loading data:', err)
