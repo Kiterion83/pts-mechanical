@@ -1,10 +1,8 @@
 import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
-
 import it from './locales/it.json'
 import en from './locales/en.json'
 
-// Get saved language or default to IT
 const savedLanguage = localStorage.getItem('pts-language') || 'it'
 
 i18n
