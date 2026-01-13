@@ -3,9 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { supabase } from './lib/supabase'
 
+// Contexts
+import { ProjectProvider } from './contexts/ProjectContext'
+
 // Pages
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Projects from './pages/Projects'
 
 // Components
 import Layout from './components/Layout'
@@ -51,20 +55,22 @@ function App() {
           path="/*"
           element={
             session ? (
-              <Layout session={session}>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/projects" element={<ComingSoon title={t('nav.projects')} />} />
-                  <Route path="/personnel" element={<ComingSoon title={t('nav.personnel')} />} />
-                  <Route path="/squads" element={<ComingSoon title={t('nav.squads')} />} />
-                  <Route path="/mto" element={<ComingSoon title={t('nav.mto')} />} />
-                  <Route path="/work-packages" element={<ComingSoon title={t('nav.workPackages')} />} />
-                  <Route path="/daily-reports" element={<ComingSoon title={t('nav.dailyReports')} />} />
-                  <Route path="/material-requests" element={<ComingSoon title={t('nav.materialRequests')} />} />
-                  <Route path="/equipment" element={<ComingSoon title={t('nav.equipment')} />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </Layout>
+              <ProjectProvider userId={session.user.id}>
+                <Layout session={session}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/projects" element={<Projects />} />
+                    <Route path="/personnel" element={<ComingSoon title={t('nav.personnel')} />} />
+                    <Route path="/squads" element={<ComingSoon title={t('nav.squads')} />} />
+                    <Route path="/mto" element={<ComingSoon title={t('nav.mto')} />} />
+                    <Route path="/work-packages" element={<ComingSoon title={t('nav.workPackages')} />} />
+                    <Route path="/daily-reports" element={<ComingSoon title={t('nav.dailyReports')} />} />
+                    <Route path="/material-requests" element={<ComingSoon title={t('nav.materialRequests')} />} />
+                    <Route path="/equipment" element={<ComingSoon title={t('nav.equipment')} />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Layout>
+              </ProjectProvider>
             ) : (
               <Navigate to="/login" replace />
             )
@@ -83,7 +89,7 @@ function ComingSoon({ title }) {
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       <div className="text-6xl mb-4">🚧</div>
       <h1 className="text-2xl font-bold text-gray-800 mb-2">{title}</h1>
-      <p className="text-gray-500">{t('common.loading')}...</p>
+      <p className="text-gray-500">In sviluppo...</p>
     </div>
   )
 }
