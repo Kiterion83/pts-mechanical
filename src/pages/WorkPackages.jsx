@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
-import { useAuth } from '../contexts/AuthContext';
 import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
@@ -1210,7 +1209,7 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
 // ============================================================================
 
 const WPDocuments = ({ workPackageId, projectId }) => {
-  const { user } = useAuth();
+  const [user, setUser] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -1218,6 +1217,15 @@ const WPDocuments = ({ workPackageId, projectId }) => {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [downloadHistory, setDownloadHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Get current user
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+    };
+    getUser();
+  }, []);
 
   // Carica documenti
   useEffect(() => {
