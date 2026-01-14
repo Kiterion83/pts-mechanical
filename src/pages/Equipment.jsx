@@ -114,10 +114,13 @@ function OwnershipBadge({ ownership }) {
 }
 
 // Popup lista equipment
-function EquipmentListPopup({ equipment, title, isVisible, onClose, type }) {
+function EquipmentListPopup({ equipment, title, isVisible, onClose, type, equipmentTypes }) {
   if (!isVisible) return null
   
   const bgColor = type === 'assigned' ? 'bg-green-600' : type === 'unassigned' ? 'bg-amber-500' : 'bg-primary'
+  
+  // Usa equipmentTypes passato come prop, altrimenti fallback a DEFAULT
+  const types = equipmentTypes || DEFAULT_EQUIPMENT_TYPES
   
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -141,7 +144,7 @@ function EquipmentListPopup({ equipment, title, isVisible, onClose, type }) {
                   <CategoryBadge category={eq.category} size="small" />
                   <div className="flex-1 min-w-0">
                     <span className="font-medium text-gray-800">
-                      {EQUIPMENT_TYPES[eq.type]?.label || eq.type}
+                      {types[eq.type]?.label || eq.type}
                     </span>
                     {eq.description && (
                       <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>
@@ -1291,6 +1294,7 @@ export default function Equipment() {
         isVisible={popupData !== null}
         onClose={() => setPopupData(null)}
         type={popupData?.type || 'all'}
+        equipmentTypes={EQUIPMENT_TYPES}
       />
 
       {/* ============ MODAL NUOVO TIPO ============ */}
