@@ -248,44 +248,44 @@ export default function Personnel() {
   // VALIDAZIONE BADGE (solo warning, non blocca il salvataggio)
   // ============================================================================
   const validateBadge = () => {
-    // Per ora permettiamo sempre il salvataggio
-    // Il badge sarà solo un warning visivo nel form
     return { valid: true }
   }
 
   // State per popup conferma badge
   const [showBadgeConfirm, setShowBadgeConfirm] = useState(false)
-  const [pendingSaveData, setPendingSaveData] = useState(null)
 
   // ============================================================================
   // SALVATAGGIO
   // ============================================================================
-  const handleSave = async (skipBadgeConfirm = false) => {
-    // Validazione base
+  const handleSave = async () => {
+    console.log('handleSave chiamato')
+    console.log('formData:', formData)
+    
+    // Validazione base - mostra alert ma non blocca il popup
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       alert('Nome e Cognome sono obbligatori')
       return
     }
     
-    if (!formData.companyId) {
-      alert('Seleziona un\'azienda')
-      return
-    }
+    // Mostra popup conferma (anche se azienda vuota)
+    console.log('Mostro popup conferma badge')
+    setShowBadgeConfirm(true)
+  }
+  
+  // Esegue il salvataggio effettivo
+  const doSave = async () => {
+    console.log('doSave chiamato')
     
-    // Se stiamo modificando e non abbiamo ancora confermato il badge
-    if (selectedPerson && !skipBadgeConfirm) {
-      // Mostra popup conferma badge
-      setPendingSaveData({ ...formData })
-      setShowBadgeConfirm(true)
+    // Validazione azienda solo qui
+    if (!formData.companyId) {
+      alert('Seleziona un\'azienda prima di salvare')
+      setShowBadgeConfirm(false)
       return
     }
     
     try {
       if (selectedPerson) {
         // Update esistente
-        console.log('Updating personnel ID:', selectedPerson.personnel_id)
-        console.log('Form data:', formData)
-        
         const updateData = {
           id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
           first_name: formData.firstName.trim(),
@@ -300,18 +300,17 @@ export default function Personnel() {
         
         console.log('Update data:', updateData)
         
-        const { data, error: personnelError } = await supabase
+        const { error: personnelError } = await supabase
           .from('personnel')
           .update(updateData)
           .eq('id', selectedPerson.personnel_id)
-          .select()
         
         if (personnelError) {
           console.error('Update error:', personnelError)
           throw personnelError
         }
         
-        console.log('Update result:', data)
+        console.log('Update OK')
       } else {
         // Inserimento nuovo
         let username = formData.username.trim()
@@ -335,25 +334,23 @@ export default function Personnel() {
         
         console.log('Insert data:', insertData)
         
-        const { data, error: personnelError } = await supabase
+        const { error: personnelError } = await supabase
           .from('personnel')
           .insert([insertData])
-          .select()
         
         if (personnelError) {
           console.error('Insert error:', personnelError)
           throw personnelError
         }
         
-        console.log('Insert result:', data)
+        console.log('Insert OK')
       }
       
-      // Chiudi modal e ricarica
+      // Chiudi tutto e ricarica
       setSelectedPerson(null)
       setShowAddModal(false)
       setIsEditing(false)
       setShowBadgeConfirm(false)
-      setPendingSaveData(null)
       loadData()
     } catch (err) {
       console.error('Error saving:', err)
@@ -361,17 +358,14 @@ export default function Personnel() {
     }
   }
   
-  // Conferma salvataggio con badge attuale
+  // Conferma salvataggio
   const confirmSaveWithBadge = () => {
-    setShowBadgeConfirm(false)
-    handleSave(true) // skipBadgeConfirm = true
+    doSave()
   }
   
-  // Annulla e torna al form per modificare badge
+  // Annulla e torna al form per modificare
   const cancelBadgeConfirm = () => {
     setShowBadgeConfirm(false)
-    setPendingSaveData(null)
-    // Il form rimane aperto per modificare il badge
   }
 
   // ============================================================================
