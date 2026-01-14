@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useProject } from '../contexts/ProjectContext';
 import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
 // WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
 // ============================================================================
 
-export default function WorkPackages({ project }) {
+export default function WorkPackages() {
+  // Get project from context
+  const { currentProject: project } = useProject();
   // State principale
   const [workPackages, setWorkPackages] = useState([]);
   const [squads, setSquads] = useState([]);
@@ -42,20 +45,24 @@ export default function WorkPackages({ project }) {
 
   const fetchAllData = async () => {
     setLoading(true);
+    console.log('WorkPackages: Fetching data for project:', project?.id);
     try {
       await Promise.all([
         fetchWorkPackages(),
         fetchSquads(),
         fetchMTOData()
       ]);
+      console.log('WorkPackages: Data loaded successfully');
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('WorkPackages: Error fetching data:', error);
+      alert('Errore caricamento dati: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   const fetchWorkPackages = async () => {
+    console.log('Fetching work_packages...');
     const { data, error } = await supabase
       .from('work_packages')
       .select(`
@@ -67,15 +74,24 @@ export default function WorkPackages({ project }) {
       .is('deleted_at', null)
       .order('code');
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching work_packages:', error);
+      throw error;
+    }
+    
+    console.log('Work packages loaded:', data?.length || 0);
     
     // Fetch activities per WP
-    const wpIds = data.map(wp => wp.id);
+    const wpIds = data?.map(wp => wp.id) || [];
     if (wpIds.length > 0) {
-      const { data: activities } = await supabase
+      const { data: activities, error: actError } = await supabase
         .from('wp_activities')
         .select('*')
         .in('work_package_id', wpIds);
+      
+      if (actError) {
+        console.error('Error fetching wp_activities:', actError);
+      }
       
       // Attach activities to WPs
       data.forEach(wp => {
@@ -87,6 +103,7 @@ export default function WorkPackages({ project }) {
   };
 
   const fetchSquads = async () => {
+    console.log('Fetching squads...');
     const { data, error } = await supabase
       .from('squads')
       .select('*, squad_members(id)')
@@ -94,41 +111,82 @@ export default function WorkPackages({ project }) {
       .eq('is_active', true)
       .order('squad_number');
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error fetching squads:', error);
+      // Non bloccare per errore squads
+    }
+    console.log('Squads loaded:', data?.length || 0);
     setSquads(data || []);
   };
 
   const fetchMTOData = async () => {
-    const { data: isoData } = await supabase
-      .from('mto_isometrics')
-      .select('*')
-      .eq('project_id', project.id)
-      .eq('status', 'active');
-    setIsometrics(isoData || []);
+    console.log('Fetching MTO data...');
     
-    const { data: spoolData } = await supabase
-      .from('mto_spools')
-      .select('*')
-      .eq('project_id', project.id);
-    setSpools(spoolData || []);
+    try {
+      const { data: isoData, error: isoError } = await supabase
+        .from('mto_isometrics')
+        .select('*')
+        .eq('project_id', project.id)
+        .eq('status', 'active');
+      if (isoError) console.error('Error fetching isometrics:', isoError);
+      setIsometrics(isoData || []);
+      console.log('Isometrics loaded:', isoData?.length || 0);
+    } catch (e) {
+      console.error('Isometrics fetch failed:', e);
+      setIsometrics([]);
+    }
     
-    const { data: weldData } = await supabase
-      .from('mto_welds')
-      .select('*')
-      .eq('project_id', project.id);
-    setWelds(weldData || []);
+    try {
+      const { data: spoolData, error: spoolError } = await supabase
+        .from('mto_spools')
+        .select('*')
+        .eq('project_id', project.id);
+      if (spoolError) console.error('Error fetching spools:', spoolError);
+      setSpools(spoolData || []);
+      console.log('Spools loaded:', spoolData?.length || 0);
+    } catch (e) {
+      console.error('Spools fetch failed:', e);
+      setSpools([]);
+    }
     
-    const { data: suppData } = await supabase
-      .from('mto_supports')
-      .select('*')
-      .eq('project_id', project.id);
-    setSupports(suppData || []);
+    try {
+      const { data: weldData, error: weldError } = await supabase
+        .from('mto_welds')
+        .select('*')
+        .eq('project_id', project.id);
+      if (weldError) console.error('Error fetching welds:', weldError);
+      setWelds(weldData || []);
+      console.log('Welds loaded:', weldData?.length || 0);
+    } catch (e) {
+      console.error('Welds fetch failed:', e);
+      setWelds([]);
+    }
     
-    const { data: flangeData } = await supabase
-      .from('mto_flanges')
-      .select('*')
-      .eq('project_id', project.id);
-    setFlanges(flangeData || []);
+    try {
+      const { data: suppData, error: suppError } = await supabase
+        .from('mto_supports')
+        .select('*')
+        .eq('project_id', project.id);
+      if (suppError) console.error('Error fetching supports:', suppError);
+      setSupports(suppData || []);
+      console.log('Supports loaded:', suppData?.length || 0);
+    } catch (e) {
+      console.error('Supports fetch failed:', e);
+      setSupports([]);
+    }
+    
+    try {
+      const { data: flangeData, error: flangeError } = await supabase
+        .from('mto_flanges')
+        .select('*')
+        .eq('project_id', project.id);
+      if (flangeError) console.error('Error fetching flanges:', flangeError);
+      setFlanges(flangeData || []);
+      console.log('Flanges loaded:', flangeData?.length || 0);
+    } catch (e) {
+      console.error('Flanges fetch failed:', e);
+      setFlanges([]);
+    }
   };
 
   // ============================================================================
@@ -249,6 +307,15 @@ export default function WorkPackages({ project }) {
   // ============================================================================
   // RENDER
   // ============================================================================
+  
+  if (!project?.id) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+        <p className="text-lg">Nessun progetto selezionato</p>
+        <p className="text-sm mt-2">Seleziona un progetto dal menu</p>
+      </div>
+    );
+  }
   
   if (loading) {
     return (
