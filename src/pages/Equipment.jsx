@@ -579,6 +579,22 @@ export default function Equipment() {
   
   const handleDelete = async (eq) => {
     try {
+      // Prima rimuovi tutte le assegnazioni attive di questo equipment
+      const { error: assignmentError } = await supabase
+        .from('equipment_assignments')
+        .update({ 
+          status: 'removed', 
+          removed_at: new Date().toISOString() 
+        })
+        .eq('equipment_id', eq.id)
+        .eq('status', 'active')
+      
+      if (assignmentError) {
+        console.warn('Error removing assignments:', assignmentError)
+        // Continua comunque con l'eliminazione
+      }
+      
+      // Poi imposta l'equipment come inattivo
       const { error } = await supabase
         .from('equipment')
         .update({ status: 'inactive' })
