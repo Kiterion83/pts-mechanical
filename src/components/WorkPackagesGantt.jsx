@@ -153,10 +153,18 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
 
   const monthHeaders = getMonthHeaders();
 
-  // Conta TUTTI i membri della squadra (non solo per ruolo)
+  // Conta TUTTI i membri della squadra (membri + supervisor + foreman)
   const getSquadMemberCount = (squadId) => {
     const squad = squads.find(s => s.id === squadId);
-    return squad?.squad_members?.length || 0;
+    if (!squad) return 0;
+    
+    let count = squad.squad_members?.length || 0;
+    // Aggiungi supervisor se esiste
+    if (squad.supervisor_id) count++;
+    // Aggiungi foreman se esiste
+    if (squad.foreman_id) count++;
+    
+    return count;
   };
 
   return (
