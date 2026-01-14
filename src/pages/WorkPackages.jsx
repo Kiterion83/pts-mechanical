@@ -106,7 +106,7 @@ export default function WorkPackages() {
     console.log('Fetching squads...');
     const { data, error } = await supabase
       .from('squads')
-      .select('*, squad_members(id)')
+      .select('*, squad_members(id), supervisor_id, foreman_id')
       .eq('project_id', activeProject.id)
       .order('squad_number');
     
@@ -966,6 +966,14 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
               <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
               <input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
             </div>
+          </div>
+          
+          {/* Nota documenti */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+            <span className="text-blue-500">📁</span>
+            <p className="text-sm text-blue-700">
+              I documenti possono essere aggiunti dopo la creazione del WP, tramite il pulsante modifica (✏️).
+            </p>
           </div>
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
