@@ -76,6 +76,7 @@ export default function Personnel() {
   const [dragOver, setDragOver] = useState(false)
   const [differences, setDifferences] = useState([])
   const [importing, setImporting] = useState(false)
+  const [showRemoved, setShowRemoved] = useState(false) // Nasconde i "removed" di default
   
   // Form per nuovo/edit persona
   const [formData, setFormData] = useState({
@@ -772,6 +773,11 @@ export default function Personnel() {
   const newCount = differences.filter(d => d.type === 'new').length
   const modifiedCount = differences.filter(d => d.type === 'modified').length
   const removedCount = differences.filter(d => d.type === 'removed').length
+  
+  // Differenze visibili (filtra i removed se nascosti)
+  const visibleDifferences = showRemoved 
+    ? differences 
+    : differences.filter(d => d.type !== 'removed')
 
   return (
     <div className="space-y-6">
@@ -1404,7 +1410,7 @@ export default function Personnel() {
               <div>
                 <h2 className="text-xl font-bold text-gray-800">Differenze Rilevate</h2>
                 <p className="text-sm text-gray-500">
-                  {differences.length} differenze totali • {selectedDiffCount} selezionate
+                  {visibleDifferences.length} visibili • {selectedDiffCount} selezionate
                 </p>
               </div>
               <button onClick={() => setShowDiffModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -1413,7 +1419,7 @@ export default function Personnel() {
             </div>
             
             {/* Legenda */}
-            <div className="flex flex-wrap gap-4 px-4 py-3 bg-gray-50 border-b">
+            <div className="flex flex-wrap gap-4 px-4 py-3 bg-gray-50 border-b items-center">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="text-green-600" size={18} />
                 <span className="text-sm">Nuovi ({newCount})</span>
@@ -1422,10 +1428,19 @@ export default function Personnel() {
                 <AlertCircle className="text-yellow-600" size={18} />
                 <span className="text-sm">Modificati ({modifiedCount})</span>
               </div>
-              <div className="flex items-center gap-2">
+              
+              {/* Toggle per mostrare/nascondere rimossi */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showRemoved}
+                  onChange={(e) => setShowRemoved(e.target.checked)}
+                  className="w-4 h-4 text-red-600 rounded border-gray-300"
+                />
                 <MinusCircle className="text-red-600" size={18} />
                 <span className="text-sm">Rimossi ({removedCount})</span>
-              </div>
+              </label>
+              
               <div className="ml-auto flex gap-2">
                 <button onClick={selectAllDiffs} className="text-sm text-blue-600 hover:underline">
                   Seleziona tutto
@@ -1439,10 +1454,13 @@ export default function Personnel() {
             
             {/* Lista differenze */}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {differences.map((diff, index) => (
+              {visibleDifferences.map((diff, index) => {
+                // Trova l'indice reale nel array differences per toggleSelection
+                const realIndex = differences.findIndex(d => d === diff)
+                return (
                 <div
-                  key={index}
-                  onClick={() => toggleDiffSelection(index)}
+                  key={realIndex}
+                  onClick={() => toggleDiffSelection(realIndex)}
                   className={`border rounded-lg p-3 cursor-pointer transition-colors ${
                     diff.selected ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                   } ${
@@ -1499,7 +1517,7 @@ export default function Personnel() {
                     </div>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
             
             {/* Footer */}

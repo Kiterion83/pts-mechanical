@@ -974,7 +974,7 @@ export default function Equipment() {
                     <select
                       value={formData.type}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-w-0"
                     >
                       <option value="">-- Seleziona --</option>
                       {typesForCategory.map(([key, config]) => (
@@ -990,10 +990,11 @@ export default function Equipment() {
                         setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
                         setShowNewTypeModal(true)
                       }}
-                      className="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1"
+                      className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-1 flex-shrink-0"
                       title="Aggiungi nuovo tipo"
                     >
                       <PlusCircle size={18} />
+                      <span className="hidden sm:inline text-sm">Nuovo</span>
                     </button>
                   </div>
                 </div>
