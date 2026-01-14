@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
+import { useAuth } from '../contexts/AuthContext';
 import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
@@ -1180,6 +1181,11 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
               />
             </div>
           </div>
+          
+          {/* Documenti (solo per WP Action) */}
+          {!isPiping && (
+            <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
+          )}
         </div>
         
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
@@ -1195,6 +1201,359 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
           </button>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// WP DOCUMENTS - Upload, Preview, Download con Audit
+// ============================================================================
+
+const WPDocuments = ({ workPackageId, projectId }) => {
+  const { user } = useAuth();
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [downloadHistory, setDownloadHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Carica documenti
+  useEffect(() => {
+    fetchDocuments();
+  }, [workPackageId]);
+
+  const fetchDocuments = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('wp_documents')
+      .select('*')
+      .eq('work_package_id', workPackageId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching documents:', error);
+    }
+    setDocuments(data || []);
+    setLoading(false);
+  };
+
+  // Fetch download history
+  const fetchDownloadHistory = async () => {
+    const { data } = await supabase
+      .from('wp_document_downloads')
+      .select('*, document:wp_documents(file_name)')
+      .eq('work_package_id', workPackageId)
+      .order('downloaded_at', { ascending: false })
+      .limit(50);
+    
+    setDownloadHistory(data || []);
+  };
+
+  // Upload handler
+  const handleUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    
+    setUploading(true);
+    
+    for (const file of files) {
+      try {
+        // 1. Upload to storage
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${workPackageId}/${Date.now()}_${file.name}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('wp-documents')
+          .upload(fileName, file);
+        
+        if (uploadError) throw uploadError;
+        
+        // 2. Save metadata
+        const { error: dbError } = await supabase
+          .from('wp_documents')
+          .insert({
+            work_package_id: workPackageId,
+            project_id: projectId,
+            file_name: file.name,
+            file_type: file.type || 'application/octet-stream',
+            file_size: file.size,
+            storage_path: fileName,
+            uploaded_by: user?.id,
+            uploaded_by_name: user?.email || 'Unknown'
+          });
+        
+        if (dbError) throw dbError;
+        
+      } catch (error) {
+        console.error('Upload error:', error);
+        alert(`Errore upload ${file.name}: ${error.message}`);
+      }
+    }
+    
+    setUploading(false);
+    fetchDocuments();
+  };
+
+  // Drag & Drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const files = Array.from(e.dataTransfer.files);
+    handleUpload(files);
+  };
+
+  const handleFileInput = (e) => {
+    const files = Array.from(e.target.files);
+    handleUpload(files);
+  };
+
+  // Download with audit
+  const handleDownload = async (doc) => {
+    try {
+      // 1. Get signed URL
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from('wp-documents')
+        .createSignedUrl(doc.storage_path, 60);
+      
+      if (urlError) throw urlError;
+      
+      // 2. Log download
+      await supabase.from('wp_document_downloads').insert({
+        document_id: doc.id,
+        work_package_id: workPackageId,
+        downloaded_by: user?.id,
+        downloaded_by_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown',
+        downloaded_by_email: user?.email
+      });
+      
+      // 3. Open download
+      window.open(urlData.signedUrl, '_blank');
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      alert('Errore download: ' + error.message);
+    }
+  };
+
+  // Preview
+  const handlePreview = async (doc) => {
+    try {
+      const { data: urlData, error } = await supabase.storage
+        .from('wp-documents')
+        .createSignedUrl(doc.storage_path, 300);
+      
+      if (error) throw error;
+      
+      setPreviewDoc({ ...doc, previewUrl: urlData.signedUrl });
+    } catch (error) {
+      console.error('Preview error:', error);
+      alert('Errore anteprima: ' + error.message);
+    }
+  };
+
+  // Delete
+  const handleDelete = async (doc) => {
+    if (!confirm(`Eliminare "${doc.file_name}"?`)) return;
+    
+    try {
+      // Soft delete
+      await supabase
+        .from('wp_documents')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', doc.id);
+      
+      fetchDocuments();
+    } catch (error) {
+      alert('Errore eliminazione: ' + error.message);
+    }
+  };
+
+  // File icon by type
+  const getFileIcon = (fileType) => {
+    if (fileType?.includes('pdf')) return '📄';
+    if (fileType?.includes('image')) return '🖼️';
+    if (fileType?.includes('word') || fileType?.includes('document')) return '📝';
+    if (fileType?.includes('excel') || fileType?.includes('spreadsheet')) return '📊';
+    if (fileType?.includes('zip') || fileType?.includes('rar')) return '📦';
+    return '📎';
+  };
+
+  // Format file size
+  const formatSize = (bytes) => {
+    if (!bytes) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  // Check if previewable
+  const isPreviewable = (fileType) => {
+    return fileType?.includes('image') || fileType?.includes('pdf');
+  };
+
+  return (
+    <div className="border-t pt-4 mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-gray-700 flex items-center gap-2">
+          📁 Documenti ({documents.length})
+        </h4>
+        <button
+          onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchDownloadHistory(); }}
+          className="text-xs text-blue-600 hover:text-blue-800"
+        >
+          {showHistory ? '← Torna ai documenti' : '📋 Cronologia download'}
+        </button>
+      </div>
+
+      {showHistory ? (
+        // Download History
+        <div className="max-h-60 overflow-y-auto border rounded-lg">
+          {downloadHistory.length === 0 ? (
+            <p className="text-center text-gray-400 py-4 text-sm">Nessun download registrato</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="text-left p-2">File</th>
+                  <th className="text-left p-2">Utente</th>
+                  <th className="text-left p-2">Data/Ora</th>
+                </tr>
+              </thead>
+              <tbody>
+                {downloadHistory.map(dl => (
+                  <tr key={dl.id} className="border-t">
+                    <td className="p-2">{dl.document?.file_name || 'N/A'}</td>
+                    <td className="p-2">{dl.downloaded_by_name}</td>
+                    <td className="p-2">{new Date(dl.downloaded_at).toLocaleString('it-IT')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Drop Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
+              dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
+            }`}
+          >
+            {uploading ? (
+              <div className="flex items-center justify-center gap-2 text-blue-600">
+                <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                Caricamento in corso...
+              </div>
+            ) : (
+              <>
+                <p className="text-gray-500 text-sm">
+                  📤 Trascina qui i file o{' '}
+                  <label className="text-blue-600 hover:text-blue-800 cursor-pointer underline">
+                    sfoglia
+                    <input
+                      type="file"
+                      multiple
+                      onChange={handleFileInput}
+                      className="hidden"
+                    />
+                  </label>
+                </p>
+                <p className="text-xs text-gray-400 mt-1">PDF, Immagini, Documenti (max 10MB)</p>
+              </>
+            )}
+          </div>
+
+          {/* Documents List */}
+          {loading ? (
+            <div className="text-center py-4 text-gray-400">Caricamento...</div>
+          ) : documents.length === 0 ? (
+            <p className="text-center text-gray-400 py-4 text-sm">Nessun documento caricato</p>
+          ) : (
+            <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+              {documents.map(doc => (
+                <div key={doc.id} className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg group hover:bg-gray-100">
+                  <span className="text-xl">{getFileIcon(doc.file_type)}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-700 truncate">{doc.file_name}</p>
+                    <p className="text-xs text-gray-400">
+                      {formatSize(doc.file_size)} • {new Date(doc.created_at).toLocaleDateString('it-IT')}
+                    </p>
+                  </div>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {isPreviewable(doc.file_type) && (
+                      <button 
+                        onClick={() => handlePreview(doc)}
+                        className="p-1.5 hover:bg-blue-100 rounded text-blue-600" 
+                        title="Anteprima"
+                      >
+                        👁️
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleDownload(doc)}
+                      className="p-1.5 hover:bg-green-100 rounded text-green-600" 
+                      title="Download"
+                    >
+                      ⬇️
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(doc)}
+                      className="p-1.5 hover:bg-red-100 rounded text-red-600" 
+                      title="Elimina"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Preview Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4" onClick={() => setPreviewDoc(null)}>
+          <div className="bg-white rounded-xl max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-3 border-b bg-gray-50">
+              <span className="font-medium text-sm truncate">{previewDoc.file_name}</span>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => handleDownload(previewDoc)}
+                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                >
+                  ⬇️ Download
+                </button>
+                <button onClick={() => setPreviewDoc(null)} className="p-1 hover:bg-gray-200 rounded">✕</button>
+              </div>
+            </div>
+            <div className="p-4 max-h-[80vh] overflow-auto">
+              {previewDoc.file_type?.includes('image') ? (
+                <img src={previewDoc.previewUrl} alt={previewDoc.file_name} className="max-w-full h-auto" />
+              ) : previewDoc.file_type?.includes('pdf') ? (
+                <iframe src={previewDoc.previewUrl} className="w-full h-[70vh]" title={previewDoc.file_name} />
+              ) : (
+                <p className="text-center text-gray-500">Anteprima non disponibile</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
