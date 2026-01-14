@@ -1,500 +1,366 @@
-import { useState, useMemo, useRef } from 'react'
-import { 
-  ChevronLeft, ChevronRight, Calendar,
-  Users, AlertTriangle, CheckCircle2
-} from 'lucide-react'
+import React, { useState, useMemo } from 'react';
 
 // ============================================================================
-// UTILITÀ DATE
+// WORK PACKAGES GANTT CHART
 // ============================================================================
-
-const addDays = (date, days) => {
-  const result = new Date(date)
-  result.setDate(result.getDate() + days)
-  return result
-}
-
-const diffDays = (date1, date2) => {
-  const d1 = new Date(date1)
-  const d2 = new Date(date2)
-  return Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24))
-}
-
-const formatDate = (date, format = 'short') => {
-  const d = new Date(date)
-  if (format === 'day') return d.getDate()
-  if (format === 'month') return d.toLocaleDateString('it-IT', { month: 'short' })
-  if (format === 'full') return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' })
-  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })
-}
-
-const isSameDay = (d1, d2) => {
-  const date1 = new Date(d1)
-  const date2 = new Date(d2)
-  return date1.toDateString() === date2.toDateString()
-}
-
-const isWeekend = (date) => {
-  const d = new Date(date)
-  return d.getDay() === 0 || d.getDay() === 6
-}
-
-// ============================================================================
-// CONFIGURAZIONE
-// ============================================================================
-
-const ZOOM_LEVELS = {
-  week: { label: 'Settimana', daysVisible: 14, cellWidth: 40 },
-  month: { label: 'Mese', daysVisible: 31, cellWidth: 30 },
-  quarter: { label: 'Trimestre', daysVisible: 90, cellWidth: 12 }
-}
 
 const DISCIPLINE_COLORS = {
-  piping: '#3B82F6',
-  civil: '#F59E0B',
-  mechanical: '#10B981',
-  electrical: '#EAB308',
-  instrumentation: '#8B5CF6',
-  other: '#6B7280'
-}
+  piping: '#3B82F6',  // blue
+  action: '#10B981'   // green
+};
 
-// ============================================================================
-// COMPONENTE PRINCIPALE GANTT
-// ============================================================================
-
-export default function WorkPackagesGantt({ 
-  workPackages, 
-  squads, 
-  projectHoursPerDay = 8,
-  onWPClick
-}) {
-  const containerRef = useRef(null)
-  const [zoom, setZoom] = useState('month')
+export default function WorkPackagesGantt({ workPackages, squads, calculateProgress }) {
+  const [zoom, setZoom] = useState('month');
   const [startDate, setStartDate] = useState(() => {
-    const today = new Date()
-    today.setDate(today.getDate() - 7)
-    return today
-  })
+    const today = new Date();
+    today.setDate(today.getDate() - 7);
+    return today;
+  });
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // Configurazione zoom
+  const zoomConfig = {
+    week: { days: 14, cellWidth: 40, label: 'Settimana' },
+    month: { days: 31, cellWidth: 30, label: 'Mese' },
+    quarter: { days: 90, cellWidth: 12, label: 'Trimestre' }
+  };
 
-  const zoomConfig = ZOOM_LEVELS[zoom]
+  const config = zoomConfig[zoom];
 
-  // ============================================================================
-  // CALCOLO DATE RANGE
-  // ============================================================================
-  
-  const dateRange = useMemo(() => {
-    const dates = []
-    for (let i = 0; i < zoomConfig.daysVisible; i++) {
-      dates.push(addDays(startDate, i))
+  // Genera array di date
+  const dates = useMemo(() => {
+    const result = [];
+    const current = new Date(startDate);
+    for (let i = 0; i < config.days; i++) {
+      result.push(new Date(current));
+      current.setDate(current.getDate() + 1);
     }
-    return dates
-  }, [startDate, zoomConfig.daysVisible])
+    return result;
+  }, [startDate, config.days]);
 
-  const endDate = dateRange[dateRange.length - 1]
+  // Filtra WP con date
+  const wpsWithDates = workPackages.filter(wp => wp.planned_start && wp.planned_end);
 
-  // ============================================================================
-  // FILTRA WP CON DATE
-  // ============================================================================
-  
-  const wpsWithDates = useMemo(() => {
-    return workPackages.filter(wp => wp.planned_start && wp.planned_end)
-  }, [workPackages])
-
-  // ============================================================================
-  // CALCOLO RISORSE PER GIORNO
-  // ============================================================================
-  
-  const resourcesPerDay = useMemo(() => {
-    const resources = {}
-    
-    dateRange.forEach(date => {
-      const dateStr = date.toISOString().split('T')[0]
-      resources[dateStr] = { theoretical: 0, actual: 0 }
-      
-      wpsWithDates.forEach(wp => {
-        const wpStart = new Date(wp.planned_start)
-        const wpEnd = new Date(wp.planned_end)
-        
-        if (date >= wpStart && date <= wpEnd) {
-          if (wp.squad_id) {
-            const squad = squads.find(s => s.id === wp.squad_id)
-            const memberCount = squad?.memberCount || 0
-            resources[dateStr].theoretical += memberCount
-            
-            if (date <= today) {
-              resources[dateStr].actual += memberCount
-            }
-          } else if (wp.budget_hours) {
-            const wpDays = diffDays(wp.planned_start, wp.planned_end) + 1
-            const hoursPerDay = wp.budget_hours / wpDays
-            const peopleNeeded = Math.ceil(hoursPerDay / projectHoursPerDay)
-            resources[dateStr].theoretical += peopleNeeded
-          }
-        }
-      })
-    })
-    
-    return resources
-  }, [dateRange, wpsWithDates, squads, projectHoursPerDay, today])
-
-  // ============================================================================
-  // NAVIGAZIONE
-  // ============================================================================
-  
+  // Navigazione
   const navigate = (direction) => {
-    const days = direction === 'prev' 
-      ? -Math.floor(zoomConfig.daysVisible / 2) 
-      : Math.floor(zoomConfig.daysVisible / 2)
-    setStartDate(addDays(startDate, days))
-  }
+    const newDate = new Date(startDate);
+    const days = direction === 'prev' ? -config.days / 2 : config.days / 2;
+    newDate.setDate(newDate.getDate() + days);
+    setStartDate(newDate);
+  };
 
   const goToToday = () => {
-    const newStart = new Date(today)
-    newStart.setDate(newStart.getDate() - 7)
-    setStartDate(newStart)
-  }
+    const today = new Date();
+    today.setDate(today.getDate() - 7);
+    setStartDate(today);
+  };
 
-  // ============================================================================
-  // CALCOLO POSIZIONE BARRA WP
-  // ============================================================================
-  
-  const getBarPosition = (wp) => {
-    const wpStart = new Date(wp.planned_start)
-    const wpEnd = new Date(wp.planned_end)
-    
-    const rangeStart = new Date(startDate)
-    const rangeEnd = new Date(endDate)
-    
-    if (wpEnd < rangeStart || wpStart > rangeEnd) {
-      return null
+  // Calcola posizione barra WP
+  const getBarStyle = (wp) => {
+    const wpStart = new Date(wp.planned_start);
+    const wpEnd = new Date(wp.planned_end);
+    const viewStart = dates[0];
+    const viewEnd = dates[dates.length - 1];
+
+    // Se completamente fuori vista
+    if (wpEnd < viewStart || wpStart > viewEnd) {
+      return null;
     }
-    
-    const effectiveStart = wpStart < rangeStart ? rangeStart : wpStart
-    const effectiveEnd = wpEnd > rangeEnd ? rangeEnd : wpEnd
-    
-    const startOffset = diffDays(rangeStart, effectiveStart)
-    const duration = diffDays(effectiveStart, effectiveEnd) + 1
-    
-    const left = startOffset * zoomConfig.cellWidth
-    const width = duration * zoomConfig.cellWidth - 4
-    
-    const isClippedLeft = wpStart < rangeStart
-    const isClippedRight = wpEnd > rangeEnd
-    
-    return { left, width, isClippedLeft, isClippedRight }
-  }
 
-  // ============================================================================
-  // RENDER HEADER MESI
-  // ============================================================================
-  
-  const renderMonthHeaders = () => {
-    const months = []
-    let currentMonth = null
-    let monthStart = 0
-    let monthWidth = 0
-    
-    dateRange.forEach((date, idx) => {
-      const monthKey = `${date.getFullYear()}-${date.getMonth()}`
-      
+    // Calcola posizione
+    const startDiff = Math.max(0, Math.floor((wpStart - viewStart) / (1000 * 60 * 60 * 24)));
+    const endDiff = Math.min(config.days - 1, Math.floor((wpEnd - viewStart) / (1000 * 60 * 60 * 24)));
+
+    const left = startDiff * config.cellWidth;
+    const width = Math.max(config.cellWidth, (endDiff - startDiff + 1) * config.cellWidth - 4);
+
+    return { left, width };
+  };
+
+  // Check se oggi è visibile
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIndex = dates.findIndex(d => d.toDateString() === today.toDateString());
+
+  // Formatta header mese
+  const getMonthHeaders = () => {
+    const headers = [];
+    let currentMonth = null;
+    let startIdx = 0;
+
+    dates.forEach((date, idx) => {
+      const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
       if (monthKey !== currentMonth) {
         if (currentMonth !== null) {
-          months.push({ 
-            label: formatDate(dateRange[monthStart], 'month').toUpperCase() + ' ' + dateRange[monthStart].getFullYear(),
-            width: monthWidth * zoomConfig.cellWidth 
-          })
+          headers.push({
+            label: new Date(dates[startIdx]).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+            span: idx - startIdx
+          });
         }
-        currentMonth = monthKey
-        monthStart = idx
-        monthWidth = 1
-      } else {
-        monthWidth++
+        currentMonth = monthKey;
+        startIdx = idx;
       }
-    })
+    });
     
-    if (currentMonth !== null) {
-      months.push({ 
-        label: formatDate(dateRange[monthStart], 'month').toUpperCase() + ' ' + dateRange[monthStart].getFullYear(),
-        width: monthWidth * zoomConfig.cellWidth 
-      })
-    }
-    
-    return months
-  }
+    // Ultimo mese
+    headers.push({
+      label: new Date(dates[startIdx]).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
+      span: dates.length - startIdx
+    });
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
-  
-  const months = renderMonthHeaders()
-  const todayIndex = dateRange.findIndex(d => isSameDay(d, today))
+    return headers;
+  };
+
+  const monthHeaders = getMonthHeaders();
 
   return (
-    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center justify-between p-4 border-b bg-gray-50 flex-wrap gap-3">
+      <div className="flex items-center justify-between p-4 border-b bg-gray-50">
         <div className="flex items-center gap-2">
-          <button onClick={() => navigate('prev')} className="p-2 hover:bg-gray-200 rounded-lg">
-            <ChevronLeft size={20} />
+          <button
+            onClick={() => navigate('prev')}
+            className="px-3 py-1.5 bg-white border rounded-lg hover:bg-gray-100"
+          >
+            ← 
           </button>
           <button
             onClick={goToToday}
-            className="px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 rounded-lg flex items-center gap-1"
+            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
           >
-            <Calendar size={16} />
             Oggi
           </button>
-          <button onClick={() => navigate('next')} className="p-2 hover:bg-gray-200 rounded-lg">
-            <ChevronRight size={20} />
+          <button
+            onClick={() => navigate('next')}
+            className="px-3 py-1.5 bg-white border rounded-lg hover:bg-gray-100"
+          >
+            →
           </button>
-          
-          <span className="ml-4 text-sm text-gray-600 hidden sm:inline">
-            {formatDate(startDate, 'full')} - {formatDate(endDate, 'full')}
-          </span>
         </div>
-        
+
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-500">Zoom:</span>
-          {Object.entries(ZOOM_LEVELS).map(([key, config]) => (
-            <button
-              key={key}
-              onClick={() => setZoom(key)}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                zoom === key 
-                  ? 'bg-primary text-white' 
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {config.label}
-            </button>
-          ))}
+          <div className="flex bg-white border rounded-lg">
+            {Object.entries(zoomConfig).map(([key, val]) => (
+              <button
+                key={key}
+                onClick={() => setZoom(key)}
+                className={`px-3 py-1.5 text-sm ${
+                  zoom === key
+                    ? 'bg-blue-100 text-blue-700 font-medium'
+                    : 'text-gray-600 hover:bg-gray-100'
+                }`}
+              >
+                {val.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-3 rounded" style={{ backgroundColor: DISCIPLINE_COLORS.piping }}></div>
+            <span>Piping</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-3 rounded" style={{ backgroundColor: DISCIPLINE_COLORS.action }}></div>
+            <span>Action</span>
+          </div>
         </div>
       </div>
 
-      {/* Gantt Container */}
-      <div className="overflow-x-auto" ref={containerRef}>
-        <div style={{ minWidth: dateRange.length * zoomConfig.cellWidth + 250 }}>
-          {/* Header Row - Months */}
+      {/* Gantt */}
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: dates.length * config.cellWidth + 300 }}>
+          {/* Header Mesi */}
           <div className="flex border-b bg-gray-100">
-            <div className="w-[250px] flex-shrink-0 px-4 py-2 font-semibold text-gray-700 border-r">
+            <div className="w-[300px] shrink-0 px-4 py-2 font-medium text-sm border-r">
               Work Package
             </div>
             <div className="flex">
-              {months.map((month, idx) => (
-                <div 
-                  key={idx} 
-                  className="text-center text-xs font-semibold text-gray-600 py-2 border-r border-gray-200"
-                  style={{ width: month.width }}
-                >
-                  {month.label}
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {/* Header Row - Days */}
-          <div className="flex border-b bg-gray-50">
-            <div className="w-[250px] flex-shrink-0 px-4 py-1 text-xs text-gray-500 border-r">
-              Squadra
-            </div>
-            <div className="flex relative">
-              {dateRange.map((date, idx) => (
-                <div 
+              {monthHeaders.map((header, idx) => (
+                <div
                   key={idx}
-                  className={`text-center text-xs py-1 border-r border-gray-100 ${
-                    isWeekend(date) ? 'bg-gray-100' : ''
-                  } ${isSameDay(date, today) ? 'bg-red-100 font-bold text-red-600' : 'text-gray-500'}`}
-                  style={{ width: zoomConfig.cellWidth }}
+                  style={{ width: header.span * config.cellWidth }}
+                  className="px-2 py-2 text-sm font-medium text-center border-r text-gray-700"
                 >
-                  {formatDate(date, 'day')}
+                  {header.label}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Work Packages Rows */}
+          {/* Header Giorni */}
+          <div className="flex border-b bg-gray-50">
+            <div className="w-[300px] shrink-0 border-r"></div>
+            <div className="flex">
+              {dates.map((date, idx) => {
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                const isToday = date.toDateString() === today.toDateString();
+                return (
+                  <div
+                    key={idx}
+                    style={{ width: config.cellWidth }}
+                    className={`text-center text-xs py-1 border-r ${
+                      isToday ? 'bg-red-100 text-red-700 font-bold' : 
+                      isWeekend ? 'bg-gray-200 text-gray-500' : 'text-gray-600'
+                    }`}
+                  >
+                    {zoom === 'quarter' ? '' : date.getDate()}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Righe WP */}
           {wpsWithDates.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              <Calendar size={32} className="mx-auto mb-2 text-gray-300" />
-              <p>Nessun Work Package con date pianificate</p>
-              <p className="text-sm">Assegna date ai WP per visualizzarli nel Gantt</p>
+            <div className="flex items-center justify-center py-12 text-gray-500">
+              Nessun WP con date pianificate
             </div>
           ) : (
             wpsWithDates.map(wp => {
-              const barPos = getBarPosition(wp)
-              const squad = squads.find(s => s.id === wp.squad_id)
-              const color = DISCIPLINE_COLORS[wp.discipline] || DISCIPLINE_COLORS.other
-              const progressWidth = barPos ? (barPos.width * wp.progress / 100) : 0
-              
+              const barStyle = getBarStyle(wp);
+              const progress = calculateProgress(wp);
+              const color = DISCIPLINE_COLORS[wp.wp_type] || DISCIPLINE_COLORS.piping;
+
               return (
-                <div 
-                  key={wp.id} 
-                  className="flex border-b hover:bg-gray-50 group"
-                >
-                  {/* WP Info */}
-                  <div 
-                    className="w-[250px] flex-shrink-0 px-4 py-3 border-r cursor-pointer"
-                    onClick={() => onWPClick?.(wp)}
-                  >
+                <div key={wp.id} className="flex border-b hover:bg-gray-50">
+                  {/* Info WP */}
+                  <div className="w-[300px] shrink-0 px-4 py-3 border-r">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">
+                      <span className={`font-mono text-xs px-1.5 py-0.5 rounded ${
+                        wp.wp_type === 'piping' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                      }`}>
                         {wp.code}
                       </span>
-                      <span className="text-sm font-medium text-gray-800 truncate" title={wp.name}>
-                        {wp.name}
-                      </span>
-                      {wp.hasGenericEquipment && (
-                        <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" />
-                      )}
+                      <span className="text-sm text-gray-700 truncate">{wp.description}</span>
                     </div>
-                    <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
-                      {squad ? (
-                        <>
-                          <Users size={12} />
-                          Sq. {squad.squad_number}
-                        </>
-                      ) : (
-                        <span className="text-gray-400">No squadra</span>
-                      )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      {wp.squad ? `Sq.${wp.squad.squad_number}` : 'Non assegnato'} • {progress.toFixed(0)}%
                     </div>
                   </div>
-                  
-                  {/* Timeline */}
-                  <div className="flex-1 relative" style={{ height: 48 }}>
-                    {/* Grid lines */}
+
+                  {/* Area Gantt */}
+                  <div className="flex-1 relative" style={{ height: 50 }}>
+                    {/* Griglia weekend */}
                     <div className="absolute inset-0 flex">
-                      {dateRange.map((date, idx) => (
-                        <div 
-                          key={idx}
-                          className={`border-r border-gray-100 ${
-                            isWeekend(date) ? 'bg-gray-50' : ''
-                          }`}
-                          style={{ width: zoomConfig.cellWidth }}
-                        />
-                      ))}
+                      {dates.map((date, idx) => {
+                        const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                        return (
+                          <div
+                            key={idx}
+                            style={{ width: config.cellWidth }}
+                            className={`border-r ${isWeekend ? 'bg-gray-100' : ''}`}
+                          />
+                        );
+                      })}
                     </div>
-                    
-                    {/* Today marker */}
+
+                    {/* Marker TODAY */}
                     {todayIndex >= 0 && (
-                      <div 
+                      <div
                         className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
-                        style={{ left: todayIndex * zoomConfig.cellWidth + zoomConfig.cellWidth / 2 }}
+                        style={{ left: todayIndex * config.cellWidth + config.cellWidth / 2 }}
                       />
                     )}
-                    
-                    {/* WP Bar */}
-                    {barPos && (
+
+                    {/* Barra WP */}
+                    {barStyle && (
                       <div
-                        className="absolute top-2 h-8 rounded cursor-pointer transition-all group-hover:shadow-md"
-                        style={{ 
-                          left: barPos.left, 
-                          width: Math.max(barPos.width, 20),
-                          backgroundColor: `${color}30`,
-                          borderLeft: barPos.isClippedLeft ? 'none' : `3px solid ${color}`,
-                          borderRadius: barPos.isClippedLeft ? '0 4px 4px 0' : barPos.isClippedRight ? '4px 0 0 4px' : '4px'
+                        className="absolute top-2 h-7 rounded-md flex items-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                        style={{
+                          left: barStyle.left + 2,
+                          width: barStyle.width,
+                          backgroundColor: color
                         }}
-                        onClick={() => onWPClick?.(wp)}
+                        title={`${wp.code}: ${wp.description}\n${wp.planned_start} → ${wp.planned_end}\nProgress: ${progress.toFixed(1)}%`}
                       >
                         {/* Progress fill */}
-                        <div 
-                          className="h-full rounded-l"
-                          style={{ 
-                            width: progressWidth,
-                            backgroundColor: color,
-                            borderRadius: barPos.isClippedLeft ? '0 0 0 0' : '4px 0 0 4px'
-                          }}
+                        <div
+                          className="absolute inset-0 bg-black/20"
+                          style={{ width: `${progress}%` }}
                         />
-                        
                         {/* Label */}
-                        {barPos.width > 60 && (
-                          <span 
-                            className="absolute inset-0 flex items-center px-2 text-xs font-medium truncate"
-                            style={{ color: wp.progress > 50 ? 'white' : color }}
-                          >
-                            {wp.progress.toFixed(0)}%
+                        {barStyle.width > 60 && (
+                          <span className="relative z-10 text-white text-xs px-2 truncate">
+                            {wp.code}
                           </span>
                         )}
                       </div>
                     )}
                   </div>
                 </div>
-              )
+              );
             })
           )}
 
-          {/* Resources Row */}
+          {/* Footer Risorse */}
           <div className="border-t-2 border-gray-300">
-            {/* Theoretical Resources */}
-            <div className="flex bg-blue-50">
-              <div className="w-[250px] flex-shrink-0 px-4 py-2 border-r text-sm font-medium text-blue-700 flex items-center gap-2">
-                <Users size={16} />
-                Risorse Teoriche
+            <div className="flex border-b bg-blue-50">
+              <div className="w-[300px] shrink-0 px-4 py-2 font-medium text-sm border-r text-blue-800">
+                📊 Risorse Teoriche
               </div>
               <div className="flex">
-                {dateRange.map((date, idx) => {
-                  const dateStr = date.toISOString().split('T')[0]
-                  const value = resourcesPerDay[dateStr]?.theoretical || 0
-                  return (
-                    <div 
-                      key={idx}
-                      className={`text-center text-xs py-2 border-r border-blue-100 font-medium ${
-                        isWeekend(date) ? 'bg-blue-100/50' : ''
-                      } ${value > 0 ? 'text-blue-700' : 'text-gray-400'}`}
-                      style={{ width: zoomConfig.cellWidth }}
-                    >
-                      {value > 0 ? value : '-'}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            
-            {/* Actual Resources */}
-            <div className="flex bg-green-50">
-              <div className="w-[250px] flex-shrink-0 px-4 py-2 border-r text-sm font-medium text-green-700 flex items-center gap-2">
-                <CheckCircle2 size={16} />
-                Risorse Reali
-              </div>
-              <div className="flex">
-                {dateRange.map((date, idx) => {
-                  const dateStr = date.toISOString().split('T')[0]
-                  const value = resourcesPerDay[dateStr]?.actual || 0
-                  const isFuture = date > today
-                  return (
-                    <div 
-                      key={idx}
-                      className={`text-center text-xs py-2 border-r border-green-100 font-medium ${
-                        isWeekend(date) ? 'bg-green-100/50' : ''
-                      } ${isFuture ? 'text-gray-300' : value > 0 ? 'text-green-700' : 'text-gray-400'}`}
-                      style={{ width: zoomConfig.cellWidth }}
-                    >
-                      {isFuture ? '--' : (value > 0 ? value : '-')}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+                {dates.map((date, idx) => {
+                  // Conta WP attivi in questa data
+                  let resources = 0;
+                  wpsWithDates.forEach(wp => {
+                    const wpStart = new Date(wp.planned_start);
+                    const wpEnd = new Date(wp.planned_end);
+                    if (date >= wpStart && date <= wpEnd) {
+                      // Usa membri squadra se assegnata
+                      if (wp.squad) {
+                        const squad = squads.find(s => s.id === wp.squad_id);
+                        resources += squad?.squad_members?.length || 0;
+                      }
+                    }
+                  });
 
-      {/* Legend */}
-      <div className="flex items-center gap-6 p-4 border-t bg-gray-50 text-xs flex-wrap">
-        <span className="font-medium text-gray-600">Legenda:</span>
-        {Object.entries(DISCIPLINE_COLORS).map(([key, color]) => (
-          <div key={key} className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
-            <span className="capitalize">{key}</span>
+                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{ width: config.cellWidth }}
+                      className={`text-center text-xs py-1.5 border-r ${
+                        isWeekend ? 'bg-gray-200' : resources > 0 ? 'bg-blue-100' : ''
+                      }`}
+                    >
+                      {resources > 0 ? resources : '-'}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex bg-green-50">
+              <div className="w-[300px] shrink-0 px-4 py-2 font-medium text-sm border-r text-green-800">
+                ✓ Risorse Reali
+              </div>
+              <div className="flex">
+                {dates.map((date, idx) => {
+                  const isPast = date < today;
+                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+                  // Per ora mostra -- per date future
+                  // In produzione, questo verrà da daily reports
+                  return (
+                    <div
+                      key={idx}
+                      style={{ width: config.cellWidth }}
+                      className={`text-center text-xs py-1.5 border-r ${
+                        isWeekend ? 'bg-gray-200' : isPast ? 'bg-green-100' : ''
+                      }`}
+                    >
+                      {isPast ? '-' : '--'}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
-        ))}
-        <div className="flex items-center gap-1 ml-4">
-          <div className="w-4 h-0.5 bg-red-500" />
-          <span>Oggi</span>
         </div>
       </div>
     </div>
-  )
+  );
 }
