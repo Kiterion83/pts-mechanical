@@ -462,7 +462,7 @@ export default function WorkPackages() {
           )}
         </div>
       ) : (
-        <WorkPackagesGantt workPackages={workPackages} squads={squads} calculateProgress={calculateWPProgress} />
+        <WorkPackagesGantt workPackages={workPackages} squads={squads} calculateProgress={calculateWPProgress} activeProject={activeProject} />
       )}
 
       {/* Modals */}
