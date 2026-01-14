@@ -222,6 +222,7 @@ export default function Personnel() {
   }
 
   const openAddModal = () => {
+    setSelectedPerson(null) // Reset per evitare conflitti
     resetForm()
     setShowAddModal(true)
   }
@@ -288,6 +289,8 @@ export default function Personnel() {
     try {
       if (selectedPerson) {
         // Update esistente - aggiorna tutto in personnel
+        console.log('Updating personnel:', selectedPerson.personnel_id, formData)
+        
         const { error: personnelError } = await supabase
           .from('personnel')
           .update({
@@ -303,7 +306,12 @@ export default function Personnel() {
           })
           .eq('id', selectedPerson.personnel_id)
         
-        if (personnelError) throw personnelError
+        if (personnelError) {
+          console.error('Update error:', personnelError)
+          throw personnelError
+        }
+        
+        console.log('Update successful')
       } else {
         // Inserimento nuovo
         // Genera username automaticamente se non specificato
@@ -328,7 +336,10 @@ export default function Personnel() {
             status: 'active'
           }])
         
-        if (personnelError) throw personnelError
+        if (personnelError) {
+          console.error('Insert error:', personnelError)
+          throw personnelError
+        }
       }
       
       // Chiudi modal e ricarica
@@ -338,7 +349,7 @@ export default function Personnel() {
       loadData()
     } catch (err) {
       console.error('Error saving:', err)
-      alert('Errore: ' + err.message)
+      alert('Errore nel salvataggio: ' + (err.message || JSON.stringify(err)))
     }
   }
 
