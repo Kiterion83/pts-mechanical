@@ -1,1291 +1,850 @@
-import { useState, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useProject } from '../contexts/ProjectContext'
-import { supabase } from '../lib/supabase'
-import { 
-  Wrench, Plus, Search, Filter, X, Check, Edit, Trash2,
-  ChevronDown, ChevronRight, Calendar, Users, Clock,
-  AlertTriangle, CheckCircle2, Package, Truck, Hash,
-  Play, Pause, BarChart3, MapPin, FileText, DollarSign,
-  PlusCircle, MinusCircle, GanttChart, Download
-} from 'lucide-react'
-import WorkPackagesGantt from '../components/WorkPackagesGantt'
-import * as XLSX from 'xlsx'
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../supabaseClient';
+import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
-// CONFIGURAZIONE
+// WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
 // ============================================================================
 
-const DISCIPLINES = {
-  piping: { label: 'Piping', color: 'bg-blue-100 text-blue-800' },
-  civil: { label: 'Civil', color: 'bg-amber-100 text-amber-800' },
-  mechanical: { label: 'Mechanical', color: 'bg-green-100 text-green-800' },
-  electrical: { label: 'Electrical', color: 'bg-yellow-100 text-yellow-800' },
-  instrumentation: { label: 'Instrumentation', color: 'bg-purple-100 text-purple-800' },
-  other: { label: 'Altro', color: 'bg-gray-100 text-gray-800' }
-}
-
-const STATUSES = {
-  draft: { label: 'Bozza', color: 'bg-gray-100 text-gray-800', icon: FileText },
-  assigned: { label: 'Assegnato', color: 'bg-blue-100 text-blue-800', icon: Users },
-  in_progress: { label: 'In Corso', color: 'bg-green-100 text-green-800', icon: Play },
-  completed: { label: 'Completato', color: 'bg-emerald-100 text-emerald-800', icon: CheckCircle2 },
-  on_hold: { label: 'Sospeso', color: 'bg-orange-100 text-orange-800', icon: Pause }
-}
-
-const UNITS_OF_MEASURE = [
-  { value: 'nr', label: 'Nr (numero)' },
-  { value: 'm', label: 'm (metri)' },
-  { value: 'ml', label: 'ml (metri lineari)' },
-  { value: 'm2', label: 'm² (metri quadri)' },
-  { value: 'm3', label: 'm³ (metri cubi)' },
-  { value: 'kg', label: 'kg (chilogrammi)' },
-  { value: 'ton', label: 'ton (tonnellate)' },
-  { value: 'pz', label: 'pz (pezzi)' },
-  { value: 'lt', label: 'lt (litri)' }
-]
-
-const EQUIPMENT_TYPES_GENERIC = {
-  crane: { label: 'Gru', labelEn: 'Crane' },
-  truck: { label: 'Camion', labelEn: 'Truck' },
-  forklift: { label: 'Muletto', labelEn: 'Forklift' },
-  excavator: { label: 'Escavatore', labelEn: 'Excavator' },
-  generator: { label: 'Generatore', labelEn: 'Generator' },
-  welding_machine: { label: 'Saldatrice', labelEn: 'Welding Machine' },
-  compressor: { label: 'Compressore', labelEn: 'Compressor' },
-  aerial_platform: { label: 'Piattaforma Aerea', labelEn: 'Aerial Platform' },
-  light_tower: { label: 'Torre Faro', labelEn: 'Light Tower' },
-  other: { label: 'Altro', labelEn: 'Other' }
-}
-
-// ============================================================================
-// COMPONENTI BADGE
-// ============================================================================
-
-function DisciplineBadge({ discipline }) {
-  const config = DISCIPLINES[discipline] || DISCIPLINES.other
-  return (
-    <span className={`${config.color} px-2 py-1 text-xs rounded-full font-medium`}>
-      {config.label}
-    </span>
-  )
-}
-
-function StatusBadge({ status }) {
-  const config = STATUSES[status] || STATUSES.draft
-  const Icon = config.icon
-  return (
-    <span className={`${config.color} px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1`}>
-      <Icon size={12} />
-      {config.label}
-    </span>
-  )
-}
-
-function AssignmentBadge({ hasSquad, hasDate }) {
-  if (hasSquad && hasDate) {
-    return (
-      <span className="bg-green-100 text-green-800 px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1">
-        <CheckCircle2 size={12} />
-        Pronto
-      </span>
-    )
-  }
-  if (hasSquad) {
-    return (
-      <span className="bg-blue-100 text-blue-800 px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1">
-        <Users size={12} />
-        Solo Squadra
-      </span>
-    )
-  }
-  if (hasDate) {
-    return (
-      <span className="bg-amber-100 text-amber-800 px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1">
-        <Calendar size={12} />
-        Solo Date
-      </span>
-    )
-  }
-  return (
-    <span className="bg-gray-100 text-gray-600 px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1">
-      <Clock size={12} />
-      Da Assegnare
-    </span>
-  )
-}
-
-// ============================================================================
-// COMPONENTE PROGRESS BAR
-// ============================================================================
-
-function ProgressBar({ percent, size = 'normal' }) {
-  const height = size === 'small' ? 'h-1.5' : 'h-2'
-  const color = percent >= 100 ? 'bg-emerald-500' : percent >= 50 ? 'bg-green-500' : 'bg-blue-500'
-  
-  return (
-    <div className={`w-full bg-gray-200 rounded-full ${height}`}>
-      <div 
-        className={`${color} ${height} rounded-full transition-all duration-300`}
-        style={{ width: `${Math.min(100, percent)}%` }}
-      />
-    </div>
-  )
-}
-
-// ============================================================================
-// COMPONENTE PRINCIPALE
-// ============================================================================
-
-export default function WorkPackages() {
-  const { t } = useTranslation()
-  const { activeProject } = useProject()
-  
+export default function WorkPackages({ project }) {
   // State principale
-  const [workPackages, setWorkPackages] = useState([])
-  const [squads, setSquads] = useState([])
-  const [equipment, setEquipment] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [workPackages, setWorkPackages] = useState([]);
+  const [squads, setSquads] = useState([]);
+  const [isometrics, setIsometrics] = useState([]);
+  const [spools, setSpools] = useState([]);
+  const [welds, setWelds] = useState([]);
+  const [supports, setSupports] = useState([]);
+  const [flanges, setFlanges] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   // UI State
-  const [showModal, setShowModal] = useState(false)
-  const [editingWP, setEditingWP] = useState(null)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
-  const [expandedWP, setExpandedWP] = useState(null)
-  const [activeTab, setActiveTab] = useState('list')
+  const [activeTab, setActiveTab] = useState('list');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterSquad, setFilterSquad] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [expandedWP, setExpandedWP] = useState(null);
   
-  // Filtri
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterDiscipline, setFilterDiscipline] = useState('')
-  const [filterStatus, setFilterStatus] = useState('')
-  const [filterAssignment, setFilterAssignment] = useState('')
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    code: '',
-    name: '',
-    description: '',
-    area: '',
-    discipline: 'piping',
-    budgetHours: '',
-    hourlyRate: '',
-    squadId: '',
-    plannedStart: '',
-    plannedEnd: '',
-    notes: ''
-  })
-  
-  // Quantità
-  const [quantities, setQuantities] = useState([])
-  const [newQty, setNewQty] = useState({
-    description: '',
-    unitOfMeasure: 'nr',
-    plannedQty: ''
-  })
-  
-  // Equipment stime
-  const [equipmentEstimates, setEquipmentEstimates] = useState([])
-  const [newEquipment, setNewEquipment] = useState({
-    mode: 'generic',
-    equipmentType: '',
-    equipmentId: '',
-    estimatedHours: ''
-  })
+  // Modal State
+  const [showCreateWPP, setShowCreateWPP] = useState(false);
+  const [showCreateWPA, setShowCreateWPA] = useState(false);
+  const [editingWP, setEditingWP] = useState(null);
 
   // ============================================================================
-  // CARICAMENTO DATI
+  // DATA FETCHING
   // ============================================================================
   
   useEffect(() => {
-    if (activeProject) {
-      loadData()
+    if (project?.id) {
+      fetchAllData();
     }
-  }, [activeProject])
+  }, [project?.id]);
 
-  const loadData = async () => {
+  const fetchAllData = async () => {
+    setLoading(true);
     try {
-      setLoading(true)
-      
-      const { data: wpData } = await supabase
-        .from('work_packages')
-        .select(`
-          *,
-          squad:squads(id, squad_number, name),
-          work_package_quantities(*),
-          work_package_equipment(*, equipment:equipment(id, type, description, plate_number))
-        `)
-        .eq('project_id', activeProject.id)
-        .order('code')
-      
-      const wpWithProgress = (wpData || []).map(wp => {
-        const totalPlanned = wp.work_package_quantities?.reduce((sum, q) => sum + (q.planned_qty || 0), 0) || 0
-        const totalCompleted = wp.work_package_quantities?.reduce((sum, q) => sum + (q.completed_qty || 0), 0) || 0
-        const progress = totalPlanned > 0 ? (totalCompleted / totalPlanned) * 100 : 0
-        const hasGenericEquipment = wp.work_package_equipment?.some(e => !e.equipment_id) || false
-        
-        return { ...wp, progress, hasGenericEquipment }
-      })
-      
-      setWorkPackages(wpWithProgress)
-      
-      const { data: squadsData } = await supabase
-        .from('squads')
-        .select(`*, squad_members(id, status)`)
-        .eq('project_id', activeProject.id)
-        .eq('status', 'active')
-        .order('squad_number')
-      
-      const squadsWithCount = (squadsData || []).map(s => ({
-        ...s,
-        memberCount: s.squad_members?.filter(m => m.status === 'active').length || 0
-      }))
-      setSquads(squadsWithCount)
-      
-      const { data: eqData } = await supabase
-        .from('equipment')
-        .select('*')
-        .eq('project_id', activeProject.id)
-        .neq('status', 'inactive')
-        .order('type')
-      setEquipment(eqData || [])
-      
-    } catch (err) {
-      console.error('Error loading data:', err)
+      await Promise.all([
+        fetchWorkPackages(),
+        fetchSquads(),
+        fetchMTOData()
+      ]);
+    } catch (error) {
+      console.error('Error fetching data:', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  // ============================================================================
-  // CALCOLI DASHBOARD
-  // ============================================================================
-  
-  const readyCount = workPackages.filter(wp => wp.squad_id && wp.planned_start).length
-  const squadOnlyCount = workPackages.filter(wp => wp.squad_id && !wp.planned_start).length
-  const dateOnlyCount = workPackages.filter(wp => !wp.squad_id && wp.planned_start).length
-  const unassignedCount = workPackages.filter(wp => !wp.squad_id && !wp.planned_start).length
-  
-  const globalProgress = workPackages.length > 0
-    ? workPackages.reduce((sum, wp) => sum + wp.progress, 0) / workPackages.length
-    : 0
-
-  // ============================================================================
-  // FILTRI
-  // ============================================================================
-  
-  const filteredWPs = workPackages.filter(wp => {
-    const matchesSearch = searchTerm === '' ||
-      wp.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      wp.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      wp.area?.toLowerCase().includes(searchTerm.toLowerCase())
+  const fetchWorkPackages = async () => {
+    const { data, error } = await supabase
+      .from('work_packages')
+      .select(`
+        *,
+        squad:squads(id, squad_number, name),
+        wp_spools(id, spool_id, spool_number)
+      `)
+      .eq('project_id', project.id)
+      .is('deleted_at', null)
+      .order('code');
     
-    const matchesDiscipline = !filterDiscipline || wp.discipline === filterDiscipline
-    const matchesStatus = !filterStatus || wp.status === filterStatus
+    if (error) throw error;
     
-    let matchesAssignment = true
-    if (filterAssignment === 'ready') matchesAssignment = wp.squad_id && wp.planned_start
-    else if (filterAssignment === 'squad_only') matchesAssignment = wp.squad_id && !wp.planned_start
-    else if (filterAssignment === 'date_only') matchesAssignment = !wp.squad_id && wp.planned_start
-    else if (filterAssignment === 'unassigned') matchesAssignment = !wp.squad_id && !wp.planned_start
-    
-    return matchesSearch && matchesDiscipline && matchesStatus && matchesAssignment
-  })
-
-  // ============================================================================
-  // EXPORT EXCEL
-  // ============================================================================
-  
-  const handleExport = () => {
-    const data = workPackages.map(wp => ({
-      'Codice': wp.code,
-      'Nome': wp.name,
-      'Disciplina': DISCIPLINES[wp.discipline]?.label || wp.discipline,
-      'Area': wp.area || '',
-      'Stato': STATUSES[wp.status]?.label || wp.status,
-      'Squadra': wp.squad ? `Sq. ${wp.squad.squad_number}` : '',
-      'Data Inizio': wp.planned_start || '',
-      'Data Fine': wp.planned_end || '',
-      'Avanzamento %': wp.progress?.toFixed(1) || '0',
-      'Monte Ore': wp.budget_hours || '',
-      'Tariffa €/h': wp.hourly_rate || ''
-    }))
-    
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Work Packages')
-    XLSX.writeFile(wb, `WorkPackages_${activeProject.code}_${new Date().toISOString().split('T')[0]}.xlsx`)
-  }
-
-  // ============================================================================
-  // CRUD OPERATIONS
-  // ============================================================================
-  
-  const openCreateModal = async () => {
-    let nextCode = `WP-${String(workPackages.length + 1).padStart(3, '0')}`
-    
-    try {
-      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: activeProject.id })
-      if (data) nextCode = data
-    } catch (e) {
-      console.log('Using fallback code generation')
+    // Fetch activities per WP
+    const wpIds = data.map(wp => wp.id);
+    if (wpIds.length > 0) {
+      const { data: activities } = await supabase
+        .from('wp_activities')
+        .select('*')
+        .in('work_package_id', wpIds);
+      
+      // Attach activities to WPs
+      data.forEach(wp => {
+        wp.activities = activities?.filter(a => a.work_package_id === wp.id) || [];
+      });
     }
     
-    setFormData({
-      code: nextCode,
-      name: '',
-      description: '',
-      area: '',
-      discipline: 'piping',
-      budgetHours: '',
-      hourlyRate: '',
-      squadId: '',
-      plannedStart: '',
-      plannedEnd: '',
-      notes: ''
-    })
-    setQuantities([])
-    setEquipmentEstimates([])
-    setEditingWP(null)
-    setShowModal(true)
-  }
+    setWorkPackages(data || []);
+  };
 
-  const openEditModal = (wp) => {
-    setFormData({
-      code: wp.code,
-      name: wp.name || '',
-      description: wp.description || '',
-      area: wp.area || '',
-      discipline: wp.discipline || 'piping',
-      budgetHours: wp.budget_hours || '',
-      hourlyRate: wp.hourly_rate || '',
-      squadId: wp.squad_id || '',
-      plannedStart: wp.planned_start || '',
-      plannedEnd: wp.planned_end || '',
-      notes: wp.notes || ''
-    })
-    setQuantities(wp.work_package_quantities || [])
-    setEquipmentEstimates(wp.work_package_equipment || [])
-    setEditingWP(wp)
-    setShowModal(true)
-  }
+  const fetchSquads = async () => {
+    const { data, error } = await supabase
+      .from('squads')
+      .select('*, squad_members(id)')
+      .eq('project_id', project.id)
+      .eq('is_active', true)
+      .order('squad_number');
+    
+    if (error) throw error;
+    setSquads(data || []);
+  };
 
-  const handleSave = async () => {
-    if (!formData.name.trim()) {
-      alert('Inserisci il nome del Work Package')
-      return
+  const fetchMTOData = async () => {
+    const { data: isoData } = await supabase
+      .from('mto_isometrics')
+      .select('*')
+      .eq('project_id', project.id)
+      .eq('status', 'active');
+    setIsometrics(isoData || []);
+    
+    const { data: spoolData } = await supabase
+      .from('mto_spools')
+      .select('*')
+      .eq('project_id', project.id);
+    setSpools(spoolData || []);
+    
+    const { data: weldData } = await supabase
+      .from('mto_welds')
+      .select('*')
+      .eq('project_id', project.id);
+    setWelds(weldData || []);
+    
+    const { data: suppData } = await supabase
+      .from('mto_supports')
+      .select('*')
+      .eq('project_id', project.id);
+    setSupports(suppData || []);
+    
+    const { data: flangeData } = await supabase
+      .from('mto_flanges')
+      .select('*')
+      .eq('project_id', project.id);
+    setFlanges(flangeData || []);
+  };
+
+  // ============================================================================
+  // CALCULATIONS
+  // ============================================================================
+  
+  const calculateWPProgress = (wp) => {
+    if (wp.wp_type === 'action') {
+      return wp.manual_progress || 0;
     }
     
-    try {
-      const wpData = {
-        project_id: activeProject.id,
-        code: formData.code,
-        name: formData.name.trim(),
-        description: formData.description.trim() || null,
-        area: formData.area.trim() || null,
-        discipline: formData.discipline,
-        budget_hours: formData.budgetHours ? parseFloat(formData.budgetHours) : null,
-        hourly_rate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
-        squad_id: formData.squadId || null,
-        planned_start: formData.plannedStart || null,
-        planned_end: formData.plannedEnd || null,
-        notes: formData.notes.trim() || null
+    const activities = wp.activities || [];
+    const welding = activities.filter(a => a.category === 'welding');
+    const support = activities.filter(a => a.category === 'support');
+    const flange = activities.filter(a => a.category === 'flange');
+    
+    const weldingTotal = welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
+    const weldingCompleted = welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
+    const supportTotal = support.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
+    const supportCompleted = support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
+    const flangeTotal = flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
+    const flangeCompleted = flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
+    
+    let categoriesPresent = 0;
+    if (weldingTotal > 0) categoriesPresent++;
+    if (supportTotal > 0) categoriesPresent++;
+    if (flangeTotal > 0) categoriesPresent++;
+    
+    if (categoriesPresent === 0) return 0;
+    
+    const weight = 100 / categoriesPresent;
+    let progress = 0;
+    
+    if (weldingTotal > 0) progress += (weldingCompleted / weldingTotal) * weight;
+    if (supportTotal > 0) progress += (supportCompleted / supportTotal) * weight;
+    if (flangeTotal > 0) progress += (flangeCompleted / flangeTotal) * weight;
+    
+    return Math.min(100, progress);
+  };
+
+  const getWPStats = (wp) => {
+    const activities = wp.activities || [];
+    const welding = activities.filter(a => a.category === 'welding');
+    const support = activities.filter(a => a.category === 'support');
+    const flange = activities.filter(a => a.category === 'flange');
+    
+    return {
+      welding: {
+        total: welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
+        completed: welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
+      },
+      supports: {
+        total: support.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
+        completed: support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
+      },
+      flanges: {
+        total: flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
+        completed: flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
       }
-      
-      let wpId
-      
-      if (editingWP) {
-        const { error } = await supabase
-          .from('work_packages')
-          .update(wpData)
-          .eq('id', editingWP.id)
-        
-        if (error) throw error
-        wpId = editingWP.id
-        
-        await supabase.from('work_package_quantities').delete().eq('work_package_id', wpId)
-        await supabase.from('work_package_equipment').delete().eq('work_package_id', wpId)
-      } else {
-        const { data, error } = await supabase
-          .from('work_packages')
-          .insert([wpData])
-          .select()
-          .single()
-        
-        if (error) throw error
-        wpId = data.id
-      }
-      
-      if (quantities.length > 0) {
-        const qtyData = quantities.map((q, idx) => ({
-          work_package_id: wpId,
-          description: q.description,
-          unit_of_measure: q.unit_of_measure || q.unitOfMeasure,
-          planned_qty: parseFloat(q.planned_qty || q.plannedQty) || 0,
-          completed_qty: parseFloat(q.completed_qty) || 0,
-          sort_order: idx
-        }))
-        
-        await supabase.from('work_package_quantities').insert(qtyData)
-      }
-      
-      if (equipmentEstimates.length > 0) {
-        const eqData = equipmentEstimates.map(e => ({
-          work_package_id: wpId,
-          equipment_id: e.equipment_id || e.equipmentId || null,
-          equipment_type: e.equipment_type || e.equipmentType || null,
-          estimated_hours: parseFloat(e.estimated_hours || e.estimatedHours) || 0,
-          notes: e.notes || null
-        }))
-        
-        await supabase.from('work_package_equipment').insert(eqData)
-      }
-      
-      setShowModal(false)
-      loadData()
-      
-    } catch (err) {
-      console.error('Error saving:', err)
-      alert('Errore: ' + err.message)
-    }
-  }
-
-  const handleDelete = async (wp) => {
-    try {
-      const { error } = await supabase
-        .from('work_packages')
-        .delete()
-        .eq('id', wp.id)
-      
-      if (error) throw error
-      
-      setShowDeleteConfirm(null)
-      loadData()
-    } catch (err) {
-      console.error('Error deleting:', err)
-      alert('Errore: ' + err.message)
-    }
-  }
+    };
+  };
 
   // ============================================================================
-  // GESTIONE QUANTITÀ
+  // FILTERS
   // ============================================================================
   
-  const addQuantity = () => {
-    if (!newQty.description.trim() || !newQty.plannedQty) {
-      alert('Inserisci descrizione e quantità')
-      return
-    }
-    
-    setQuantities([...quantities, {
-      description: newQty.description,
-      unit_of_measure: newQty.unitOfMeasure,
-      planned_qty: parseFloat(newQty.plannedQty),
-      completed_qty: 0
-    }])
-    
-    setNewQty({ description: '', unitOfMeasure: 'nr', plannedQty: '' })
-  }
+  const filteredWPs = useMemo(() => {
+    return workPackages.filter(wp => {
+      if (filterType !== 'all' && wp.wp_type !== filterType) return false;
+      if (filterStatus !== 'all' && wp.status !== filterStatus) return false;
+      if (filterSquad !== 'all' && wp.squad_id !== filterSquad) return false;
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        if (!wp.code.toLowerCase().includes(search) && 
+            !wp.description?.toLowerCase().includes(search)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [workPackages, filterType, filterStatus, filterSquad, searchTerm]);
 
-  const removeQuantity = (index) => {
-    setQuantities(quantities.filter((_, i) => i !== index))
-  }
+  const wpPiping = filteredWPs.filter(wp => wp.wp_type === 'piping');
+  const wpAction = filteredWPs.filter(wp => wp.wp_type === 'action');
+
+  const stats = useMemo(() => {
+    const all = workPackages;
+    return {
+      piping: all.filter(wp => wp.wp_type === 'piping').length,
+      action: all.filter(wp => wp.wp_type === 'action').length,
+      inProgress: all.filter(wp => wp.status === 'in_progress').length,
+      notAssigned: all.filter(wp => wp.status === 'not_assigned').length,
+      avgProgress: all.length > 0 
+        ? all.reduce((s, wp) => s + calculateWPProgress(wp), 0) / all.length 
+        : 0
+    };
+  }, [workPackages]);
 
   // ============================================================================
-  // GESTIONE EQUIPMENT ESTIMATES
+  // HANDLERS
   // ============================================================================
   
-  const addEquipmentEstimate = () => {
-    if (!newEquipment.estimatedHours) {
-      alert('Inserisci le ore stimate')
-      return
-    }
+  const handleDeleteWP = async (wp) => {
+    if (!confirm(`Eliminare ${wp.code}?`)) return;
     
-    if (newEquipment.mode === 'generic' && !newEquipment.equipmentType) {
-      alert('Seleziona il tipo di equipment')
-      return
-    }
+    const { error } = await supabase
+      .from('work_packages')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', wp.id);
     
-    if (newEquipment.mode === 'specific' && !newEquipment.equipmentId) {
-      alert('Seleziona l\'equipment specifico')
-      return
+    if (error) {
+      alert('Errore eliminazione: ' + error.message);
+    } else {
+      fetchWorkPackages();
     }
-    
-    const newEst = {
-      equipment_id: newEquipment.mode === 'specific' ? newEquipment.equipmentId : null,
-      equipment_type: newEquipment.mode === 'generic' ? newEquipment.equipmentType : null,
-      estimated_hours: parseFloat(newEquipment.estimatedHours),
-      equipment: newEquipment.mode === 'specific' 
-        ? equipment.find(e => e.id === newEquipment.equipmentId)
-        : null
-    }
-    
-    setEquipmentEstimates([...equipmentEstimates, newEst])
-    setNewEquipment({ mode: 'generic', equipmentType: '', equipmentId: '', estimatedHours: '' })
-  }
-
-  const removeEquipmentEstimate = (index) => {
-    setEquipmentEstimates(equipmentEstimates.filter((_, i) => i !== index))
-  }
+  };
 
   // ============================================================================
   // RENDER
   // ============================================================================
   
-  if (!activeProject) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Wrench size={64} className="text-gray-300 mb-4" />
-        <p className="text-gray-500">Seleziona un progetto</p>
-      </div>
-    )
-  }
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="space-y-6">
-      {/* ============ HEADER ============ */}
+      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Wrench className="text-primary" />
-            Work Packages
+            🔧 Work Packages
           </h1>
           <p className="text-gray-500 mt-1">
-            {activeProject.name} • {workPackages.length} WP totali
+            {project?.name} • {workPackages.length} WP totali
           </p>
         </div>
         
         <div className="flex flex-wrap gap-3">
-          {/* Tabs */}
-          <div className="flex bg-gray-100 rounded-lg p-1">
+          <div className="flex bg-white rounded-lg p-1 shadow-sm border">
             <button
               onClick={() => setActiveTab('list')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'list' ? 'bg-white shadow text-primary' : 'text-gray-600 hover:text-gray-800'
+                activeTab === 'list' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              Lista
+              📋 Lista
             </button>
             <button
               onClick={() => setActiveTab('gantt')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'gantt' ? 'bg-white shadow text-primary' : 'text-gray-600 hover:text-gray-800'
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                activeTab === 'gantt' ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <GanttChart size={16} />
-              Gantt
+              📈 Gantt
             </button>
           </div>
           
-          <button
-            onClick={handleExport}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-          >
-            <Download size={18} />
-            Export
-          </button>
-          
-          <button
-            onClick={openCreateModal}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Plus size={20} />
-            Nuovo WP
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowCreateWPP(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium shadow-sm"
+            >
+              ➕ WP Piping
+            </button>
+            <button
+              onClick={() => setShowCreateWPA(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium shadow-sm"
+            >
+              ➕ WP Action
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ============ DASHBOARD ============ */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <div 
-          onClick={() => setFilterAssignment(filterAssignment === 'ready' ? '' : 'ready')}
-          className={`bg-white rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            filterAssignment === 'ready' ? 'ring-2 ring-green-500' : ''
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <CheckCircle2 className="text-green-600" size={20} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-800">{readyCount}</p>
-              <p className="text-xs text-gray-500">Pronti</p>
-            </div>
-          </div>
-        </div>
-        
-        <div 
-          onClick={() => setFilterAssignment(filterAssignment === 'squad_only' ? '' : 'squad_only')}
-          className={`bg-white rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            filterAssignment === 'squad_only' ? 'ring-2 ring-blue-500' : ''
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <Users className="text-blue-600" size={20} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-800">{squadOnlyCount}</p>
-              <p className="text-xs text-gray-500">Solo Squadra</p>
-            </div>
-          </div>
-        </div>
-        
-        <div 
-          onClick={() => setFilterAssignment(filterAssignment === 'date_only' ? '' : 'date_only')}
-          className={`bg-white rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            filterAssignment === 'date_only' ? 'ring-2 ring-amber-500' : ''
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-              <Calendar className="text-amber-600" size={20} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-800">{dateOnlyCount}</p>
-              <p className="text-xs text-gray-500">Solo Date</p>
-            </div>
-          </div>
-        </div>
-        
-        <div 
-          onClick={() => setFilterAssignment(filterAssignment === 'unassigned' ? '' : 'unassigned')}
-          className={`bg-white rounded-xl p-4 shadow-sm cursor-pointer transition-all hover:shadow-md ${
-            filterAssignment === 'unassigned' ? 'ring-2 ring-gray-500' : ''
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-              <Clock className="text-gray-600" size={20} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-800">{unassignedCount}</p>
-              <p className="text-xs text-gray-500">Da Assegnare</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-white rounded-xl p-4 shadow-sm col-span-2 lg:col-span-1">
+      {/* Dashboard Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <DashboardCard icon="🔧" iconBg="bg-blue-100" value={stats.piping} label="WP Piping" active={filterType === 'piping'} onClick={() => setFilterType(filterType === 'piping' ? 'all' : 'piping')} />
+        <DashboardCard icon="⚡" iconBg="bg-green-100" value={stats.action} label="WP Action" active={filterType === 'action'} onClick={() => setFilterType(filterType === 'action' ? 'all' : 'action')} />
+        <DashboardCard icon="▶️" iconBg="bg-amber-100" value={stats.inProgress} label="In Corso" />
+        <DashboardCard icon="🕐" iconBg="bg-gray-100" value={stats.notAssigned} label="Da Assegnare" />
+        <div className="bg-white rounded-xl p-4 shadow-sm border col-span-2 md:col-span-1">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-              <BarChart3 className="text-primary" size={20} />
-            </div>
+            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-xl">📊</div>
             <div>
-              <p className="text-2xl font-bold text-gray-800">{globalProgress.toFixed(0)}%</p>
+              <p className="text-2xl font-bold text-gray-800">{stats.avgProgress.toFixed(0)}%</p>
               <p className="text-xs text-gray-500">Avanzamento</p>
             </div>
           </div>
-          <ProgressBar percent={globalProgress} />
+          <ProgressBar percent={stats.avgProgress} size="small" />
         </div>
       </div>
 
-      {/* ============ FILTRI ============ */}
-      <div className="bg-white rounded-xl p-4 shadow-sm">
-        <div className="flex flex-wrap gap-3">
+      {/* Filters */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border">
+        <div className="flex flex-wrap gap-3 items-center">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
             <input
               type="text"
-              placeholder="Cerca codice, nome, area..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Cerca codice, descrizione..."
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
-          <select
-            value={filterDiscipline}
-            onChange={(e) => setFilterDiscipline(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Tutte le discipline</option>
-            {Object.entries(DISCIPLINES).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="all">Tutti gli stati</option>
+            <option value="not_assigned">Non Assegnato</option>
+            <option value="planned">Pianificato</option>
+            <option value="in_progress">In Corso</option>
+            <option value="completed">Completato</option>
+          </select>
+          <select value={filterSquad} onChange={(e) => setFilterSquad(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="all">Tutte le squadre</option>
+            {squads.map(sq => (
+              <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name}</option>
             ))}
           </select>
-          
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Tutti gli stati</option>
-            {Object.entries(STATUSES).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
-            ))}
-          </select>
-          
-          {(searchTerm || filterDiscipline || filterStatus || filterAssignment) && (
-            <button
-              onClick={() => {
-                setSearchTerm('')
-                setFilterDiscipline('')
-                setFilterStatus('')
-                setFilterAssignment('')
-              }}
-              className="px-3 py-2 text-gray-600 hover:bg-gray-100 rounded-lg flex items-center gap-1"
-            >
-              <X size={16} />
-              Reset
-            </button>
-          )}
         </div>
       </div>
 
-      {/* ============ CONTENT ============ */}
+      {/* Content */}
       {activeTab === 'list' ? (
-        <div className="space-y-4">
-          {filteredWPs.length === 0 ? (
-            <div className="bg-white rounded-xl p-12 text-center shadow-sm">
-              <Wrench size={48} className="mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-500">Nessun Work Package trovato</p>
-              <button onClick={openCreateModal} className="mt-4 text-primary hover:underline">
-                Crea il primo WP
-              </button>
-            </div>
-          ) : (
-            filteredWPs.map(wp => {
-              const isExpanded = expandedWP === wp.id
-              
-              return (
-                <div key={wp.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
-                  <div 
-                    className="p-4 cursor-pointer hover:bg-gray-50"
-                    onClick={() => setExpandedWP(isExpanded ? null : wp.id)}
-                  >
-                    <div className="flex items-start gap-4">
-                      <button className="mt-1 text-gray-400">
-                        {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                      </button>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
-                            {wp.code}
-                          </span>
-                          <h3 className="font-semibold text-gray-800">{wp.name}</h3>
-                          
-                          {wp.hasGenericEquipment && (
-                            <span className="text-amber-500" title="Equipment generico">
-                              <AlertTriangle size={18} />
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="flex items-center gap-4 mt-2 text-sm text-gray-500 flex-wrap">
-                          {wp.area && (
-                            <span className="flex items-center gap-1">
-                              <MapPin size={14} />
-                              {wp.area}
-                            </span>
-                          )}
-                          <DisciplineBadge discipline={wp.discipline} />
-                          <StatusBadge status={wp.status} />
-                          <AssignmentBadge hasSquad={!!wp.squad_id} hasDate={!!wp.planned_start} />
-                        </div>
-                        
-                        <div className="mt-3 flex items-center gap-3">
-                          <div className="flex-1 max-w-xs">
-                            <ProgressBar percent={wp.progress} size="small" />
-                          </div>
-                          <span className="text-sm font-medium text-gray-600">
-                            {wp.progress.toFixed(0)}%
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        {wp.squad ? (
-                          <div className="text-sm">
-                            <span className="font-medium text-gray-800">Sq. {wp.squad.squad_number}</span>
-                            <p className="text-gray-500 text-xs">{wp.squad.name}</p>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">--</span>
-                        )}
-                      </div>
-                      
-                      <div className="text-right text-sm">
-                        {wp.planned_start ? (
-                          <>
-                            <p className="text-gray-600">
-                              {new Date(wp.planned_start).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })}
-                            </p>
-                            <p className="text-gray-400 text-xs">
-                              → {wp.planned_end ? new Date(wp.planned_end).toLocaleDateString('it-IT', { day: '2-digit', month: 'short' }) : '--'}
-                            </p>
-                          </>
-                        ) : (
-                          <span className="text-gray-400">No date</span>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <button
-                          onClick={() => openEditModal(wp)}
-                          className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
-                        >
-                          <Edit size={18} />
-                        </button>
-                        <button
-                          onClick={() => setShowDeleteConfirm(wp)}
-                          className="p-2 hover:bg-red-100 rounded-lg text-red-600"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {isExpanded && (
-                    <div className="border-t border-gray-200 bg-gray-50 p-4">
-                      <div className="grid md:grid-cols-2 gap-6">
-                        <div>
-                          <h4 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
-                            <Package size={16} />
-                            Quantità ({wp.work_package_quantities?.length || 0})
-                          </h4>
-                          {(wp.work_package_quantities?.length || 0) === 0 ? (
-                            <p className="text-sm text-gray-500">Nessuna quantità definita</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {wp.work_package_quantities.map(q => {
-                                const qtyProgress = q.planned_qty > 0 ? (q.completed_qty / q.planned_qty) * 100 : 0
-                                return (
-                                  <div key={q.id} className="bg-white rounded-lg p-3 border border-gray-200">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="text-sm font-medium">{q.description}</span>
-                                      <span className="text-xs text-gray-500">
-                                        {q.completed_qty} / {q.planned_qty} {q.unit_of_measure}
-                                      </span>
-                                    </div>
-                                    <ProgressBar percent={qtyProgress} size="small" />
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
-                            <Truck size={16} />
-                            Stime Mezzi & Budget
-                          </h4>
-                          
-                          {(wp.budget_hours || wp.hourly_rate) && (
-                            <div className="bg-white rounded-lg p-3 border border-gray-200 mb-3">
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Monte ore:</span>
-                                <span className="font-medium">{wp.budget_hours || '--'} h</span>
-                              </div>
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="text-gray-600">Tariffa media:</span>
-                                <span className="font-medium">€ {wp.hourly_rate || '--'}/h</span>
-                              </div>
-                              {wp.budget_hours && wp.hourly_rate && (
-                                <div className="flex items-center justify-between text-sm border-t mt-2 pt-2">
-                                  <span className="text-gray-600">Costo stimato:</span>
-                                  <span className="font-bold text-primary">
-                                    € {(wp.budget_hours * wp.hourly_rate).toLocaleString('it-IT')}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          
-                          {(wp.work_package_equipment?.length || 0) === 0 ? (
-                            <p className="text-sm text-gray-500">Nessun mezzo assegnato</p>
-                          ) : (
-                            <div className="space-y-2">
-                              {wp.work_package_equipment.map(e => (
-                                <div key={e.id} className="bg-white rounded-lg p-3 border border-gray-200 flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    {!e.equipment_id && <AlertTriangle size={16} className="text-amber-500" />}
-                                    <span className="text-sm">
-                                      {e.equipment 
-                                        ? `${e.equipment.type} ${e.equipment.description || e.equipment.plate_number || ''}`
-                                        : EQUIPMENT_TYPES_GENERIC[e.equipment_type]?.label || e.equipment_type
-                                      }
-                                    </span>
-                                    {!e.equipment_id && <span className="text-xs text-amber-600">(generico)</span>}
-                                  </div>
-                                  <span className="text-sm font-medium">{e.estimated_hours} h</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {wp.notes && (
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <p className="text-sm text-gray-600">{wp.notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
+        <div className="space-y-6">
+          {(filterType === 'all' || filterType === 'piping') && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-3">🔧 Work Packages Piping ({wpPiping.length})</h3>
+              {wpPiping.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center text-gray-500 border">Nessun WP Piping</div>
+              ) : (
+                <div className="space-y-3">
+                  {wpPiping.map(wp => (
+                    <WPPipingCard key={wp.id} wp={wp} stats={getWPStats(wp)} progress={calculateWPProgress(wp)} spools={spools} welds={welds} supports={supports} flanges={flanges} expanded={expandedWP === wp.id} onToggle={() => setExpandedWP(expandedWP === wp.id ? null : wp.id)} onEdit={() => setEditingWP(wp)} onDelete={() => handleDeleteWP(wp)} />
+                  ))}
                 </div>
-              )
-            })
+              )}
+            </div>
+          )}
+          
+          {(filterType === 'all' || filterType === 'action') && (
+            <div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-3">⚡ Work Packages Action ({wpAction.length})</h3>
+              {wpAction.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center text-gray-500 border">Nessun WP Action</div>
+              ) : (
+                <div className="space-y-3">
+                  {wpAction.map(wp => (
+                    <WPActionCard key={wp.id} wp={wp} onEdit={() => setEditingWP(wp)} onDelete={() => handleDeleteWP(wp)} />
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : (
-        <WorkPackagesGantt
-          workPackages={workPackages}
-          squads={squads}
-          projectHoursPerDay={8}
-          onWPClick={(wp) => openEditModal(wp)}
-        />
+        <WorkPackagesGantt workPackages={workPackages} squads={squads} calculateProgress={calculateWPProgress} />
       )}
 
-      {/* ============ MODAL CREA/MODIFICA ============ */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-800">
-                {editingWP ? `Modifica ${editingWP.code}` : 'Nuovo Work Package'}
-              </h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X size={20} />
-              </button>
+      {/* Modals */}
+      {showCreateWPP && (
+        <CreateWPPWizard project={project} squads={squads} isometrics={isometrics} spools={spools} welds={welds} supports={supports} flanges={flanges} onClose={() => setShowCreateWPP(false)} onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }} />
+      )}
+      
+      {showCreateWPA && (
+        <CreateWPAModal project={project} squads={squads} onClose={() => setShowCreateWPA(false)} onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+const DashboardCard = ({ icon, iconBg, value, label, active, onClick }) => (
+  <div onClick={onClick} className={`bg-white rounded-xl p-4 shadow-sm border cursor-pointer hover:shadow-md transition-all ${active ? 'ring-2 ring-blue-500' : ''}`}>
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center text-xl`}>{icon}</div>
+      <div>
+        <p className="text-2xl font-bold text-gray-800">{value}</p>
+        <p className="text-xs text-gray-500">{label}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const ProgressBar = ({ percent, size = "normal", color = null }) => {
+  const height = size === "small" ? "h-1.5" : "h-2.5";
+  const bgColor = color || (percent >= 100 ? "bg-emerald-500" : percent >= 50 ? "bg-green-500" : "bg-blue-500");
+  return (
+    <div className={`flex-1 bg-gray-200 rounded-full ${height}`}>
+      <div className={`${bgColor} ${height} rounded-full transition-all`} style={{ width: `${Math.min(100, percent)}%` }} />
+    </div>
+  );
+};
+
+const StatusBadge = ({ status }) => {
+  const configs = {
+    not_assigned: { label: 'Non Assegnato', bg: 'bg-gray-100', text: 'text-gray-600' },
+    planned: { label: 'Pianificato', bg: 'bg-blue-100', text: 'text-blue-800' },
+    in_progress: { label: 'In Corso', bg: 'bg-amber-100', text: 'text-amber-800' },
+    completed: { label: 'Completato', bg: 'bg-emerald-100', text: 'text-emerald-800' }
+  };
+  const config = configs[status] || configs.not_assigned;
+  return <span className={`${config.bg} ${config.text} px-2 py-0.5 text-xs rounded-full font-medium`}>{config.label}</span>;
+};
+
+const SiteStatusBadge = ({ status }) => {
+  const configs = {
+    not_received: { label: 'Non Ricevuto', bg: 'bg-gray-100', text: 'text-gray-600' },
+    received: { label: 'Ricevuto', bg: 'bg-green-100', text: 'text-green-700' },
+    stored: { label: 'Magazzino', bg: 'bg-blue-100', text: 'text-blue-700' },
+    in_progress: { label: 'In Lavoro', bg: 'bg-amber-100', text: 'text-amber-700' },
+    installed: { label: 'Installato', bg: 'bg-emerald-100', text: 'text-emerald-700' }
+  };
+  const config = configs[status] || configs.not_received;
+  return <span className={`${config.bg} ${config.text} px-1.5 py-0.5 text-xs rounded font-medium`}>{config.label}</span>;
+};
+
+// ============================================================================
+// WP PIPING CARD
+// ============================================================================
+
+const WPPipingCard = ({ wp, stats, progress, spools, welds, supports, flanges, expanded, onToggle, onEdit, onDelete }) => {
+  const wpSpoolIds = wp.wp_spools?.map(ws => ws.spool_id) || [];
+  
+  const wpSpoolsInfo = wpSpoolIds.map(spId => {
+    const spool = spools.find(s => s.id === spId);
+    if (!spool) return null;
+    const spoolWelds = welds.filter(w => w.spool_1_id === spId || w.spool_2_id === spId);
+    const spoolSupports = supports.filter(s => s.spool_id === spId);
+    const spoolFlanges = flanges.filter(f => f.part_1_id === spId);
+    const hasDissimilar = spoolWelds.some(w => w.is_dissimilar);
+    return { ...spool, weldsCount: spoolWelds.length, supportsKg: spoolSupports.reduce((s, x) => s + Number(x.total_weight_kg || 0), 0), flangesCount: spoolFlanges.length, hasDissimilar };
+  }).filter(Boolean);
+
+  let categoriesPresent = 0;
+  if (stats.welding.total > 0) categoriesPresent++;
+  if (stats.supports.total > 0) categoriesPresent++;
+  if (stats.flanges.total > 0) categoriesPresent++;
+  const weightPerCategory = categoriesPresent > 0 ? (100 / categoriesPresent).toFixed(1) : 0;
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      <div className="p-4 cursor-pointer hover:bg-gray-50 transition-colors" onClick={onToggle}>
+        <div className="flex items-start gap-3">
+          <button className="mt-1 text-gray-400 hover:text-gray-600">{expanded ? '▼' : '▶'}</button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-sm bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-semibold">{wp.code}</span>
+              <span className="bg-blue-100 text-blue-800 px-2 py-0.5 text-xs rounded-full font-medium">Piping</span>
+              <StatusBadge status={wp.status} />
+              <h3 className="font-medium text-gray-800 truncate">{wp.description}</h3>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="space-y-6">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
-                    <input
-                      type="text"
-                      value={formData.code}
-                      readOnly
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Disciplina</label>
-                    <select
-                      value={formData.discipline}
-                      onChange={(e) => setFormData({ ...formData, discipline: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      {Object.entries(DISCIPLINES).map(([key, config]) => (
-                        <option key={key} value={key}>{config.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Es: Saldature linea DN150, Montaggio supporti..."
-                  />
-                </div>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Area/Zona</label>
-                    <input
-                      type="text"
-                      value={formData.area}
-                      onChange={(e) => setFormData({ ...formData, area: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Es: Zona Nord, Area Compressori..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
-                    <select
-                      value={formData.squadId}
-                      onChange={(e) => setFormData({ ...formData, squadId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    >
-                      <option value="">-- Non assegnata --</option>
-                      {squads.map(s => (
-                        <option key={s.id} value={s.id}>
-                          Sq. {s.squad_number} - {s.name} ({s.memberCount} pers.)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
-                    <input
-                      type="date"
-                      value={formData.plannedStart}
-                      onChange={(e) => setFormData({ ...formData, plannedStart: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
-                    <input
-                      type="date"
-                      value={formData.plannedEnd}
-                      onChange={(e) => setFormData({ ...formData, plannedEnd: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-                
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore</label>
-                    <input
-                      type="number"
-                      value={formData.budgetHours}
-                      onChange={(e) => setFormData({ ...formData, budgetHours: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="Ore totali previste"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tariffa Media (€/h)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.hourlyRate}
-                      onChange={(e) => setFormData({ ...formData, hourlyRate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      placeholder="€ per ora"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
-                  <textarea
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
-                
-                {/* QUANTITÀ */}
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <Package size={18} />
-                    Linee Quantità
-                  </h3>
-                  
-                  {quantities.length > 0 && (
-                    <div className="space-y-2 mb-4">
-                      {quantities.map((q, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                          <div className="flex-1">
-                            <span className="font-medium">{q.description}</span>
-                            <span className="text-gray-500 ml-2">
-                              {q.planned_qty || q.plannedQty} {q.unit_of_measure || q.unitOfMeasure}
-                            </span>
-                          </div>
-                          <button onClick={() => removeQuantity(idx)} className="p-1.5 hover:bg-red-100 rounded text-red-500">
-                            <MinusCircle size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <input
-                        type="text"
-                        value={newQty.description}
-                        onChange={(e) => setNewQty({ ...newQty, description: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="Descrizione (es: Saldature Ø2)"
-                      />
-                    </div>
-                    <div className="w-24">
-                      <input
-                        type="number"
-                        value={newQty.plannedQty}
-                        onChange={(e) => setNewQty({ ...newQty, plannedQty: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="Qtà"
-                      />
-                    </div>
-                    <div className="w-32">
-                      <select
-                        value={newQty.unitOfMeasure}
-                        onChange={(e) => setNewQty({ ...newQty, unitOfMeasure: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      >
-                        {UNITS_OF_MEASURE.map(u => (
-                          <option key={u.value} value={u.value}>{u.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <button onClick={addQuantity} className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
-                      <PlusCircle size={20} />
-                    </button>
-                  </div>
-                </div>
-                
-                {/* EQUIPMENT STIME */}
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                    <Truck size={18} />
-                    Stime Utilizzo Mezzi
-                  </h3>
-                  
-                  {equipmentEstimates.length > 0 && (
-                    <div className="space-y-2 mb-4">
-                      {equipmentEstimates.map((e, idx) => (
-                        <div key={idx} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                          <div className="flex-1 flex items-center gap-2">
-                            {!e.equipment_id && !e.equipmentId && <AlertTriangle size={16} className="text-amber-500" />}
-                            <span className="font-medium">
-                              {e.equipment 
-                                ? `${e.equipment.type} - ${e.equipment.description || e.equipment.plate_number}`
-                                : EQUIPMENT_TYPES_GENERIC[e.equipment_type || e.equipmentType]?.label || e.equipment_type || e.equipmentType
-                              }
-                            </span>
-                            {(!e.equipment_id && !e.equipmentId) && <span className="text-xs text-amber-600">(generico)</span>}
-                          </div>
-                          <span className="text-sm font-medium">{e.estimated_hours || e.estimatedHours} h</span>
-                          <button onClick={() => removeEquipmentEstimate(idx)} className="p-1.5 hover:bg-red-100 rounded text-red-500">
-                            <MinusCircle size={18} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  <div className="bg-gray-50 rounded-lg p-3 space-y-3">
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          checked={newEquipment.mode === 'generic'}
-                          onChange={() => setNewEquipment({ ...newEquipment, mode: 'generic', equipmentId: '' })}
-                        />
-                        <span className="text-sm">Tipo Generico</span>
-                        <AlertTriangle size={14} className="text-amber-500" />
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          checked={newEquipment.mode === 'specific'}
-                          onChange={() => setNewEquipment({ ...newEquipment, mode: 'specific', equipmentType: '' })}
-                        />
-                        <span className="text-sm">Equipment Specifico</span>
-                        <CheckCircle2 size={14} className="text-green-500" />
-                      </label>
-                    </div>
-                    
-                    <div className="flex gap-2 items-end">
-                      {newEquipment.mode === 'generic' ? (
-                        <div className="flex-1">
-                          <select
-                            value={newEquipment.equipmentType}
-                            onChange={(e) => setNewEquipment({ ...newEquipment, equipmentType: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          >
-                            <option value="">-- Seleziona tipo --</option>
-                            {Object.entries(EQUIPMENT_TYPES_GENERIC).map(([key, config]) => (
-                              <option key={key} value={key}>{config.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : (
-                        <div className="flex-1">
-                          <select
-                            value={newEquipment.equipmentId}
-                            onChange={(e) => setNewEquipment({ ...newEquipment, equipmentId: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          >
-                            <option value="">-- Seleziona equipment --</option>
-                            {equipment.map(eq => (
-                              <option key={eq.id} value={eq.id}>
-                                {eq.type} - {eq.description || eq.plate_number || eq.serial_number}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          value={newEquipment.estimatedHours}
-                          onChange={(e) => setNewEquipment({ ...newEquipment, estimatedHours: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          placeholder="Ore"
-                        />
-                      </div>
-                      <button onClick={addEquipmentEstimate} className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">
-                        <PlusCircle size={20} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={2}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                </div>
+            <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+              {wp.area && <span>📍 {wp.area}</span>}
+              {wp.squad && <span>👥 Sq.{wp.squad.squad_number} - {wp.squad.name}</span>}
+              {wp.planned_start && <span>📅 {wp.planned_start} → {wp.planned_end}</span>}
+            </div>
+            <div className="mt-3 flex items-center gap-3 max-w-lg">
+              <ProgressBar percent={progress} />
+              <span className="text-sm font-semibold text-gray-700 w-14 text-right">{progress.toFixed(1)}%</span>
+            </div>
+          </div>
+          <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+            <button onClick={onEdit} className="p-2 hover:bg-blue-50 rounded-lg text-blue-600">✏️</button>
+            <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-lg text-red-600">🗑️</button>
+          </div>
+        </div>
+      </div>
+      
+      {expanded && (
+        <div className="border-t bg-gray-50 p-4">
+          <div className="grid lg:grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg border p-4">
+              <h4 className="font-semibold text-gray-700 mb-3">📊 Progress per Categoria</h4>
+              <div className="space-y-4">
+                <CategoryProgress label="🔥 Welding" weight={weightPerCategory} completed={stats.welding.completed} total={stats.welding.total} unit="joints" color="bg-orange-500" />
+                <CategoryProgress label="🔩 Supports" weight={weightPerCategory} completed={stats.supports.completed} total={stats.supports.total} unit="kg" color="bg-gray-500" />
+                <CategoryProgress label="⚙️ Flanges" weight={weightPerCategory} completed={stats.flanges.completed} total={stats.flanges.total} unit="joints" color="bg-purple-500" />
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
-              <button onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
-                Annulla
-              </button>
-              <button onClick={handleSave} className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark flex items-center gap-2">
-                <Check size={18} />
-                {editingWP ? 'Salva Modifiche' : 'Crea WP'}
-              </button>
+            <div className="bg-white rounded-lg border p-4">
+              <h4 className="font-semibold text-gray-700 mb-3">📦 Spool ({wpSpoolsInfo.length})</h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {wpSpoolsInfo.map(spool => (
+                  <div key={spool.id} className={`flex items-center justify-between p-2 rounded-lg ${spool.hasDissimilar ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2">
+                      {spool.hasDissimilar && <span>⚠️</span>}
+                      <span className="font-mono text-xs">{spool.short_name}</span>
+                      <SiteStatusBadge status={spool.site_status} />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-orange-600">{spool.weldsCount}W</span>
+                      <span className="text-gray-500">{spool.supportsKg.toFixed(0)}kg</span>
+                      <span className="text-purple-600">{spool.flangesCount}F</span>
+                    </div>
+                  </div>
+                ))}
+                {wpSpoolsInfo.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Nessuno spool</p>}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============ MODAL CONFERMA ELIMINAZIONE ============ */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Conferma Eliminazione</h3>
-            <p className="text-gray-600 mb-6">
-              Sei sicuro di voler eliminare <strong>{showDeleteConfirm.code} - {showDeleteConfirm.name}</strong>?
-              <br />
-              <span className="text-sm text-red-600">Questa azione è irreversibile.</span>
-            </p>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowDeleteConfirm(null)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg">
-                Annulla
-              </button>
-              <button onClick={() => handleDelete(showDeleteConfirm)} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                Elimina
-              </button>
+            
+            <div className="bg-white rounded-lg border p-4">
+              <h4 className="font-semibold text-gray-700 mb-3">📋 Riepilogo</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between py-1 border-b"><span className="text-gray-500">Spool totali</span><span className="font-medium">{wpSpoolsInfo.length}</span></div>
+                <div className="flex justify-between py-1 border-b"><span className="text-gray-500">Saldature</span><span className="font-medium">{stats.welding.total} joints</span></div>
+                <div className="flex justify-between py-1 border-b"><span className="text-gray-500">Supporti</span><span className="font-medium">{stats.supports.total.toFixed(1)} kg</span></div>
+                <div className="flex justify-between py-1 border-b"><span className="text-gray-500">Accopp. Flangiati</span><span className="font-medium">{stats.flanges.total}</span></div>
+                <div className="flex justify-between py-2 pt-3 border-t"><span className="text-gray-700 font-medium">Progress</span><span className="font-bold text-blue-600">{progress.toFixed(1)}%</span></div>
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
-  )
-}
+  );
+};
+
+const CategoryProgress = ({ label, weight, completed, total, unit, color }) => {
+  const percent = total > 0 ? (completed / total) * 100 : 0;
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-sm font-medium text-gray-600">{label} <span className="text-xs text-gray-400">({weight}%)</span></span>
+        <span className="text-xs text-gray-500">{typeof completed === 'number' && completed % 1 !== 0 ? completed.toFixed(1) : completed}/{typeof total === 'number' && total % 1 !== 0 ? total.toFixed(1) : total} {unit}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <ProgressBar percent={percent} size="small" color={color} />
+        <span className="text-xs font-medium w-10 text-right">{percent.toFixed(0)}%</span>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// WP ACTION CARD
+// ============================================================================
+
+const WPActionCard = ({ wp, onEdit, onDelete }) => {
+  const progress = wp.manual_progress || 0;
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-sm bg-green-50 text-green-700 px-2 py-0.5 rounded font-semibold">{wp.code}</span>
+            <span className="bg-green-100 text-green-800 px-2 py-0.5 text-xs rounded-full font-medium">Action</span>
+            <StatusBadge status={wp.status} />
+            <h3 className="font-medium text-gray-800">{wp.description}</h3>
+          </div>
+          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+            {wp.area && <span>📍 {wp.area}</span>}
+            {wp.squad && <span>👥 Sq.{wp.squad.squad_number}</span>}
+          </div>
+          <div className="mt-3 flex items-center gap-3 max-w-md">
+            <ProgressBar percent={progress} color="bg-green-500" />
+            <span className="text-sm font-semibold text-gray-700 w-14 text-right">{progress}%</span>
+          </div>
+          {wp.notes && <p className="mt-2 text-sm text-gray-600 italic bg-gray-50 p-2 rounded">💬 {wp.notes}</p>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="p-2 hover:bg-blue-50 rounded-lg text-blue-600">✏️</button>
+          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-lg text-red-600">🗑️</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// CREATE WP-P WIZARD
+// ============================================================================
+
+const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports, flanges, onClose, onSuccess }) => {
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({ description: '', area: '', notes: '' });
+  const [selectedArea, setSelectedArea] = useState('');
+  const [selectedIso, setSelectedIso] = useState('');
+  const [selectedSpools, setSelectedSpools] = useState([]);
+  const [selectedSquad, setSelectedSquad] = useState('');
+  const [plannedStart, setPlannedStart] = useState('');
+  const [plannedEnd, setPlannedEnd] = useState('');
+  
+  const areas = [...new Set(isometrics.map(i => i.area).filter(Boolean))];
+  const filteredIsos = selectedArea ? isometrics.filter(i => i.area === selectedArea) : isometrics;
+  const filteredSpools = selectedIso ? spools.filter(s => s.isometric_id === selectedIso) : selectedArea ? spools.filter(s => { const iso = isometrics.find(i => i.id === s.isometric_id); return iso?.area === selectedArea; }) : spools;
+
+  const totals = useMemo(() => {
+    let weldsSet = new Set();
+    let supportsKg = 0;
+    let flangesCount = 0;
+    let hasDissimilar = false;
+    selectedSpools.forEach(spoolId => {
+      welds.filter(w => w.spool_1_id === spoolId || w.spool_2_id === spoolId).forEach(w => { weldsSet.add(w.id); if (w.is_dissimilar) hasDissimilar = true; });
+      supports.filter(s => s.spool_id === spoolId).forEach(s => supportsKg += Number(s.total_weight_kg || 0));
+      flangesCount += flanges.filter(f => f.part_1_id === spoolId).length;
+    });
+    return { welds: weldsSet.size, supportsKg, flanges: flangesCount, hasDissimilar };
+  }, [selectedSpools, welds, supports, flanges]);
+
+  const weights = useMemo(() => {
+    let count = 0;
+    if (totals.welds > 0) count++;
+    if (totals.supportsKg > 0) count++;
+    if (totals.flanges > 0) count++;
+    const w = count > 0 ? (100 / count).toFixed(1) : '-';
+    return { welding: totals.welds > 0 ? w : '-', supports: totals.supportsKg > 0 ? w : '-', flanges: totals.flanges > 0 ? w : '-' };
+  }, [totals]);
+
+  const [nextCode, setNextCode] = useState('WP-P-001');
+  useEffect(() => {
+    const generateCode = async () => {
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'piping' });
+      if (data) setNextCode(data);
+    };
+    generateCode();
+  }, [project.id]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const { data: wpData, error: wpError } = await supabase.from('work_packages').insert({
+        project_id: project.id, code: nextCode, wp_type: 'piping', description: formData.description,
+        area: formData.area || null, squad_id: selectedSquad || null, planned_start: plannedStart || null,
+        planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned'
+      }).select().single();
+      if (wpError) throw wpError;
+      
+      if (selectedSpools.length > 0) {
+        const spoolInserts = selectedSpools.map(spoolId => {
+          const spool = spools.find(s => s.id === spoolId);
+          return { work_package_id: wpData.id, spool_id: spoolId, spool_number: spool?.spool_number };
+        });
+        const { error: spoolError } = await supabase.from('wp_spools').insert(spoolInserts);
+        if (spoolError) throw spoolError;
+      }
+      
+      await supabase.rpc('generate_wp_activities', { p_wp_id: wpData.id });
+      onSuccess();
+    } catch (error) {
+      alert('Errore: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
+          <div><h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2><p className="text-sm text-gray-500">Step {step} di 4</p></div>
+          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
+        </div>
+        
+        <div className="flex border-b">
+          {['Info Base', 'Seleziona Spool', 'Riepilogo', 'Assegnazione'].map((label, idx) => (
+            <div key={idx} className={`flex-1 py-3 text-center text-sm font-medium border-b-2 ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
+              {step > idx + 1 ? '✓ ' : `${idx + 1}. `}{label}
+            </div>
+          ))}
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-6">
+          {step === 1 && (
+            <div className="space-y-4 max-w-2xl">
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">Seleziona...</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Linea 24&quot; HC" className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Note</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            </div>
+          )}
+          
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={selectedArea} onChange={e => { setSelectedArea(e.target.value); setSelectedIso(''); }} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutte</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label><select value={selectedIso} onChange={e => setSelectedIso(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutti</option>{filteredIsos.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}</select></div>
+              </div>
+              <div className="flex items-center justify-between mb-2"><h4 className="font-medium text-gray-700">Spool ({filteredSpools.length})</h4><span className="text-sm text-blue-600 font-medium">{selectedSpools.length} sel.</span></div>
+              <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
+                {filteredSpools.map(spool => {
+                  const iso = isometrics.find(i => i.id === spool.isometric_id);
+                  const spoolWelds = welds.filter(w => w.spool_1_id === spool.id || w.spool_2_id === spool.id);
+                  const spoolSupports = supports.filter(s => s.spool_id === spool.id);
+                  const spoolFlanges = flanges.filter(f => f.part_1_id === spool.id);
+                  const hasDissimilar = spoolWelds.some(w => w.is_dissimilar);
+                  const isSelected = selectedSpools.includes(spool.id);
+                  return (
+                    <label key={spool.id} className={`flex items-center gap-3 p-3 cursor-pointer ${hasDissimilar ? 'bg-yellow-50' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                      <input type="checkbox" checked={isSelected} onChange={e => { if (e.target.checked) setSelectedSpools([...selectedSpools, spool.id]); else setSelectedSpools(selectedSpools.filter(id => id !== spool.id)); }} className="w-4 h-4 text-blue-600 rounded" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2"><span className="font-mono font-medium text-sm">{spool.spool_number}</span>{hasDissimilar && <span className="text-yellow-600 text-xs bg-yellow-100 px-1.5 py-0.5 rounded">⚠️</span>}</div>
+                        <div className="text-xs text-gray-500">{iso?.iso_number} • {iso?.area}</div>
+                      </div>
+                      <div className="flex gap-3 text-xs"><span className="text-orange-600">{spoolWelds.length}W</span><span className="text-gray-500">{spoolSupports.reduce((s,x) => s + Number(x.total_weight_kg || 0), 0).toFixed(0)}kg</span><span className="text-purple-600">{spoolFlanges.length}F</span></div>
+                      <SiteStatusBadge status={spool.site_status} />
+                    </label>
+                  );
+                })}
+              </div>
+              {selectedSpools.length > 0 && <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between"><span className="font-medium text-blue-800">📦 {selectedSpools.length} spool</span><button onClick={() => setSelectedSpools([])} className="text-sm text-blue-600">Deseleziona</button></div>}
+            </div>
+          )}
+          
+          {step === 3 && (
+            <div className="space-y-6">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4"><h4 className="font-bold text-green-800 mb-2">✓ {selectedSpools.length} Spool</h4><div className="flex flex-wrap gap-2">{selectedSpools.map(spId => { const sp = spools.find(s => s.id === spId); return <span key={spId} className="bg-white px-2 py-1 rounded text-xs border font-mono">{sp?.short_name || sp?.spool_number}</span>; })}</div></div>
+              {totals.hasDissimilar && <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-start gap-3"><span className="text-2xl">⚠️</span><div><h4 className="font-bold text-yellow-800">Giunti Dissimili</h4><p className="text-sm text-yellow-700">WPS speciale richiesta</p></div></div>}
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <div className="bg-gray-100 px-4 py-3 font-semibold border-b">📊 Quantità</div>
+                <div className="p-4 space-y-4">
+                  <div className="flex justify-between py-3 border-b"><span>🔥 Welding</span><span className="font-bold text-xl">{totals.welds} joints</span></div>
+                  <div className="flex justify-between py-3 border-b"><span>🔩 Supports</span><span className="font-bold text-xl">{totals.supportsKg.toFixed(1)} kg</span></div>
+                  <div className="flex justify-between py-3"><span>⚙️ Flanges</span><span className="font-bold text-xl">{totals.flanges} joints</span></div>
+                </div>
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-800 mb-3">📐 Pesi</h4>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div className={`rounded-lg p-3 ${totals.welds > 0 ? 'bg-white border-2 border-orange-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-orange-600">{weights.welding}%</div><div className="text-xs">Welding</div></div>
+                  <div className={`rounded-lg p-3 ${totals.supportsKg > 0 ? 'bg-white border-2 border-gray-400' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-gray-600">{weights.supports}%</div><div className="text-xs">Supports</div></div>
+                  <div className={`rounded-lg p-3 ${totals.flanges > 0 ? 'bg-white border-2 border-purple-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-purple-600">{weights.flanges}%</div><div className="text-xs">Flanges</div></div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {step === 4 && (
+            <div className="space-y-4 max-w-2xl">
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label><select value={selectedSquad} onChange={e => setSelectedSquad(e.target.value)} className="w-full px-3 py-2 border rounded-lg"><option value="">-- Non assegnare --</option>{squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({sq.squad_members?.length || 0})</option>)}</select></div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><p className="text-sm text-amber-700">💡 Puoi assegnare anche dopo</p></div>
+            </div>
+          )}
+        </div>
+        
+        <div className="flex justify-between items-center p-4 border-t bg-gray-50">
+          <button onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1} className={`px-4 py-2 rounded-lg font-medium ${step === 1 ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-200'}`}>← Indietro</button>
+          {step < 4 ? (
+            <button onClick={() => setStep(step + 1)} disabled={(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0)} className={`px-6 py-2 rounded-lg font-medium ${(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0) ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Avanti →</button>
+          ) : (
+            <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea WP'}</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// CREATE WP-A MODAL
+// ============================================================================
+
+const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({ description: '', area: '', notes: '', squad_id: '', planned_start: '', planned_end: '' });
+  const [nextCode, setNextCode] = useState('WP-A-001');
+  
+  useEffect(() => {
+    const generateCode = async () => {
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'action' });
+      if (data) setNextCode(data);
+    };
+    generateCode();
+  }, [project.id]);
+
+  const handleSave = async () => {
+    if (!formData.description) { alert('Descrizione obbligatoria'); return; }
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('work_packages').insert({
+        project_id: project.id, code: nextCode, wp_type: 'action', description: formData.description,
+        area: formData.area || null, squad_id: formData.squad_id || null, planned_start: formData.planned_start || null,
+        planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', manual_progress: 0
+      });
+      if (error) throw error;
+      onSuccess();
+    } catch (error) { alert('Errore: ' + error.message); } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100"><h2 className="text-xl font-bold text-gray-800">⚡ Nuovo WP Action</h2><button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button></div>
+        <div className="p-6 space-y-4">
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Preparazione area..." className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div><label className="block text-sm font-medium text-gray-700 mb-1">Dettagli</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label><select value={formData.squad_id} onChange={e => setFormData({...formData, squad_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">--</option>{squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number}</option>)}</select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={formData.planned_start} onChange={e => setFormData({...formData, planned_start: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+          <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
+          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
