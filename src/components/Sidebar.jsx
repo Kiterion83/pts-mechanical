@@ -15,7 +15,10 @@ import {
   Settings,
   X,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -37,7 +40,7 @@ const settingsMenuItems = [
   { path: '/settings/equipment', icon: Truck, labelKey: 'nav.equipment', permission: 'canAccessSettings' },
 ]
 
-export default function Sidebar({ isOpen, onClose }) {
+export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }) {
   const { t } = useTranslation()
   const permissions = usePermissions()
   const [settingsExpanded, setSettingsExpanded] = useState(true)
@@ -61,11 +64,12 @@ export default function Sidebar({ isOpen, onClose }) {
       
       {/* Sidebar */}
       <aside className={`
-        fixed top-16 left-0 bottom-0 w-64 bg-white shadow-lg z-40
-        transform transition-transform duration-300 ease-in-out
+        fixed top-16 left-0 bottom-0 bg-white shadow-lg z-40
+        transform transition-all duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
         overflow-y-auto
+        ${collapsed ? 'w-16' : 'w-64'}
       `}>
         {/* Close button - mobile */}
         <button 
@@ -75,21 +79,33 @@ export default function Sidebar({ isOpen, onClose }) {
           <X size={20} />
         </button>
         
+        {/* Toggle button - desktop */}
+        <button 
+          onClick={onToggleCollapse}
+          className="hidden lg:flex absolute -right-3 top-6 w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center shadow hover:bg-gray-50 z-50"
+          title={collapsed ? 'Espandi menu' : 'Riduci menu'}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+        
         {/* Navigation */}
-        <nav className="p-4 pt-2 lg:pt-4">
+        <nav className={`p-4 pt-2 lg:pt-4 ${collapsed ? 'px-2' : ''}`}>
           {/* Main Menu */}
           <div className="mb-6">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-4">
-              {t('nav.mainMenu')}
-            </p>
+            {!collapsed && (
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-4">
+                {t('nav.mainMenu')}
+              </p>
+            )}
             <ul className="space-y-1">
               {mainMenuItems.map((item) => (
                 <li key={item.path}>
                   <NavLink
                     to={item.path}
                     onClick={onClose}
+                    title={collapsed ? t(item.labelKey) : ''}
                     className={({ isActive }) => `
-                      flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                      flex items-center gap-3 ${collapsed ? 'px-3 justify-center' : 'px-4'} py-3 rounded-lg transition-colors
                       ${isActive 
                         ? 'bg-primary text-white' 
                         : 'text-gray-700 hover:bg-gray-100'
@@ -97,7 +113,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     `}
                   >
                     <item.icon size={20} />
-                    <span className="font-medium">{t(item.labelKey)}</span>
+                    {!collapsed && <span className="font-medium">{t(item.labelKey)}</span>}
                   </NavLink>
                 </li>
               ))}
@@ -107,26 +123,31 @@ export default function Sidebar({ isOpen, onClose }) {
           {/* Settings Menu - Only for authorized roles */}
           {showSettingsSection && (
             <div>
-              <button
-                onClick={() => setSettingsExpanded(!settingsExpanded)}
-                className="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-4 hover:text-gray-600"
-              >
-                <span className="flex items-center gap-2">
-                  <Settings size={14} />
-                  {t('nav.settings')}
-                </span>
-                {settingsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              </button>
+              {!collapsed ? (
+                <button
+                  onClick={() => setSettingsExpanded(!settingsExpanded)}
+                  className="w-full flex items-center justify-between text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 px-4 hover:text-gray-600"
+                >
+                  <span className="flex items-center gap-2">
+                    <Settings size={14} />
+                    {t('nav.settings')}
+                  </span>
+                  {settingsExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+              ) : (
+                <div className="border-t border-gray-200 my-2" />
+              )}
               
-              {settingsExpanded && (
+              {(settingsExpanded || collapsed) && (
                 <ul className="space-y-1">
                   {visibleSettingsItems.map((item) => (
                     <li key={item.path}>
                       <NavLink
                         to={item.path}
                         onClick={onClose}
+                        title={collapsed ? t(item.labelKey) : ''}
                         className={({ isActive }) => `
-                          flex items-center gap-3 px-4 py-3 rounded-lg transition-colors
+                          flex items-center gap-3 ${collapsed ? 'px-3 justify-center' : 'px-4'} py-3 rounded-lg transition-colors
                           ${isActive 
                             ? 'bg-primary text-white' 
                             : 'text-gray-700 hover:bg-gray-100'
@@ -134,7 +155,7 @@ export default function Sidebar({ isOpen, onClose }) {
                         `}
                       >
                         <item.icon size={20} />
-                        <span className="font-medium">{t(item.labelKey)}</span>
+                        {!collapsed && <span className="font-medium">{t(item.labelKey)}</span>}
                       </NavLink>
                     </li>
                   ))}
@@ -145,18 +166,20 @@ export default function Sidebar({ isOpen, onClose }) {
         </nav>
         
         {/* Version & Role */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <div className="text-center text-xs text-gray-400 mb-2">
-            {permissions.userRole && (
-              <span className="inline-block px-2 py-1 bg-gray-100 rounded text-gray-600 capitalize">
-                {permissions.userRole}
-              </span>
-            )}
+        {!collapsed && (
+          <div className="absolute bottom-4 left-4 right-4">
+            <div className="text-center text-xs text-gray-400 mb-2">
+              {permissions.userRole && (
+                <span className="inline-block px-2 py-1 bg-gray-100 rounded text-gray-600 capitalize">
+                  {permissions.userRole}
+                </span>
+              )}
+            </div>
+            <p className="text-center text-xs text-gray-400">
+              PTS v3.0
+            </p>
           </div>
-          <p className="text-center text-xs text-gray-400">
-            PTS v3.0
-          </p>
-        </div>
+        )}
       </aside>
     </>
   )

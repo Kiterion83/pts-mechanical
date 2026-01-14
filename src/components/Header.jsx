@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Menu, Bell, User, LogOut, ChevronDown, FolderKanban, Check, Settings } from 'lucide-react'
+import { Menu, Bell, User, LogOut, ChevronDown, ChevronLeft, ChevronRight, FolderKanban, Check, Settings } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useProject } from '../contexts/ProjectContext'
 import { usePermissions } from '../hooks/usePermissions'
 
-export default function Header({ session, onMenuClick }) {
+export default function Header({ session, onMenuClick, sidebarCollapsed, onToggleSidebar }) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { projects, activeProject, selectProject } = useProject()
@@ -55,14 +55,23 @@ export default function Header({ session, onMenuClick }) {
       
       <header className="fixed top-0 left-0 right-0 h-16 bg-primary text-white shadow-lg z-50">
         <div className="h-full px-4 flex items-center justify-between">
-          {/* Left: Menu + Logo */}
-          <div className="flex items-center gap-3">
+          {/* Left: Menu + Logo + Collapse toggle */}
+          <div className="flex items-center gap-2">
             <button 
               onClick={onMenuClick}
               className="lg:hidden p-2 hover:bg-primary-light rounded-lg touch-target"
               aria-label="Menu"
             >
               <Menu size={24} />
+            </button>
+            
+            {/* Toggle sidebar - desktop */}
+            <button 
+              onClick={onToggleSidebar}
+              className="hidden lg:flex p-2 hover:bg-primary-light rounded-lg"
+              title={sidebarCollapsed ? 'Espandi menu' : 'Riduci menu'}
+            >
+              {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
             </button>
             
             <div 
@@ -74,21 +83,21 @@ export default function Header({ session, onMenuClick }) {
             </div>
           </div>
 
-          {/* Center: Project Selector */}
-          <div className="relative">
+          {/* Center: Project Selector - IMPROVED */}
+          <div className="relative flex-1 max-w-lg mx-4">
             <button 
               onClick={() => setShowProjectMenu(!showProjectMenu)}
-              className="flex items-center gap-2 px-4 py-2 bg-primary-light rounded-lg hover:bg-blue-600 transition max-w-[200px] md:max-w-[300px]"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary-light rounded-lg hover:bg-blue-600 transition"
             >
               <FolderKanban size={18} className="flex-shrink-0" />
-              <span className="text-sm font-medium truncate">
+              <span className="font-medium text-sm sm:text-base truncate max-w-[150px] sm:max-w-[300px] md:max-w-[400px]">
                 {activeProject ? activeProject.name : t('project.selectProject')}
               </span>
               <ChevronDown size={16} className="flex-shrink-0" />
             </button>
             
             {showProjectMenu && (
-              <div className="absolute left-1/2 -translate-x-1/2 mt-2 w-80 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
+              <div className="absolute left-0 right-0 mt-2 bg-white rounded-lg shadow-lg py-1 text-gray-800 z-50">
                 <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
                   <p className="text-xs font-medium text-gray-500 uppercase">
                     {t('project.selectProject')}
