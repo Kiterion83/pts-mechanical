@@ -725,17 +725,17 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
   const [nextCode, setNextCode] = useState('WP-P-001');
   useEffect(() => {
     const generateCode = async () => {
-      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: activeProject.id, p_type: 'piping' });
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'piping' });
       if (data) setNextCode(data);
     };
     generateCode();
-  }, [activeProject.id]);
+  }, [project.id]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const { data: wpData, error: wpError } = await supabase.from('work_packages').insert({
-        project_id: activeProject.id, code: nextCode, wp_type: 'piping', description: formData.description,
+        project_id: project.id, code: nextCode, wp_type: 'piping', description: formData.description,
         area: formData.area || null, squad_id: selectedSquad || null, planned_start: plannedStart || null,
         planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned'
       }).select().single();
@@ -878,18 +878,18 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
   
   useEffect(() => {
     const generateCode = async () => {
-      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: activeProject.id, p_type: 'action' });
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'action' });
       if (data) setNextCode(data);
     };
     generateCode();
-  }, [activeProject.id]);
+  }, [project.id]);
 
   const handleSave = async () => {
     if (!formData.description) { alert('Descrizione obbligatoria'); return; }
     setSaving(true);
     try {
       const { error } = await supabase.from('work_packages').insert({
-        project_id: activeProject.id, code: nextCode, wp_type: 'action', description: formData.description,
+        project_id: project.id, code: nextCode, wp_type: 'action', description: formData.description,
         area: formData.area || null, squad_id: formData.squad_id || null, planned_start: formData.planned_start || null,
         planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', manual_progress: 0
       });
