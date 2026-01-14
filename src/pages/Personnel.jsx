@@ -286,6 +286,15 @@ export default function Personnel() {
     try {
       if (selectedPerson) {
         // Update esistente
+        console.log('=== DEBUG UPDATE ===')
+        console.log('selectedPerson:', selectedPerson)
+        console.log('selectedPerson.personnel_id:', selectedPerson.personnel_id)
+        console.log('selectedPerson.id:', selectedPerson.id)
+        
+        // Usa l'ID corretto - prova entrambi
+        const personId = selectedPerson.personnel_id || selectedPerson.id
+        console.log('ID usato per update:', personId)
+        
         const updateData = {
           id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
           first_name: formData.firstName.trim(),
@@ -299,18 +308,28 @@ export default function Personnel() {
         }
         
         console.log('Update data:', updateData)
+        console.log('company_id che sto salvando:', formData.companyId)
         
-        const { error: personnelError } = await supabase
+        const { data, error: personnelError, count } = await supabase
           .from('personnel')
           .update(updateData)
-          .eq('id', selectedPerson.personnel_id)
+          .eq('id', personId)
+          .select()
+        
+        console.log('Risultato update:', { data, error: personnelError, count })
         
         if (personnelError) {
           console.error('Update error:', personnelError)
           throw personnelError
         }
         
-        console.log('Update OK')
+        if (!data || data.length === 0) {
+          console.error('ATTENZIONE: Nessun record aggiornato!')
+          alert('Errore: nessun record trovato con ID ' + personId)
+          return
+        }
+        
+        console.log('Update OK - record aggiornato:', data[0])
       } else {
         // Inserimento nuovo
         let username = formData.username.trim()
