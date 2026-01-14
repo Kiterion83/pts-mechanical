@@ -68,7 +68,7 @@ export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }
         transform transition-all duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
         lg:translate-x-0
-        overflow-y-auto
+        overflow-visible
         ${collapsed ? 'w-16' : 'w-64'}
       `}>
         {/* Close button - mobile */}
@@ -79,17 +79,18 @@ export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }
           <X size={20} />
         </button>
         
-        {/* Toggle button - desktop */}
+        {/* Toggle button - desktop - inside sidebar */}
         <button 
           onClick={onToggleCollapse}
-          className="hidden lg:flex absolute -right-3 top-6 w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center shadow hover:bg-gray-50 z-50"
+          className="hidden lg:flex absolute right-2 top-4 w-8 h-8 bg-gray-100 hover:bg-gray-200 rounded-lg items-center justify-center z-50"
           title={collapsed ? 'Espandi menu' : 'Riduci menu'}
         >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
         
-        {/* Navigation */}
-        <nav className={`p-4 pt-2 lg:pt-4 ${collapsed ? 'px-2' : ''}`}>
+        {/* Navigation - with scroll */}
+        <div className="h-full overflow-y-auto pb-24">
+          <nav className={`p-4 pt-2 lg:pt-14 ${collapsed ? 'px-2' : ''}`}>
           {/* Main Menu */}
           <div className="mb-6">
             {!collapsed && (
@@ -164,11 +165,12 @@ export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }
             </div>
           )}
         </nav>
+        </div>
         
-        {/* Version & Role */}
+        {/* Version & Role - Fixed at bottom */}
         {!collapsed && (
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="text-center text-xs text-gray-400 mb-2">
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100">
+            <div className="text-center text-xs text-gray-400 mb-1">
               {permissions.userRole && (
                 <span className="inline-block px-2 py-1 bg-gray-100 rounded text-gray-600 capitalize">
                   {permissions.userRole}
