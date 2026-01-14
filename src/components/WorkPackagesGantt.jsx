@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 
 // ============================================================================
 // WORK PACKAGES GANTT CHART
+// Aggiornato per supportare giorni lavorativi configurabili per progetto
 // ============================================================================
 
 const DISCIPLINE_COLORS = {
@@ -24,7 +25,13 @@ const formatDateISO = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-export default function WorkPackagesGantt({ workPackages, squads, calculateProgress }) {
+// Mappa giorno settimana JS (0=Dom, 1=Lun...) a chiave working_days
+const jsDateToDayKey = (date) => {
+  const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  return dayMap[date.getDay()];
+};
+
+export default function WorkPackagesGantt({ workPackages, squads, calculateProgress, activeProject }) {
   const [zoom, setZoom] = useState('month');
   
   // Date range state con date pickers
@@ -38,6 +45,20 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
     today.setDate(today.getDate() + 30);
     return formatDateISO(today);
   });
+
+  // Configurazione giorni lavorativi dal progetto (default: Lun-Ven)
+  const workingDays = activeProject?.working_days || {
+    mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false
+  };
+
+  // Helper per verificare se un giorno è lavorativo
+  const isWorkingDay = (date) => {
+    const dayKey = jsDateToDayKey(date);
+    return workingDays[dayKey] === true;
+  };
+
+  // Conta giorni lavorativi configurati
+  const workingDaysCount = Object.values(workingDays).filter(Boolean).length;
 
   // Configurazione zoom
   const zoomConfig = {
@@ -169,6 +190,15 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
     return count;
   };
 
+  // Genera etichette giorni lavorativi per la legenda
+  const getWorkingDaysLabel = () => {
+    const dayNames = { mon: 'Lun', tue: 'Mar', wed: 'Mer', thu: 'Gio', fri: 'Ven', sat: 'Sab', sun: 'Dom' };
+    const activeDays = Object.entries(workingDays)
+      .filter(([_, active]) => active)
+      .map(([key, _]) => dayNames[key]);
+    return activeDays.join('-');
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
       {/* Toolbar */}
@@ -247,7 +277,7 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-6 px-4 py-2 border-b bg-gray-50 text-sm">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 border-b bg-gray-50 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-4 h-3 rounded" style={{ backgroundColor: DISCIPLINE_COLORS.piping }}></div>
           <span>Piping</span>
@@ -260,6 +290,14 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
           <div className="w-0.5 h-4 bg-red-500"></div>
           <span>Oggi</span>
         </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-3 rounded bg-gray-300"></div>
+          <span>Non lavorativo</span>
+        </div>
+        <span className="text-gray-400">|</span>
+        <span className="text-gray-500">
+          📅 {getWorkingDaysLabel()} ({workingDaysCount}gg/sett)
+        </span>
         <span className="text-gray-400">|</span>
         <span className="text-gray-500">Periodo: {dates.length} giorni</span>
       </div>
@@ -295,7 +333,7 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
               <div className="w-[300px] shrink-0 border-r"></div>
               <div className="flex">
                 {dates.map((date, idx) => {
-                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                  const isNonWorking = !isWorkingDay(date);
                   const isToday = idx === todayIndex;
                   return (
                     <div
@@ -303,7 +341,7 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                       style={{ width: config.cellWidth }}
                       className={`text-center text-xs py-1 border-r ${
                         isToday ? 'bg-red-100 text-red-700 font-bold' : 
-                        isWeekend ? 'bg-gray-200 text-gray-500' : 'text-gray-600'
+                        isNonWorking ? 'bg-gray-200 text-gray-400' : 'text-gray-600'
                       }`}
                     >
                       {zoom === 'quarter' ? '' : date.getDate()}
@@ -343,15 +381,15 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
 
                     {/* Area Gantt */}
                     <div className="flex-1 relative" style={{ height: 50 }}>
-                      {/* Griglia weekend */}
+                      {/* Griglia giorni non lavorativi */}
                       <div className="absolute inset-0 flex">
                         {dates.map((date, idx) => {
-                          const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                          const isNonWorking = !isWorkingDay(date);
                           return (
                             <div
                               key={idx}
                               style={{ width: config.cellWidth }}
-                              className={`border-r ${isWeekend ? 'bg-gray-100' : ''}`}
+                              className={`border-r ${isNonWorking ? 'bg-gray-100' : ''}`}
                             />
                           );
                         })}
@@ -403,6 +441,21 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                 </div>
                 <div className="flex">
                   {dates.map((date, idx) => {
+                    const isNonWorking = !isWorkingDay(date);
+                    
+                    // Se non è lavorativo, mostra "-"
+                    if (isNonWorking) {
+                      return (
+                        <div
+                          key={idx}
+                          style={{ width: config.cellWidth }}
+                          className="text-center text-xs py-1.5 border-r font-medium bg-gray-200 text-gray-400"
+                        >
+                          -
+                        </div>
+                      );
+                    }
+
                     // Conta TUTTI i membri delle squadre assegnate a WP attivi in questa data
                     let resources = 0;
                     wpsWithDates.forEach(wp => {
@@ -415,18 +468,15 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                       }
                     });
 
-                    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-
                     return (
                       <div
                         key={idx}
                         style={{ width: config.cellWidth }}
                         className={`text-center text-xs py-1.5 border-r font-medium ${
-                          isWeekend ? 'bg-gray-200 text-gray-400' : 
                           resources > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'
                         }`}
                       >
-                        {isWeekend ? '-' : (resources > 0 ? resources : '-')}
+                        {resources > 0 ? resources : '-'}
                       </div>
                     );
                   })}
