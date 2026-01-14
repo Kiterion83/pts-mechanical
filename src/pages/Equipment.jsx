@@ -6,11 +6,11 @@ import {
   Truck, Plus, Search, Filter, X, Check, Edit, Trash2,
   ChevronDown, ChevronRight, Building2, Calendar, DollarSign,
   AlertTriangle, Wrench, Hammer, Settings, Star, Info, Hash,
-  Package, Tool
+  Package, PlusCircle
 } from 'lucide-react'
 
 // ============================================================================
-// CONFIGURAZIONE CATEGORIE E TIPI
+// CONFIGURAZIONE CATEGORIE
 // ============================================================================
 
 const CATEGORIES = {
@@ -37,7 +37,8 @@ const CATEGORIES = {
   }
 }
 
-const EQUIPMENT_TYPES = {
+// Tipi predefiniti (built-in)
+const DEFAULT_EQUIPMENT_TYPES = {
   // VEHICLES (Mezzi)
   crane: { label: 'Gru', labelEn: 'Crane', category: 'vehicle' },
   truck: { label: 'Camion', labelEn: 'Truck', category: 'vehicle' },
@@ -60,6 +61,7 @@ const EQUIPMENT_TYPES = {
   air_compressor: { label: 'Compressore Aria', labelEn: 'Air Compressor', category: 'equipment' },
   scaffolding: { label: 'Ponteggio', labelEn: 'Scaffolding', category: 'equipment' },
   container: { label: 'Container', labelEn: 'Container', category: 'equipment' },
+  dryer: { label: 'Essiccatore', labelEn: 'Dryer', category: 'equipment' },
   
   // TOOLS (Attrezzi)
   grinder: { label: 'Smerigliatrice', labelEn: 'Grinder', category: 'tool' },
@@ -177,6 +179,7 @@ export default function Equipment() {
   const [equipment, setEquipment] = useState([])
   const [companies, setCompanies] = useState([])
   const [assignments, setAssignments] = useState({}) // { equipmentId: squadInfo }
+  const [customTypes, setCustomTypes] = useState([]) // Tipi personalizzati dal DB
   const [loading, setLoading] = useState(true)
   
   // UI State
@@ -184,6 +187,7 @@ export default function Equipment() {
   const [editingEquipment, setEditingEquipment] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
   const [expandedDetail, setExpandedDetail] = useState(null)
+  const [showNewTypeModal, setShowNewTypeModal] = useState(false)
   
   // Filtri
   const [searchTerm, setSearchTerm] = useState('')
@@ -204,6 +208,13 @@ export default function Equipment() {
     serialNumber: '',
     plateNumber: '',
     notes: ''
+  })
+  
+  // Form nuovo tipo
+  const [newTypeForm, setNewTypeForm] = useState({
+    labelIt: '',
+    labelEn: '',
+    category: 'vehicle'
   })
   
   // Rate form state
@@ -241,6 +252,15 @@ export default function Equipment() {
         .order('is_main', { ascending: false })
       setCompanies(companiesData || [])
       
+      // Carica tipi personalizzati
+      const { data: typesData } = await supabase
+        .from('equipment_types')
+        .select('*')
+        .eq('project_id', activeProject.id)
+        .eq('is_active', true)
+        .order('label_it')
+      setCustomTypes(typesData || [])
+      
       // Carica equipment con tariffe
       const { data: equipmentData } = await supabase
         .from('equipment')
@@ -275,6 +295,23 @@ export default function Equipment() {
     } finally {
       setLoading(false)
     }
+  }
+  
+  // ============================================================================
+  // TIPI EQUIPMENT COMBINATI (predefiniti + personalizzati)
+  // ============================================================================
+  
+  const EQUIPMENT_TYPES = {
+    ...DEFAULT_EQUIPMENT_TYPES,
+    ...customTypes.reduce((acc, t) => {
+      acc[t.type_key] = { 
+        label: t.label_it, 
+        labelEn: t.label_en || t.label_it, 
+        category: t.category,
+        isCustom: true 
+      }
+      return acc
+    }, {})
   }
 
   // ============================================================================
@@ -550,6 +587,60 @@ export default function Equipment() {
       loadData()
     } catch (err) {
       console.error('Error deleting:', err)
+      alert('Errore: ' + err.message)
+    }
+  }
+
+  // ============================================================================
+  // GESTIONE NUOVO TIPO
+  // ============================================================================
+  
+  const handleSaveNewType = async () => {
+    if (!newTypeForm.labelIt.trim()) {
+      alert('Inserisci il nome italiano')
+      return
+    }
+    
+    // Genera type_key dal nome italiano
+    const typeKey = newTypeForm.labelIt
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '')
+    
+    // Verifica se esiste già
+    if (EQUIPMENT_TYPES[typeKey] || DEFAULT_EQUIPMENT_TYPES[typeKey]) {
+      alert('Questo tipo esiste già!')
+      return
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('equipment_types')
+        .insert([{
+          project_id: activeProject.id,
+          type_key: typeKey,
+          label_it: newTypeForm.labelIt.trim(),
+          label_en: newTypeForm.labelEn.trim() || null,
+          category: newTypeForm.category
+        }])
+      
+      if (error) throw error
+      
+      // Chiudi modal e ricarica
+      setShowNewTypeModal(false)
+      setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
+      
+      // Ricarica tipi
+      loadData()
+      
+      // Seleziona il nuovo tipo nel form
+      setTimeout(() => {
+        setFormData(prev => ({ ...prev, type: typeKey }))
+      }, 500)
+      
+    } catch (err) {
+      console.error('Error saving type:', err)
       alert('Errore: ' + err.message)
     }
   }
@@ -879,16 +970,32 @@ export default function Equipment() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Tipo <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">-- Seleziona --</option>
-                    {typesForCategory.map(([key, config]) => (
-                      <option key={key} value={key}>{config.label} / {config.labelEn}</option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">-- Seleziona --</option>
+                      {typesForCategory.map(([key, config]) => (
+                        <option key={key} value={key}>
+                          {config.label} / {config.labelEn}
+                          {config.isCustom && ' ★'}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
+                        setShowNewTypeModal(true)
+                      }}
+                      className="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1"
+                      title="Aggiungi nuovo tipo"
+                    >
+                      <PlusCircle size={18} />
+                    </button>
+                  </div>
                 </div>
               </div>
               
@@ -1184,6 +1291,86 @@ export default function Equipment() {
         onClose={() => setPopupData(null)}
         type={popupData?.type || 'all'}
       />
+
+      {/* ============ MODAL NUOVO TIPO ============ */}
+      {showNewTypeModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <PlusCircle className="text-green-600" size={20} />
+                Nuovo Tipo
+              </h2>
+              <button 
+                onClick={() => setShowNewTypeModal(false)} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Categoria
+                </label>
+                <select
+                  value={newTypeForm.category}
+                  onChange={(e) => setNewTypeForm({ ...newTypeForm, category: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {Object.entries(CATEGORIES).map(([key, config]) => (
+                    <option key={key} value={key}>{config.label}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome Italiano <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newTypeForm.labelIt}
+                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelIt: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Es: Essiccatore"
+                  autoFocus
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nome Inglese
+                </label>
+                <input
+                  type="text"
+                  value={newTypeForm.labelEn}
+                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelEn: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Es: Dryer"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+              <button 
+                onClick={() => setShowNewTypeModal(false)}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Annulla
+              </button>
+              <button 
+                onClick={handleSaveNewType}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+              >
+                <Check size={18} />
+                Crea Tipo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -5,8 +5,19 @@ import { supabase } from '../lib/supabase'
 import { 
   Users, Plus, Search, Filter, X, Check, Edit, Trash2,
   ChevronDown, ChevronRight, UserPlus, UserMinus, Star,
-  Building2, Hash, User, AlertTriangle, CheckCircle2
+  Building2, Hash, User, AlertTriangle, CheckCircle2,
+  Truck, Package, Wrench, Settings
 } from 'lucide-react'
+
+// ============================================================================
+// CONFIGURAZIONE EQUIPMENT
+// ============================================================================
+
+const EQUIPMENT_CATEGORIES = {
+  vehicle: { label: 'Mezzo', icon: Truck, color: 'bg-blue-100 text-blue-800' },
+  equipment: { label: 'Equipment', icon: Package, color: 'bg-green-100 text-green-800' },
+  tool: { label: 'Attrezzo', icon: Wrench, color: 'bg-orange-100 text-orange-800' }
+}
 
 // ============================================================================
 // CONFIGURAZIONE RUOLI
@@ -268,17 +279,22 @@ export default function Squads() {
   const [personnel, setPersonnel] = useState([])
   const [companies, setCompanies] = useState([])
   const [squadMembers, setSquadMembers] = useState({}) // { squadId: [members] }
+  const [equipmentList, setEquipmentList] = useState([]) // Tutti gli equipment
+  const [squadEquipment, setSquadEquipment] = useState({}) // { squadId: [equipment] }
   const [loading, setLoading] = useState(true)
   
   // UI State
   const [expandedSquad, setExpandedSquad] = useState(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAddMemberModal, setShowAddMemberModal] = useState(null) // squad id
+  const [showAddEquipmentModal, setShowAddEquipmentModal] = useState(null) // squad id
   const [editingSquad, setEditingSquad] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
+  const [activeTab, setActiveTab] = useState('personnel') // 'personnel' | 'equipment'
   
   // Popup state (click-based)
   const [popupData, setPopupData] = useState(null) // { type: 'assigned'|'unassigned', role?: string, personnel: [], title: string }
+  const [equipmentPopupData, setEquipmentPopupData] = useState(null)
   
   // Form state per nuova squadra
   const [formData, setFormData] = useState({
@@ -297,6 +313,11 @@ export default function Squads() {
   const [memberRoleFilter, setMemberRoleFilter] = useState('')
   const [memberCompanyFilter, setMemberCompanyFilter] = useState('')
   const [selectedMembers, setSelectedMembers] = useState([])
+  
+  // Filtri per aggiunta equipment
+  const [equipmentSearch, setEquipmentSearch] = useState('')
+  const [equipmentCategoryFilter, setEquipmentCategoryFilter] = useState('')
+  const [selectedEquipment, setSelectedEquipment] = useState([])
 
   // ============================================================================
   // CARICAMENTO DATI
@@ -328,6 +349,15 @@ export default function Squads() {
         .order('last_name')
       setPersonnel(personnelData || [])
       
+      // Carica tutti gli equipment
+      const { data: equipmentData } = await supabase
+        .from('equipment')
+        .select(`*, owner_company:companies(id, company_name, is_main)`)
+        .eq('project_id', activeProject.id)
+        .neq('status', 'inactive')
+        .order('type')
+      setEquipmentList(equipmentData || [])
+      
       // Carica squadre
       const { data: squadsData } = await supabase
         .from('squads')
@@ -343,7 +373,9 @@ export default function Squads() {
       
       // Carica membri per ogni squadra
       const membersMap = {}
+      const equipmentMap = {}
       for (const squad of (squadsData || [])) {
+        // Membri
         const { data: members } = await supabase
           .from('squad_members')
           .select(`
@@ -354,8 +386,21 @@ export default function Squads() {
           .eq('squad_id', squad.id)
           .eq('status', 'active')
         membersMap[squad.id] = members || []
+        
+        // Equipment assegnati alla squadra
+        const { data: eqAssignments } = await supabase
+          .from('equipment_assignments')
+          .select(`
+            *,
+            equipment:equipment(id, category, type, description, plate_number, serial_number, ownership,
+              owner_company:companies(id, company_name, is_main))
+          `)
+          .eq('squad_id', squad.id)
+          .eq('status', 'active')
+        equipmentMap[squad.id] = eqAssignments || []
       }
       setSquadMembers(membersMap)
+      setSquadEquipment(equipmentMap)
       
     } catch (err) {
       console.error('Error loading data:', err)
@@ -616,6 +661,87 @@ export default function Squads() {
   }
 
   // ============================================================================
+  // GESTIONE EQUIPMENT
+  // ============================================================================
+  
+  // Equipment già assegnati (a qualsiasi squadra)
+  const assignedEquipmentIds = new Set()
+  Object.values(squadEquipment).forEach(eqList => {
+    eqList.forEach(eq => assignedEquipmentIds.add(eq.equipment_id))
+  })
+  
+  // Equipment disponibili (non assegnati)
+  const availableEquipment = equipmentList.filter(eq => !assignedEquipmentIds.has(eq.id))
+  
+  // Stats equipment
+  const equipmentAssigned = equipmentList.filter(eq => assignedEquipmentIds.has(eq.id))
+  const equipmentUnassigned = equipmentList.filter(eq => !assignedEquipmentIds.has(eq.id))
+  
+  const handleAddEquipment = async () => {
+    if (selectedEquipment.length === 0) {
+      alert('Seleziona almeno un equipment')
+      return
+    }
+    
+    try {
+      const assignments = selectedEquipment.map(eqId => ({
+        equipment_id: eqId,
+        squad_id: showAddEquipmentModal,
+        status: 'active'
+      }))
+      
+      const { error } = await supabase
+        .from('equipment_assignments')
+        .insert(assignments)
+      
+      if (error) throw error
+      
+      setShowAddEquipmentModal(null)
+      setSelectedEquipment([])
+      setEquipmentSearch('')
+      setEquipmentCategoryFilter('')
+      loadData()
+    } catch (err) {
+      console.error('Error adding equipment:', err)
+      alert('Errore: ' + err.message)
+    }
+  }
+  
+  const handleRemoveEquipment = async (squadId, assignmentId) => {
+    try {
+      const { error } = await supabase
+        .from('equipment_assignments')
+        .update({ status: 'removed', removed_at: new Date().toISOString() })
+        .eq('id', assignmentId)
+      
+      if (error) throw error
+      
+      loadData()
+    } catch (err) {
+      console.error('Error removing equipment:', err)
+      alert('Errore: ' + err.message)
+    }
+  }
+  
+  const toggleEquipmentSelection = (equipmentId) => {
+    setSelectedEquipment(prev => 
+      prev.includes(equipmentId) 
+        ? prev.filter(id => id !== equipmentId)
+        : [...prev, equipmentId]
+    )
+  }
+  
+  // Filtra equipment per modal
+  const filteredAvailableEquipment = availableEquipment.filter(eq => {
+    const matchesSearch = equipmentSearch === '' ||
+      eq.type?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
+      eq.description?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
+      eq.plate_number?.toLowerCase().includes(equipmentSearch.toLowerCase())
+    const matchesCategory = !equipmentCategoryFilter || eq.category === equipmentCategoryFilter
+    return matchesSearch && matchesCategory
+  })
+
+  // ============================================================================
   // OPZIONI PER SEARCHABLE SELECT
   // ============================================================================
   
@@ -869,6 +995,13 @@ export default function Squads() {
                         <UserPlus size={18} />
                       </button>
                       <button
+                        onClick={() => setShowAddEquipmentModal(squad.id)}
+                        className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
+                        title="Aggiungi equipment"
+                      >
+                        <Truck size={18} />
+                      </button>
+                      <button
                         onClick={() => openEditModal(squad)}
                         className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
                         title="Modifica"
@@ -886,64 +1019,160 @@ export default function Squads() {
                   </div>
                 </div>
                 
-                {/* Membri squadra (espanso) */}
+                {/* Contenuto squadra espanso con TAB */}
                 {isExpanded && (
-                  <div className="border-t border-gray-200 p-4 bg-gray-50">
-                    {members.length === 0 ? (
-                      <p className="text-gray-500 text-center py-4">
-                        Nessun membro assegnato. 
-                        <button 
-                          onClick={() => setShowAddMemberModal(squad.id)}
-                          className="text-primary hover:underline ml-2"
-                        >
-                          Aggiungi membri
-                        </button>
-                      </p>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {members.map(member => (
-                          <div 
-                            key={member.id}
-                            className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm font-medium">
-                                {member.personnel?.first_name?.charAt(0)}{member.personnel?.last_name?.charAt(0)}
-                              </div>
-                              <div>
-                                <div className="font-medium text-sm">
-                                  {member.personnel?.last_name} {member.personnel?.first_name}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <RoleBadge role={member.personnel?.position} size="small" />
-                                  {member.personnel?.company?.is_main && (
-                                    <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => handleRemoveMember(squad.id, member.id)}
-                              className="p-1.5 hover:bg-red-100 rounded text-red-500"
-                              title="Rimuovi"
+                  <div className="border-t border-gray-200 bg-gray-50">
+                    {/* Tab Headers */}
+                    <div className="flex border-b border-gray-200">
+                      <button
+                        onClick={() => setActiveTab('personnel')}
+                        className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                          activeTab === 'personnel' 
+                            ? 'text-primary border-b-2 border-primary bg-white' 
+                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Users size={16} />
+                        Personale ({members.length})
+                      </button>
+                      <button
+                        onClick={() => setActiveTab('equipment')}
+                        className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                          activeTab === 'equipment' 
+                            ? 'text-primary border-b-2 border-primary bg-white' 
+                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Truck size={16} />
+                        Mezzi/Equipment ({(squadEquipment[squad.id] || []).length})
+                      </button>
+                    </div>
+                    
+                    {/* Tab Content: Personale */}
+                    {activeTab === 'personnel' && (
+                      <div className="p-4">
+                        {members.length === 0 ? (
+                          <p className="text-gray-500 text-center py-4">
+                            Nessun membro assegnato. 
+                            <button 
+                              onClick={() => setShowAddMemberModal(squad.id)}
+                              className="text-primary hover:underline ml-2"
                             >
-                              <UserMinus size={16} />
+                              Aggiungi membri
                             </button>
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {members.map(member => (
+                              <div 
+                                key={member.id}
+                                className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm font-medium">
+                                    {member.personnel?.first_name?.charAt(0)}{member.personnel?.last_name?.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-sm">
+                                      {member.personnel?.last_name} {member.personnel?.first_name}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <RoleBadge role={member.personnel?.position} size="small" />
+                                      {member.personnel?.company?.is_main && (
+                                        <Star size={10} className="text-yellow-500 fill-yellow-500" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleRemoveMember(squad.id, member.id)}
+                                  className="p-1.5 hover:bg-red-100 rounded text-red-500"
+                                  title="Rimuovi"
+                                >
+                                  <UserMinus size={16} />
+                                </button>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
+                        
+                        {/* Bottone aggiungi membri */}
+                        <div className="mt-4 text-center">
+                          <button
+                            onClick={() => setShowAddMemberModal(squad.id)}
+                            className="btn-secondary text-sm"
+                          >
+                            <UserPlus size={16} className="mr-2" />
+                            Aggiungi membri
+                          </button>
+                        </div>
                       </div>
                     )}
                     
-                    {/* Bottone aggiungi in fondo */}
-                    <div className="mt-4 text-center">
-                      <button
-                        onClick={() => setShowAddMemberModal(squad.id)}
-                        className="btn-secondary text-sm"
-                      >
-                        <UserPlus size={16} className="mr-2" />
-                        Aggiungi membri
-                      </button>
-                    </div>
+                    {/* Tab Content: Equipment */}
+                    {activeTab === 'equipment' && (
+                      <div className="p-4">
+                        {(squadEquipment[squad.id] || []).length === 0 ? (
+                          <p className="text-gray-500 text-center py-4">
+                            Nessun mezzo/equipment assegnato. 
+                            <button 
+                              onClick={() => setShowAddEquipmentModal(squad.id)}
+                              className="text-primary hover:underline ml-2"
+                            >
+                              Aggiungi equipment
+                            </button>
+                          </p>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {(squadEquipment[squad.id] || []).map(assignment => {
+                              const eq = assignment.equipment
+                              const catConfig = EQUIPMENT_CATEGORIES[eq?.category] || { label: eq?.category, color: 'bg-gray-100 text-gray-800', icon: Package }
+                              const CatIcon = catConfig.icon
+                              return (
+                                <div 
+                                  key={assignment.id}
+                                  className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200"
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${catConfig.color}`}>
+                                      <CatIcon size={16} />
+                                    </div>
+                                    <div>
+                                      <div className="font-medium text-sm">
+                                        {eq?.type}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-gray-500">
+                                          {eq?.description || eq?.plate_number || eq?.serial_number || '—'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={() => handleRemoveEquipment(squad.id, assignment.id)}
+                                    className="p-1.5 hover:bg-red-100 rounded text-red-500"
+                                    title="Rimuovi"
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        
+                        {/* Bottone aggiungi equipment */}
+                        <div className="mt-4 text-center">
+                          <button
+                            onClick={() => setShowAddEquipmentModal(squad.id)}
+                            className="btn-secondary text-sm"
+                          >
+                            <Truck size={16} className="mr-2" />
+                            Aggiungi equipment
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1244,6 +1473,118 @@ export default function Squads() {
         onClose={() => setPopupData(null)}
         type={popupData?.type || 'unassigned'}
       />
+
+      {/* ============ MODAL AGGIUNGI EQUIPMENT ============ */}
+      {showAddEquipmentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                <Truck className="text-primary" />
+                Aggiungi Equipment alla Squadra
+              </h2>
+              <button 
+                onClick={() => { setShowAddEquipmentModal(null); setSelectedEquipment([]); }} 
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {/* Filtri */}
+            <div className="p-4 border-b bg-gray-50 flex gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                <input
+                  type="text"
+                  value={equipmentSearch}
+                  onChange={(e) => setEquipmentSearch(e.target.value)}
+                  placeholder="Cerca..."
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+              <select
+                value={equipmentCategoryFilter}
+                onChange={(e) => setEquipmentCategoryFilter(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="">Tutte le categorie</option>
+                {Object.entries(EQUIPMENT_CATEGORIES).map(([key, config]) => (
+                  <option key={key} value={key}>{config.label}</option>
+                ))}
+              </select>
+            </div>
+            
+            {/* Lista Equipment */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {filteredAvailableEquipment.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nessun equipment disponibile</p>
+              ) : (
+                <div className="space-y-2">
+                  {filteredAvailableEquipment.map(eq => {
+                    const isSelected = selectedEquipment.includes(eq.id)
+                    const catConfig = EQUIPMENT_CATEGORIES[eq.category] || { label: eq.category, color: 'bg-gray-100 text-gray-800' }
+                    return (
+                      <div
+                        key={eq.id}
+                        onClick={() => toggleEquipmentSelection(eq.id)}
+                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                          isSelected 
+                            ? 'bg-primary/10 border-2 border-primary' 
+                            : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                          isSelected ? 'bg-primary border-primary' : 'border-gray-300'
+                        }`}>
+                          {isSelected && <Check size={14} className="text-white" />}
+                        </div>
+                        
+                        <span className={`${catConfig.color} px-2 py-0.5 text-xs rounded-full font-medium`}>
+                          {catConfig.label}
+                        </span>
+                        
+                        <div className="flex-1">
+                          <span className="font-medium text-gray-800">{eq.type}</span>
+                          {eq.description && (
+                            <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>
+                          )}
+                        </div>
+                        
+                        <span className="text-xs text-gray-500 font-mono">
+                          {eq.plate_number || eq.serial_number || '—'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            
+            {/* Footer */}
+            <div className="border-t p-4 bg-gray-50 flex justify-between items-center">
+              <span className="text-sm text-gray-600">
+                {selectedEquipment.length} selezionati
+              </span>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setShowAddEquipmentModal(null); setSelectedEquipment([]); }}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
+                >
+                  Annulla
+                </button>
+                <button
+                  onClick={handleAddEquipment}
+                  disabled={selectedEquipment.length === 0}
+                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50"
+                >
+                  Aggiungi ({selectedEquipment.length})
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
