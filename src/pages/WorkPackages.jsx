@@ -8,8 +8,8 @@ import WorkPackagesGantt from '../components/WorkPackagesGantt';
 // ============================================================================
 
 export default function WorkPackages() {
-  // Get project from context
-  const { currentProject: project } = useProject();
+  // Get project from context (same as Dashboard)
+  const { activeProject, loading: projectLoading } = useProject();
   // State principale
   const [workPackages, setWorkPackages] = useState([]);
   const [squads, setSquads] = useState([]);
@@ -38,14 +38,14 @@ export default function WorkPackages() {
   // ============================================================================
   
   useEffect(() => {
-    if (project?.id) {
+    if (activeProject?.id) {
       fetchAllData();
     }
-  }, [project?.id]);
+  }, [activeProject?.id]);
 
   const fetchAllData = async () => {
     setLoading(true);
-    console.log('WorkPackages: Fetching data for project:', project?.id);
+    console.log('WorkPackages: Fetching data for project:', activeProject?.id);
     try {
       await Promise.all([
         fetchWorkPackages(),
@@ -70,7 +70,7 @@ export default function WorkPackages() {
         squad:squads(id, squad_number, name),
         wp_spools(id, spool_id, spool_number)
       `)
-      .eq('project_id', project.id)
+      .eq('project_id', activeProject.id)
       .is('deleted_at', null)
       .order('code');
     
@@ -107,7 +107,7 @@ export default function WorkPackages() {
     const { data, error } = await supabase
       .from('squads')
       .select('*, squad_members(id)')
-      .eq('project_id', project.id)
+      .eq('project_id', activeProject.id)
       .eq('is_active', true)
       .order('squad_number');
     
@@ -126,7 +126,7 @@ export default function WorkPackages() {
       const { data: isoData, error: isoError } = await supabase
         .from('mto_isometrics')
         .select('*')
-        .eq('project_id', project.id)
+        .eq('project_id', activeProject.id)
         .eq('status', 'active');
       if (isoError) console.error('Error fetching isometrics:', isoError);
       setIsometrics(isoData || []);
@@ -140,7 +140,7 @@ export default function WorkPackages() {
       const { data: spoolData, error: spoolError } = await supabase
         .from('mto_spools')
         .select('*')
-        .eq('project_id', project.id);
+        .eq('project_id', activeProject.id);
       if (spoolError) console.error('Error fetching spools:', spoolError);
       setSpools(spoolData || []);
       console.log('Spools loaded:', spoolData?.length || 0);
@@ -153,7 +153,7 @@ export default function WorkPackages() {
       const { data: weldData, error: weldError } = await supabase
         .from('mto_welds')
         .select('*')
-        .eq('project_id', project.id);
+        .eq('project_id', activeProject.id);
       if (weldError) console.error('Error fetching welds:', weldError);
       setWelds(weldData || []);
       console.log('Welds loaded:', weldData?.length || 0);
@@ -166,7 +166,7 @@ export default function WorkPackages() {
       const { data: suppData, error: suppError } = await supabase
         .from('mto_supports')
         .select('*')
-        .eq('project_id', project.id);
+        .eq('project_id', activeProject.id);
       if (suppError) console.error('Error fetching supports:', suppError);
       setSupports(suppData || []);
       console.log('Supports loaded:', suppData?.length || 0);
@@ -179,7 +179,7 @@ export default function WorkPackages() {
       const { data: flangeData, error: flangeError } = await supabase
         .from('mto_flanges')
         .select('*')
-        .eq('project_id', project.id);
+        .eq('project_id', activeProject.id);
       if (flangeError) console.error('Error fetching flanges:', flangeError);
       setFlanges(flangeData || []);
       console.log('Flanges loaded:', flangeData?.length || 0);
@@ -308,11 +308,19 @@ export default function WorkPackages() {
   // RENDER
   // ============================================================================
   
-  if (!project?.id) {
+  if (!projectLoading && !activeProject) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
         <p className="text-lg">Nessun progetto selezionato</p>
         <p className="text-sm mt-2">Seleziona un progetto dal menu</p>
+      </div>
+    );
+  }
+  
+  if (projectLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -334,7 +342,7 @@ export default function WorkPackages() {
             🔧 Work Packages
           </h1>
           <p className="text-gray-500 mt-1">
-            {project?.name} • {workPackages.length} WP totali
+            {activeProject?.name} • {workPackages.length} WP totali
           </p>
         </div>
         
@@ -461,11 +469,11 @@ export default function WorkPackages() {
 
       {/* Modals */}
       {showCreateWPP && (
-        <CreateWPPWizard project={project} squads={squads} isometrics={isometrics} spools={spools} welds={welds} supports={supports} flanges={flanges} onClose={() => setShowCreateWPP(false)} onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }} />
+        <CreateWPPWizard project={activeProject} squads={squads} isometrics={isometrics} spools={spools} welds={welds} supports={supports} flanges={flanges} onClose={() => setShowCreateWPP(false)} onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }} />
       )}
       
       {showCreateWPA && (
-        <CreateWPAModal project={project} squads={squads} onClose={() => setShowCreateWPA(false)} onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} />
+        <CreateWPAModal project={activeProject} squads={squads} onClose={() => setShowCreateWPA(false)} onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} />
       )}
     </div>
   );
@@ -717,17 +725,17 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
   const [nextCode, setNextCode] = useState('WP-P-001');
   useEffect(() => {
     const generateCode = async () => {
-      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'piping' });
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: activeProject.id, p_type: 'piping' });
       if (data) setNextCode(data);
     };
     generateCode();
-  }, [project.id]);
+  }, [activeProject.id]);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const { data: wpData, error: wpError } = await supabase.from('work_packages').insert({
-        project_id: project.id, code: nextCode, wp_type: 'piping', description: formData.description,
+        project_id: activeProject.id, code: nextCode, wp_type: 'piping', description: formData.description,
         area: formData.area || null, squad_id: selectedSquad || null, planned_start: plannedStart || null,
         planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned'
       }).select().single();
@@ -870,18 +878,18 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
   
   useEffect(() => {
     const generateCode = async () => {
-      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'action' });
+      const { data } = await supabase.rpc('generate_wp_code', { p_project_id: activeProject.id, p_type: 'action' });
       if (data) setNextCode(data);
     };
     generateCode();
-  }, [project.id]);
+  }, [activeProject.id]);
 
   const handleSave = async () => {
     if (!formData.description) { alert('Descrizione obbligatoria'); return; }
     setSaving(true);
     try {
       const { error } = await supabase.from('work_packages').insert({
-        project_id: project.id, code: nextCode, wp_type: 'action', description: formData.description,
+        project_id: activeProject.id, code: nextCode, wp_type: 'action', description: formData.description,
         area: formData.area || null, squad_id: formData.squad_id || null, planned_start: formData.planned_start || null,
         planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', manual_progress: 0
       });
