@@ -245,29 +245,22 @@ export default function Personnel() {
   }
 
   // ============================================================================
-  // VALIDAZIONE BADGE
+  // VALIDAZIONE BADGE (solo warning, non blocca il salvataggio)
   // ============================================================================
   const validateBadge = () => {
-    const company = companies.find(c => c.id === formData.companyId)
-    const isMainCompany = company?.is_main
-    const requiresBadge = isMainCompany || ROLES_REQUIRING_BADGE_SUBCONTRACTOR.includes(formData.role)
-    
-    if (requiresBadge && !formData.badge.trim()) {
-      return {
-        valid: false,
-        message: isMainCompany 
-          ? 'Badge obbligatorio per dipendenti dell\'azienda principale'
-          : `Badge obbligatorio per il ruolo ${ROLE_CONFIG[formData.role]?.label || formData.role}`
-      }
-    }
-    
+    // Per ora permettiamo sempre il salvataggio
+    // Il badge sarà solo un warning visivo nel form
     return { valid: true }
   }
+
+  // State per popup conferma badge
+  const [showBadgeConfirm, setShowBadgeConfirm] = useState(false)
+  const [pendingSaveData, setPendingSaveData] = useState(null)
 
   // ============================================================================
   // SALVATAGGIO
   // ============================================================================
-  const handleSave = async () => {
+  const handleSave = async (skipBadgeConfirm = false) => {
     // Validazione base
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       alert('Nome e Cognome sono obbligatori')
@@ -279,78 +272,106 @@ export default function Personnel() {
       return
     }
     
-    // Validazione badge
-    const badgeValidation = validateBadge()
-    if (!badgeValidation.valid) {
-      alert(badgeValidation.message)
+    // Se stiamo modificando e non abbiamo ancora confermato il badge
+    if (selectedPerson && !skipBadgeConfirm) {
+      // Mostra popup conferma badge
+      setPendingSaveData({ ...formData })
+      setShowBadgeConfirm(true)
       return
     }
     
     try {
       if (selectedPerson) {
-        // Update esistente - aggiorna tutto in personnel
-        console.log('Updating personnel:', selectedPerson.personnel_id, formData)
+        // Update esistente
+        console.log('Updating personnel ID:', selectedPerson.personnel_id)
+        console.log('Form data:', formData)
         
-        const { error: personnelError } = await supabase
+        const updateData = {
+          id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
+          first_name: formData.firstName.trim(),
+          last_name: formData.lastName.trim(),
+          username: formData.username.trim() || null,
+          email: formData.email.trim() || null,
+          phone: formData.phone.trim() || null,
+          company_id: formData.companyId,
+          badge_number: formData.badge.trim() || null,
+          position: formData.role,
+        }
+        
+        console.log('Update data:', updateData)
+        
+        const { data, error: personnelError } = await supabase
           .from('personnel')
-          .update({
-            id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
-            first_name: formData.firstName.trim(),
-            last_name: formData.lastName.trim(),
-            username: formData.username.trim() || null,
-            email: formData.email.trim() || null,
-            phone: formData.phone.trim() || null,
-            company_id: formData.companyId,
-            badge_number: formData.badge.trim() || null,
-            position: formData.role,
-          })
+          .update(updateData)
           .eq('id', selectedPerson.personnel_id)
+          .select()
         
         if (personnelError) {
           console.error('Update error:', personnelError)
           throw personnelError
         }
         
-        console.log('Update successful')
+        console.log('Update result:', data)
       } else {
         // Inserimento nuovo
-        // Genera username automaticamente se non specificato
         let username = formData.username.trim()
         if (!username && formData.firstName && formData.lastName) {
           username = (formData.firstName.charAt(0) + '.' + formData.lastName).toLowerCase().replace(/\s/g, '').replace(/'/g, '')
         }
         
-        const { error: personnelError } = await supabase
+        const insertData = {
+          project_id: activeProject.id,
+          id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
+          first_name: formData.firstName.trim(),
+          last_name: formData.lastName.trim(),
+          username: username || null,
+          email: formData.email.trim() || null,
+          phone: formData.phone.trim() || null,
+          company_id: formData.companyId,
+          badge_number: formData.badge.trim() || null,
+          position: formData.role,
+          status: 'active'
+        }
+        
+        console.log('Insert data:', insertData)
+        
+        const { data, error: personnelError } = await supabase
           .from('personnel')
-          .insert([{
-            project_id: activeProject.id,
-            id_number: formData.idNumber ? parseInt(formData.idNumber) : null,
-            first_name: formData.firstName.trim(),
-            last_name: formData.lastName.trim(),
-            username: username || null,
-            email: formData.email.trim() || null,
-            phone: formData.phone.trim() || null,
-            company_id: formData.companyId,
-            badge_number: formData.badge.trim() || null,
-            position: formData.role,
-            status: 'active'
-          }])
+          .insert([insertData])
+          .select()
         
         if (personnelError) {
           console.error('Insert error:', personnelError)
           throw personnelError
         }
+        
+        console.log('Insert result:', data)
       }
       
       // Chiudi modal e ricarica
       setSelectedPerson(null)
       setShowAddModal(false)
       setIsEditing(false)
+      setShowBadgeConfirm(false)
+      setPendingSaveData(null)
       loadData()
     } catch (err) {
       console.error('Error saving:', err)
       alert('Errore nel salvataggio: ' + (err.message || JSON.stringify(err)))
     }
+  }
+  
+  // Conferma salvataggio con badge attuale
+  const confirmSaveWithBadge = () => {
+    setShowBadgeConfirm(false)
+    handleSave(true) // skipBadgeConfirm = true
+  }
+  
+  // Annulla e torna al form per modificare badge
+  const cancelBadgeConfirm = () => {
+    setShowBadgeConfirm(false)
+    setPendingSaveData(null)
+    // Il form rimane aperto per modificare il badge
   }
 
   // ============================================================================
@@ -1528,6 +1549,50 @@ export default function Personnel() {
                   className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
                 >
                   Elimina
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ MODAL CONFERMA BADGE ============ */}
+      {showBadgeConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="w-16 h-16 rounded-full bg-blue-100 mx-auto flex items-center justify-center mb-4">
+                <Info className="text-blue-600" size={32} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800 mb-2 text-center">Conferma Badge</h2>
+              
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <div className="text-center">
+                  <p className="text-sm text-gray-500 mb-1">Badge attuale</p>
+                  <p className="text-2xl font-mono font-bold text-gray-800">
+                    {formData.badge || '(nessuno)'}
+                  </p>
+                </div>
+              </div>
+              
+              <p className="text-gray-600 mb-6 text-center">
+                Vuoi mantenere questo badge number?
+              </p>
+              
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={confirmSaveWithBadge}
+                  className="w-full px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium flex items-center justify-center gap-2"
+                >
+                  <Check size={20} />
+                  Sì, mantieni e salva
+                </button>
+                <button
+                  onClick={cancelBadgeConfirm}
+                  className="w-full px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium flex items-center justify-center gap-2"
+                >
+                  <Edit size={20} />
+                  No, voglio modificarlo
                 </button>
               </div>
             </div>
