@@ -108,14 +108,12 @@ export default function WorkPackages() {
       .from('squads')
       .select('*, squad_members(id)')
       .eq('project_id', activeProject.id)
-      .eq('is_active', true)
       .order('squad_number');
     
     if (error) {
       console.error('Error fetching squads:', error);
-      // Non bloccare per errore squads
     }
-    console.log('Squads loaded:', data?.length || 0);
+    console.log('Squads loaded:', data?.length || 0, data);
     setSquads(data || []);
   };
 
@@ -474,6 +472,15 @@ export default function WorkPackages() {
       
       {showCreateWPA && (
         <CreateWPAModal project={activeProject} squads={squads} onClose={() => setShowCreateWPA(false)} onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} />
+      )}
+      
+      {editingWP && (
+        <EditWPModal 
+          wp={editingWP} 
+          squads={squads} 
+          onClose={() => setEditingWP(null)} 
+          onSuccess={() => { setEditingWP(null); fetchWorkPackages(); }} 
+        />
       )}
     </div>
   );
@@ -873,7 +880,15 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
 
 const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({ description: '', area: '', notes: '', squad_id: '', planned_start: '', planned_end: '' });
+  const [formData, setFormData] = useState({ 
+    description: '', 
+    area: '', 
+    notes: '', 
+    squad_id: '', 
+    planned_start: '', 
+    planned_end: '',
+    estimated_hours: ''
+  });
   const [nextCode, setNextCode] = useState('WP-A-001');
   
   useEffect(() => {
@@ -891,7 +906,8 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
       const { error } = await supabase.from('work_packages').insert({
         project_id: project.id, code: nextCode, wp_type: 'action', description: formData.description,
         area: formData.area || null, squad_id: formData.squad_id || null, planned_start: formData.planned_start || null,
-        planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', manual_progress: 0
+        planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', 
+        manual_progress: 0, estimated_hours: formData.estimated_hours ? Number(formData.estimated_hours) : null
       });
       if (error) throw error;
       onSuccess();
@@ -900,24 +916,283 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
-        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100"><h2 className="text-xl font-bold text-gray-800">⚡ Nuovo WP Action</h2><button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button></div>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100 sticky top-0">
+          <h2 className="text-xl font-bold text-gray-800">⚡ Nuovo WP Action</h2>
+          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
+        </div>
         <div className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Preparazione area..." className="w-full px-3 py-2 border rounded-lg" /></div>
-          <div><label className="block text-sm font-medium text-gray-700 mb-1">Dettagli</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-          <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label><select value={formData.squad_id} onChange={e => setFormData({...formData, squad_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">--</option>{squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number}</option>)}</select></div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
+            <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
+            <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Preparazione area..." className="w-full px-3 py-2 border rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Dettagli</label>
+            <textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={formData.planned_start} onChange={e => setFormData({...formData, planned_start: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-            <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+              <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
+              <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} placeholder="Es: 40" className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
+              <select value={formData.squad_id} onChange={e => setFormData({...formData, squad_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                <option value="">-- Seleziona --</option>
+                {squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
+              <input type="text" value={formData.squad_id ? 'Pianificato' : 'Non Assegnato'} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
+              <input type="date" value={formData.planned_start} onChange={e => setFormData({...formData, planned_start: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
+              <input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
           </div>
         </div>
-        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
           <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea'}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// EDIT WP MODAL (for both Piping and Action)
+// ============================================================================
+
+const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
+  const [saving, setSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    description: wp.description || '',
+    area: wp.area || '',
+    notes: wp.notes || '',
+    squad_id: wp.squad_id || '',
+    planned_start: wp.planned_start || '',
+    planned_end: wp.planned_end || '',
+    status: wp.status || 'not_assigned',
+    manual_progress: wp.manual_progress || 0,
+    estimated_hours: wp.estimated_hours || ''
+  });
+
+  const handleSave = async () => {
+    if (!formData.description) { 
+      alert('Descrizione obbligatoria'); 
+      return; 
+    }
+    setSaving(true);
+    try {
+      const updateData = {
+        description: formData.description,
+        area: formData.area || null,
+        notes: formData.notes || null,
+        squad_id: formData.squad_id || null,
+        planned_start: formData.planned_start || null,
+        planned_end: formData.planned_end || null,
+        status: formData.status,
+        updated_at: new Date().toISOString()
+      };
+      
+      // Per WP Action, aggiorna anche manual_progress e estimated_hours
+      if (wp.wp_type === 'action') {
+        updateData.manual_progress = Number(formData.manual_progress) || 0;
+        updateData.estimated_hours = formData.estimated_hours ? Number(formData.estimated_hours) : null;
+      }
+      
+      const { error } = await supabase
+        .from('work_packages')
+        .update(updateData)
+        .eq('id', wp.id);
+      
+      if (error) throw error;
+      onSuccess();
+    } catch (error) { 
+      alert('Errore: ' + error.message); 
+    } finally { 
+      setSaving(false); 
+    }
+  };
+
+  const isPiping = wp.wp_type === 'piping';
+  const headerColor = isPiping ? 'from-blue-50 to-blue-100' : 'from-green-50 to-green-100';
+  const buttonColor = isPiping ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700';
+  const icon = isPiping ? '🔧' : '⚡';
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className={`flex items-center justify-between p-4 border-b bg-gradient-to-r ${headerColor} sticky top-0`}>
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">{icon} Modifica {wp.code}</h2>
+            <p className="text-sm text-gray-500">{isPiping ? 'Work Package Piping' : 'Work Package Action'}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          {/* Codice (readonly) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
+            <input type="text" value={wp.code} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+          </div>
+          
+          {/* Descrizione */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
+            <input 
+              type="text" 
+              value={formData.description} 
+              onChange={e => setFormData({...formData, description: e.target.value})} 
+              className="w-full px-3 py-2 border rounded-lg" 
+            />
+          </div>
+          
+          {/* Note */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+            <textarea 
+              rows={3} 
+              value={formData.notes} 
+              onChange={e => setFormData({...formData, notes: e.target.value})} 
+              className="w-full px-3 py-2 border rounded-lg" 
+            />
+          </div>
+          
+          {/* Area + Squadra */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+              <input 
+                type="text" 
+                value={formData.area} 
+                onChange={e => setFormData({...formData, area: e.target.value})} 
+                className="w-full px-3 py-2 border rounded-lg" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
+              <select 
+                value={formData.squad_id} 
+                onChange={e => setFormData({...formData, squad_id: e.target.value})} 
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">-- Non assegnato --</option>
+                {squads.map(sq => (
+                  <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          {/* Status + Progress (solo per Action) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
+              <select 
+                value={formData.status} 
+                onChange={e => setFormData({...formData, status: e.target.value})} 
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="not_assigned">Non Assegnato</option>
+                <option value="planned">Pianificato</option>
+                <option value="in_progress">In Corso</option>
+                <option value="completed">Completato</option>
+              </select>
+            </div>
+            {!isPiping && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Progress %</label>
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="100"
+                  value={formData.manual_progress} 
+                  onChange={e => setFormData({...formData, manual_progress: e.target.value})} 
+                  className="w-full px-3 py-2 border rounded-lg" 
+                />
+              </div>
+            )}
+            {isPiping && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Progress</label>
+                <input 
+                  type="text" 
+                  value="Calcolato automaticamente" 
+                  readOnly 
+                  className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-500" 
+                />
+              </div>
+            )}
+          </div>
+          
+          {/* Monte Ore (solo per Action) */}
+          {!isPiping && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
+              <input 
+                type="number" 
+                value={formData.estimated_hours} 
+                onChange={e => setFormData({...formData, estimated_hours: e.target.value})} 
+                placeholder="Es: 40"
+                className="w-full px-3 py-2 border rounded-lg" 
+              />
+            </div>
+          )}
+          
+          {/* Date */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
+              <input 
+                type="date" 
+                value={formData.planned_start} 
+                onChange={e => setFormData({...formData, planned_start: e.target.value})} 
+                className="w-full px-3 py-2 border rounded-lg" 
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
+              <input 
+                type="date" 
+                value={formData.planned_end} 
+                onChange={e => setFormData({...formData, planned_end: e.target.value})} 
+                className="w-full px-3 py-2 border rounded-lg" 
+              />
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">
+            Annulla
+          </button>
+          <button 
+            onClick={handleSave} 
+            disabled={saving} 
+            className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}
+          >
+            {saving ? 'Salvataggio...' : '✓ Salva Modifiche'}
+          </button>
         </div>
       </div>
     </div>
