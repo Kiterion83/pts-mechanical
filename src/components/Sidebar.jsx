@@ -17,15 +17,15 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
-  PanelLeftClose,
-  PanelLeft
+  Factory
 } from 'lucide-react'
 import { useState } from 'react'
 
 // Main menu items (visible to all)
 const mainMenuItems = [
   { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
-  { path: '/mto', icon: Package, labelKey: 'nav.mto' },
+  { path: '/mto-piping', icon: Package, labelKey: 'nav.mtoPiping' },
+  { path: '/project-equipment', icon: Factory, labelKey: 'nav.projectEquipment' },
   { path: '/work-packages', icon: Wrench, labelKey: 'nav.workPackages' },
   { path: '/daily-reports', icon: ClipboardList, labelKey: 'nav.dailyReports' },
   { path: '/material-requests', icon: ShoppingCart, labelKey: 'nav.materialRequests' },
@@ -37,7 +37,7 @@ const settingsMenuItems = [
   { path: '/settings/companies', icon: Building2, labelKey: 'nav.companies', permission: 'canManageCompanies' },
   { path: '/settings/personnel', icon: Users, labelKey: 'nav.personnel', permission: 'canManagePersonnel' },
   { path: '/settings/squads', icon: UsersRound, labelKey: 'nav.squads', permission: 'canManageSquads' },
-  { path: '/settings/equipment', icon: Truck, labelKey: 'nav.equipment', permission: 'canAccessSettings' },
+  { path: '/settings/mezzi', icon: Truck, labelKey: 'nav.mezzi', permission: 'canAccessSettings' },
 ]
 
 export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }) {
@@ -178,7 +178,7 @@ export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }
               )}
             </div>
             <p className="text-center text-xs text-gray-400">
-              PTS v3.0
+              PTS v3.1
             </p>
           </div>
         )}
