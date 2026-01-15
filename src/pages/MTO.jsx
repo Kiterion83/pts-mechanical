@@ -1,14 +1,43 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
+import { useTranslation } from 'react-i18next';
 import * as XLSX from 'xlsx';
 
 // ============================================================================
 // MTO PAGE - Material Take Off
-// Gestione completa Spools, Supports, Flanges, Welds con Import Excel
+// Gestione Spools, Supports, Flanges, Welds, Project Equipment
+// con Import Excel E Inserimento Manuale
 // ============================================================================
 
+// Tipi di Equipment di Impianto
+const EQUIPMENT_TYPES = {
+  compressor: { label: 'Compressor', labelIt: 'Compressore', icon: '🔄' },
+  pump: { label: 'Pump', labelIt: 'Pompa', icon: '💧' },
+  exchanger: { label: 'Heat Exchanger', labelIt: 'Scambiatore', icon: '🔥' },
+  vessel: { label: 'Vessel', labelIt: 'Vessel', icon: '🛢️' },
+  tank: { label: 'Tank', labelIt: 'Serbatoio', icon: '🏗️' },
+  column: { label: 'Column/Tower', labelIt: 'Colonna/Torre', icon: '🗼' },
+  reactor: { label: 'Reactor', labelIt: 'Reattore', icon: '⚗️' },
+  filter: { label: 'Filter', labelIt: 'Filtro', icon: '🔲' },
+  separator: { label: 'Separator', labelIt: 'Separatore', icon: '➗' },
+  air_cooler: { label: 'Air Cooler', labelIt: 'Air Cooler', icon: '❄️' },
+  motor: { label: 'Motor', labelIt: 'Motore', icon: '⚡' },
+  generator: { label: 'Generator', labelIt: 'Generatore', icon: '🔌' },
+  valve: { label: 'Valve (MOV/Control)', labelIt: 'Valvola', icon: '🔧' },
+  instrument: { label: 'Instrument', labelIt: 'Strumento', icon: '📊' },
+  other: { label: 'Other', labelIt: 'Altro', icon: '📦' }
+};
+
+const EQUIPMENT_STATUS = {
+  pending: { label: 'Pending', labelIt: 'In Attesa', color: 'bg-gray-100 text-gray-600', icon: '⚪' },
+  arrived: { label: 'Arrived', labelIt: 'Arrivato', color: 'bg-yellow-100 text-yellow-700', icon: '🟡' },
+  in_position: { label: 'In Position', labelIt: 'In Posizione', color: 'bg-blue-100 text-blue-700', icon: '🔵' },
+  installed: { label: 'Installed', labelIt: 'Installato', color: 'bg-green-100 text-green-700', icon: '🟢' }
+};
+
 export default function MTO() {
+  const { t } = useTranslation();
   const { activeProject, loading: projectLoading } = useProject();
   
   // Data state
@@ -17,6 +46,7 @@ export default function MTO() {
   const [supports, setSupports] = useState([]);
   const [flanges, setFlanges] = useState([]);
   const [welds, setWelds] = useState([]);
+  const [projectEquipment, setProjectEquipment] = useState([]);
   const [supportSummary, setSupportSummary] = useState([]);
   const [flangeMaterialsSummary, setFlangeMaterialsSummary] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,10 +56,14 @@ export default function MTO() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterIso, setFilterIso] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterEquipmentType, setFilterEquipmentType] = useState('all');
+  const [filterEquipmentStatus, setFilterEquipmentStatus] = useState('all');
   
   // Modal state
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDiffModal, setShowDiffModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addingType, setAddingType] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editingType, setEditingType] = useState(null);
   
@@ -58,6 +92,7 @@ export default function MTO() {
         fetchSupports(),
         fetchFlanges(),
         fetchWelds(),
+        fetchProjectEquipment(),
         fetchSupportSummary(),
         fetchFlangeMaterialsSummary()
       ]);
@@ -118,6 +153,16 @@ export default function MTO() {
     setWelds(data || []);
   };
 
+  const fetchProjectEquipment = async () => {
+    const { data } = await supabase
+      .from('project_equipment')
+      .select('*')
+      .eq('project_id', activeProject.id)
+      .is('deleted_at', null)
+      .order('tag');
+    setProjectEquipment(data || []);
+  };
+
   const fetchSupportSummary = async () => {
     const { data } = await supabase
       .from('v_mto_support_summary')
@@ -144,9 +189,13 @@ export default function MTO() {
     supports: supports.length,
     flanges: flanges.length,
     welds: welds.length,
+    equipment: projectEquipment.length,
     spoolsErected: spools.filter(s => s.site_status === 'erected').length,
-    weldsCompleted: welds.filter(w => w.weld_date).length
-  }), [isometrics, spools, supports, flanges, welds]);
+    weldsCompleted: welds.filter(w => w.weld_date).length,
+    supportsAssembled: supports.filter(s => s.assembly_date).length,
+    flangesAssembled: flanges.filter(f => f.assembly_date).length,
+    equipmentInstalled: projectEquipment.filter(e => e.installation_date).length
+  }), [isometrics, spools, supports, flanges, welds, projectEquipment]);
 
   // ============================================================================
   // FILTERS
@@ -158,8 +207,8 @@ export default function MTO() {
       if (filterStatus !== 'all' && s.site_status !== filterStatus) return false;
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        if (!s.full_spool_no.toLowerCase().includes(search) &&
-            !s.spool_no.toLowerCase().includes(search)) return false;
+        if (!s.full_spool_no?.toLowerCase().includes(search) &&
+            !s.spool_no?.toLowerCase().includes(search)) return false;
       }
       return true;
     });
@@ -170,8 +219,8 @@ export default function MTO() {
       if (filterIso !== 'all' && s.iso_number !== filterIso) return false;
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        if (!s.support_tag_no.toLowerCase().includes(search) &&
-            !s.support_mark.toLowerCase().includes(search)) return false;
+        if (!s.support_tag_no?.toLowerCase().includes(search) &&
+            !s.support_mark?.toLowerCase().includes(search)) return false;
       }
       return true;
     });
@@ -182,7 +231,7 @@ export default function MTO() {
       if (filterIso !== 'all' && f.iso_number !== filterIso) return false;
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        if (!f.flange_tag.toLowerCase().includes(search)) return false;
+        if (!f.flange_tag?.toLowerCase().includes(search)) return false;
       }
       return true;
     });
@@ -193,12 +242,225 @@ export default function MTO() {
       if (filterIso !== 'all' && w.iso_number !== filterIso) return false;
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        if (!w.full_weld_no.toLowerCase().includes(search) &&
-            !w.weld_no.toLowerCase().includes(search)) return false;
+        if (!w.full_weld_no?.toLowerCase().includes(search) &&
+            !w.weld_no?.toLowerCase().includes(search)) return false;
       }
       return true;
     });
   }, [welds, filterIso, searchTerm]);
+
+  const filteredEquipment = useMemo(() => {
+    return projectEquipment.filter(e => {
+      if (filterEquipmentType !== 'all' && e.equipment_type_code !== filterEquipmentType) return false;
+      if (filterEquipmentStatus !== 'all') {
+        const status = e.installation_date ? 'installed' : 
+                       e.planned_installation_date ? 'in_position' : 
+                       'pending';
+        if (status !== filterEquipmentStatus) return false;
+      }
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        if (!e.tag?.toLowerCase().includes(search) &&
+            !e.description?.toLowerCase().includes(search)) return false;
+      }
+      return true;
+    });
+  }, [projectEquipment, filterEquipmentType, filterEquipmentStatus, searchTerm]);
+
+  // ============================================================================
+  // ADD HANDLERS (Inserimento Manuale)
+  // ============================================================================
+
+  const handleAddSpool = async (data) => {
+    const { error } = await supabase.from('mto_spools').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchSpools();
+      fetchIsometrics();
+      setShowAddModal(false);
+    }
+  };
+
+  const handleAddSupport = async (data) => {
+    const { error } = await supabase.from('mto_supports').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchSupports();
+      fetchSupportSummary();
+      setShowAddModal(false);
+    }
+  };
+
+  const handleAddFlange = async (data) => {
+    const { error } = await supabase.from('mto_flanged_joints').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchFlanges();
+      fetchFlangeMaterialsSummary();
+      setShowAddModal(false);
+    }
+  };
+
+  const handleAddWeld = async (data) => {
+    const { error } = await supabase.from('mto_welds').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchWelds();
+      setShowAddModal(false);
+    }
+  };
+
+  const handleAddEquipment = async (data) => {
+    const { error } = await supabase.from('project_equipment').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchProjectEquipment();
+      setShowAddModal(false);
+    }
+  };
+
+  // ============================================================================
+  // UPDATE HANDLERS
+  // ============================================================================
+
+  const handleUpdateSpool = async (id, updates) => {
+    const { error } = await supabase
+      .from('mto_spools')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchSpools();
+      setEditingItem(null);
+    }
+  };
+
+  const handleUpdateSupport = async (id, updates) => {
+    const { error } = await supabase
+      .from('mto_supports')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchSupports();
+      fetchSupportSummary();
+      setEditingItem(null);
+    }
+  };
+
+  const handleUpdateFlange = async (id, updates) => {
+    const { error } = await supabase
+      .from('mto_flanged_joints')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchFlanges();
+      fetchFlangeMaterialsSummary();
+      setEditingItem(null);
+    }
+  };
+
+  const handleUpdateWeld = async (id, updates) => {
+    const { error } = await supabase
+      .from('mto_welds')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchWelds();
+      setEditingItem(null);
+    }
+  };
+
+  const handleUpdateEquipment = async (id, updates) => {
+    const { error } = await supabase
+      .from('project_equipment')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchProjectEquipment();
+      setEditingItem(null);
+    }
+  };
+
+  // ============================================================================
+  // DELETE HANDLERS
+  // ============================================================================
+
+  const handleDelete = async (type, id) => {
+    if (!confirm('Sei sicuro di voler eliminare questo elemento?')) return;
+    
+    const tables = {
+      spool: 'mto_spools',
+      support: 'mto_supports',
+      flange: 'mto_flanged_joints',
+      weld: 'mto_welds',
+      equipment: 'project_equipment'
+    };
+    
+    const { error } = await supabase
+      .from(tables[type])
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchAllData();
+    }
+  };
+
+  const handleUpdateInventory = async (type, mark, qty) => {
+    if (type === 'support') {
+      const { error } = await supabase
+        .from('mto_support_inventory')
+        .upsert({
+          project_id: activeProject.id,
+          support_mark: mark,
+          qty_warehouse: parseInt(qty) || 0,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id,support_mark' });
+      if (!error) fetchSupportSummary();
+    } else {
+      const { error } = await supabase
+        .from('mto_flange_materials_inventory')
+        .upsert({
+          project_id: activeProject.id,
+          material_code: mark.code,
+          material_type: mark.type,
+          qty_warehouse: parseInt(qty) || 0,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'project_id,material_code,material_type' });
+      if (!error) fetchFlangeMaterialsSummary();
+    }
+  };
 
   // ============================================================================
   // IMPORT EXCEL
@@ -232,32 +494,30 @@ export default function MTO() {
     const diffs = [];
     
     try {
-      // Analyze Spools
       if (importFiles.spools) {
         const newData = await parseExcelFile(importFiles.spools);
         const spoolDiffs = compareData('spools', spools, newData, 'full_spool_no', 'Full_Spool_No');
         diffs.push(...spoolDiffs);
       }
-      
-      // Analyze Supports
       if (importFiles.supports) {
         const newData = await parseExcelFile(importFiles.supports);
         const supportDiffs = compareData('supports', supports, newData, 'support_tag_no', 'Support_Tag_No');
         diffs.push(...supportDiffs);
       }
-      
-      // Analyze Flanges
       if (importFiles.flanges) {
         const newData = await parseExcelFile(importFiles.flanges);
         const flangeDiffs = compareData('flanges', flanges, newData, 'flange_tag', 'Flange_Tag');
         diffs.push(...flangeDiffs);
       }
-      
-      // Analyze Welds
       if (importFiles.welds) {
         const newData = await parseExcelFile(importFiles.welds);
         const weldDiffs = compareData('welds', welds, newData, 'full_weld_no', 'Full_Weld_No');
         diffs.push(...weldDiffs);
+      }
+      if (importFiles.equipment) {
+        const newData = await parseExcelFile(importFiles.equipment);
+        const equipmentDiffs = compareData('equipment', projectEquipment, newData, 'tag', 'Tag');
+        diffs.push(...equipmentDiffs);
       }
       
       setImportDiffs(diffs);
@@ -277,7 +537,6 @@ export default function MTO() {
     const existingMap = new Map(existingData.map(item => [item[existingKey], item]));
     const newMap = new Map(newData.map(item => [item[newKey], item]));
     
-    // Find new and modified records
     newData.forEach(newItem => {
       const key = newItem[newKey];
       const existing = existingMap.get(key);
@@ -291,7 +550,6 @@ export default function MTO() {
           details: `Nuovo ${entityType}: ${key}`
         });
       } else {
-        // Check for modifications
         const changes = findChanges(entityType, existing, newItem);
         if (changes.length > 0) {
           diffs.push({
@@ -307,7 +565,6 @@ export default function MTO() {
       }
     });
     
-    // Find deleted records
     existingData.forEach(existing => {
       const key = existing[existingKey];
       if (!newMap.has(key)) {
@@ -331,17 +588,11 @@ export default function MTO() {
     fieldsToCompare.forEach(({ dbField, excelField }) => {
       const oldVal = existing[dbField];
       const newVal = newItem[excelField];
-      
-      // Normalize values for comparison
       const oldNorm = normalizeValue(oldVal);
       const newNorm = normalizeValue(newVal);
       
       if (oldNorm !== newNorm) {
-        changes.push({
-          field: dbField,
-          old: oldVal ?? '(vuoto)',
-          new: newVal ?? '(vuoto)'
-        });
+        changes.push({ field: dbField, old: oldVal ?? '(vuoto)', new: newVal ?? '(vuoto)' });
       }
     });
     
@@ -373,6 +624,12 @@ export default function MTO() {
           { dbField: 'thickness_mm', excelField: 'Thickness' },
           { dbField: 'is_dissimilar', excelField: 'Dissimilar Joint' }
         ];
+      case 'equipment':
+        return [
+          { dbField: 'weight_kg', excelField: 'Weight_kg' },
+          { dbField: 'description', excelField: 'Description' },
+          { dbField: 'equipment_type_code', excelField: 'Type' }
+        ];
       default:
         return [];
     }
@@ -399,19 +656,14 @@ export default function MTO() {
         }
       }
       
-      // Log import
-      await logImport(selectedList);
-      
-      // Refresh data
       await fetchAllData();
-      
       setShowDiffModal(false);
       setImportDiffs([]);
       setImportFiles({});
       alert(`Import completato! ${selectedList.length} modifiche applicate.`);
     } catch (error) {
       console.error('Apply diffs error:', error);
-      alert('Errore applicazione modifiche: ' + error.message);
+      alert('Errore: ' + error.message);
     } finally {
       setImporting(false);
     }
@@ -422,7 +674,6 @@ export default function MTO() {
     const mapped = mapExcelToDb(entity, data);
     mapped.project_id = activeProject.id;
     mapped.imported_at = new Date().toISOString();
-    
     const { error } = await supabase.from(table).insert(mapped);
     if (error) throw error;
   };
@@ -431,28 +682,38 @@ export default function MTO() {
     const table = getTableName(entity);
     const mapped = mapExcelToDb(entity, data);
     mapped.updated_at = new Date().toISOString();
-    
     const { error } = await supabase.from(table).update(mapped).eq('id', id);
     if (error) throw error;
   };
 
   const softDeleteRecord = async (entity, id) => {
     const table = getTableName(entity);
-    const { error } = await supabase
-      .from(table)
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
+    const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq('id', id);
     if (error) throw error;
   };
 
   const getTableName = (entity) => {
-    const tables = {
-      spools: 'mto_spools',
-      supports: 'mto_supports',
-      flanges: 'mto_flanged_joints',
-      welds: 'mto_welds'
+    const tables = { 
+      spools: 'mto_spools', 
+      supports: 'mto_supports', 
+      flanges: 'mto_flanged_joints', 
+      welds: 'mto_welds',
+      equipment: 'project_equipment'
     };
     return tables[entity];
+  };
+
+  const parseExcelDate = (value) => {
+    if (!value) return null;
+    if (typeof value === 'number') {
+      const date = new Date((value - 25569) * 86400 * 1000);
+      return date.toISOString().split('T')[0];
+    }
+    if (typeof value === 'string') {
+      const date = new Date(value);
+      if (!isNaN(date)) return date.toISOString().split('T')[0];
+    }
+    return null;
   };
 
   const mapExcelToDb = (entity, data) => {
@@ -509,9 +770,9 @@ export default function MTO() {
           gasket_qty: parseInt(data.Gasket_Qty) || 1,
           bolt_code: data.Bolt_Code,
           bolt_qty: parseInt(data.Bolt_Qty) || 0,
-          insulation_code: data.Insulation_Code,
+          insulation_code: data.Insulation_Code || null,
           insulation_qty: parseFloat(data.Insulation_Qty) || null,
-          insulation_alt_code: data.Insulation_Alt_Code,
+          insulation_alt_code: data.Insulation_Alt_Code || null,
           insulation_alt_qty: parseFloat(data.Insulation_Alt_Qty) || null,
           ir_number: data.IR_Number,
           ir_date: parseExcelDate(data.IR_Number_Date),
@@ -538,54 +799,23 @@ export default function MTO() {
           weld_date: parseExcelDate(data.Weld_Date),
           week_plan: data.Week_Plan
         };
+      case 'equipment':
+        return {
+          tag: data.Tag,
+          description: data.Description,
+          equipment_type_code: data.Type?.toLowerCase(),
+          weight_kg: parseFloat(data.Weight_kg) || null,
+          dimensions: data.Dimensions,
+          is_main_equipment: data.Is_Main !== false && data.Is_Main !== 'No',
+          area: data.Area,
+          zone: data.Zone,
+          elevation: data.Elevation,
+          planned_installation_date: parseExcelDate(data.Planned_Date),
+          installation_date: parseExcelDate(data.Installation_Date),
+          week_plan: data.Week_Plan
+        };
       default:
         return data;
-    }
-  };
-
-  const parseExcelDate = (value) => {
-    if (!value) return null;
-    if (typeof value === 'number') {
-      // Excel serial date
-      const date = new Date((value - 25569) * 86400 * 1000);
-      return date.toISOString().split('T')[0];
-    }
-    if (typeof value === 'string') {
-      const date = new Date(value);
-      if (!isNaN(date)) return date.toISOString().split('T')[0];
-    }
-    return null;
-  };
-
-  const logImport = async (appliedDiffs) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    const stats = {
-      spools: { new: 0, updated: 0, deleted: 0 },
-      supports: { new: 0, updated: 0, deleted: 0 },
-      flanges: { new: 0, updated: 0, deleted: 0 },
-      welds: { new: 0, updated: 0, deleted: 0 }
-    };
-    
-    appliedDiffs.forEach(diff => {
-      if (diff.type === 'new') stats[diff.entity].new++;
-      if (diff.type === 'modified') stats[diff.entity].updated++;
-      if (diff.type === 'deleted') stats[diff.entity].deleted++;
-    });
-    
-    for (const [type, s] of Object.entries(stats)) {
-      if (s.new > 0 || s.updated > 0 || s.deleted > 0) {
-        await supabase.from('mto_import_log').insert({
-          project_id: activeProject.id,
-          import_type: type,
-          file_name: importFiles[type]?.name,
-          records_new: s.new,
-          records_updated: s.updated,
-          records_deleted: s.deleted,
-          imported_by: user?.id,
-          imported_by_name: user?.email
-        });
-      }
     }
   };
 
@@ -596,7 +826,7 @@ export default function MTO() {
   const exportTemplate = (type) => {
     const templates = {
       spools: {
-        columns: ['Spool_ID', 'Full_Spool_No', 'ISO_Number', 'Iso_Rev_No', 'Spool_No', 'Service_class', 'Service_Cat', 'Spool_diameter', 'Spool_Weight', 'Spool_Length', 'SHIPMENT_DATE', 'IR_Number', 'IR_Number_Date', 'LAYDOWN_ARRIVAL', 'TO_SITE', 'ERECTED', 'Week_Plan'],
+        columns: ['Spool_ID', 'Full_Spool_No', 'ISO_Number', 'Spool_No', 'Service_class', 'Service_Cat', 'Spool_diameter', 'Spool_Weight', 'Spool_Length', 'SHIPMENT_DATE', 'IR_Number', 'IR_Number_Date', 'LAYDOWN_ARRIVAL', 'TO_SITE', 'ERECTED', 'Week_Plan'],
         example: { Spool_ID: 1, Full_Spool_No: 'PRJ-ISO001-SP001', ISO_Number: 'PRJ-ISO001', Spool_No: 'SP001', Spool_diameter: 4, Spool_Weight: 25.5, Spool_Length: 2.5 }
       },
       supports: {
@@ -605,11 +835,15 @@ export default function MTO() {
       },
       flanges: {
         columns: ['Flange_ID', 'Flange_Tag', 'ISO_Number', 'Flange_Type', 'First_Part_Code', 'Second_Part_Code', 'Flange_Diameter', 'Pressure_Rating', 'Critical_Flange', 'Gasket_Code', 'Gasket_Qty', 'Bolt_Code', 'Bolt_Qty', 'Insulation_Code', 'Insulation_Qty', 'Insulation_Alt_Code', 'Insulation_Alt_Qty', 'IR_Number', 'IR_Number_Date', 'Delivered to Site', 'Delivered to', 'Assembly_Date', 'Week_Plan'],
-        example: { Flange_ID: 1, Flange_Tag: 'HF100001', ISO_Number: 'PRJ-ISO001', Flange_Type: 'SP', First_Part_Code: 'PRJ-ISO001-SP001', Second_Part_Code: 'PRJ-ISO001-SP002', Flange_Diameter: 4, Pressure_Rating: '150#', Gasket_Code: 'GSK001', Gasket_Qty: 1, Bolt_Code: 'BLT001', Bolt_Qty: 8 }
+        example: { Flange_ID: 1, Flange_Tag: 'HF100001', ISO_Number: 'PRJ-ISO001', Flange_Type: 'SP', Gasket_Code: 'GSK001', Bolt_Code: 'BLT001', Bolt_Qty: 8 }
       },
       welds: {
         columns: ['Full_Weld_No', 'Weld_No', 'ISO_Number', 'First_Material_Code', 'Second_Material_Code', 'Full_First_Spool', 'Full_Second_Spool', 'Weld_Type', 'Weld_Cat', 'Dia_Inch', 'Thickness', 'Dissimilar Joint', 'Fitup_Date', 'Weld_Date', 'Week_Plan'],
-        example: { Full_Weld_No: 'PRJ-ISO001-W001', Weld_No: 'W001', ISO_Number: 'PRJ-ISO001', First_Material_Code: 'LTCS', Second_Material_Code: 'LTCS', Full_First_Spool: 'PRJ-ISO001-SP001', Full_Second_Spool: 'PRJ-ISO001-SP002', Weld_Type: 'BW', Dia_Inch: 4, Thickness: 6.02 }
+        example: { Full_Weld_No: 'PRJ-ISO001-W001', Weld_No: 'W001', ISO_Number: 'PRJ-ISO001', Weld_Type: 'BW', Dia_Inch: 4, Thickness: 6.02 }
+      },
+      equipment: {
+        columns: ['Tag', 'Description', 'Type', 'Weight_kg', 'Dimensions', 'Is_Main', 'Area', 'Zone', 'Elevation', 'Planned_Date', 'Installation_Date', 'Week_Plan'],
+        example: { Tag: 'C-101', Description: 'Main Compressor', Type: 'compressor', Weight_kg: 12500, Is_Main: 'Yes', Area: 'Process', Elevation: '+10.5m' }
       }
     };
     
@@ -620,95 +854,6 @@ export default function MTO() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, type.charAt(0).toUpperCase() + type.slice(1));
     XLSX.writeFile(wb, `MTO_Template_${type}.xlsx`);
-  };
-
-  // ============================================================================
-  // UPDATE HANDLERS
-  // ============================================================================
-
-  const handleUpdateSpool = async (id, updates) => {
-    const { error } = await supabase
-      .from('mto_spools')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    
-    if (error) {
-      alert('Errore aggiornamento: ' + error.message);
-    } else {
-      fetchSpools();
-      setEditingItem(null);
-    }
-  };
-
-  const handleUpdateSupport = async (id, updates) => {
-    const { error } = await supabase
-      .from('mto_supports')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    
-    if (error) {
-      alert('Errore aggiornamento: ' + error.message);
-    } else {
-      fetchSupports();
-      fetchSupportSummary();
-      setEditingItem(null);
-    }
-  };
-
-  const handleUpdateFlange = async (id, updates) => {
-    const { error } = await supabase
-      .from('mto_flanged_joints')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    
-    if (error) {
-      alert('Errore aggiornamento: ' + error.message);
-    } else {
-      fetchFlanges();
-      fetchFlangeMaterialsSummary();
-      setEditingItem(null);
-    }
-  };
-
-  const handleUpdateWeld = async (id, updates) => {
-    const { error } = await supabase
-      .from('mto_welds')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    
-    if (error) {
-      alert('Errore aggiornamento: ' + error.message);
-    } else {
-      fetchWelds();
-      setEditingItem(null);
-    }
-  };
-
-  const handleUpdateInventory = async (type, mark, qty) => {
-    if (type === 'support') {
-      const { error } = await supabase
-        .from('mto_support_inventory')
-        .upsert({
-          project_id: activeProject.id,
-          support_mark: mark,
-          qty_warehouse: parseInt(qty) || 0,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'project_id,support_mark' });
-      
-      if (!error) fetchSupportSummary();
-    } else {
-      const { error } = await supabase
-        .from('mto_flange_materials_inventory')
-        .upsert({
-          project_id: activeProject.id,
-          material_code: mark.code,
-          material_type: mark.type,
-          qty_warehouse: parseInt(qty) || 0,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'project_id,material_code,material_type' });
-      
-      if (!error) fetchFlangeMaterialsSummary();
-    }
   };
 
   // ============================================================================
@@ -736,8 +881,14 @@ export default function MTO() {
     { id: 'supports', label: '🔩 Supports', count: supports.length },
     { id: 'flanges', label: '⚙️ Flanges', count: flanges.length },
     { id: 'welds', label: '🔥 Welds', count: welds.length },
+    { id: 'equipment', label: '🏭 Equipment', count: projectEquipment.length },
     { id: 'summary', label: '📊 Riepilogo', count: null }
   ];
+
+  const openAddModal = (type) => {
+    setAddingType(type);
+    setShowAddModal(true);
+  };
 
   return (
     <div className="space-y-6">
@@ -748,15 +899,10 @@ export default function MTO() {
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
               📋 MTO - Material Take Off
             </h1>
-            <p className="text-gray-500 mt-1">
-              {activeProject?.name} • Database materiali e tracking
-            </p>
+            <p className="text-gray-500 mt-1">{activeProject?.name} • Database materiali e tracking</p>
           </div>
-          <div className="flex gap-3">
-            <button 
-              onClick={() => setShowImportModal(true)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
-            >
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
               📥 Importa Excel
             </button>
             <div className="relative group">
@@ -764,22 +910,24 @@ export default function MTO() {
                 📤 Esporta Template ▼
               </button>
               <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg hidden group-hover:block z-10">
-                <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools Template</button>
-                <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports Template</button>
-                <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges Template</button>
-                <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds Template</button>
+                <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
+                <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
+                <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
+                <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
+                <button onClick={() => exportTemplate('equipment')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🏭 Equipment</button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mt-6">
           <StatCard icon="📐" bg="bg-blue-50" border="border-blue-200" value={stats.isometrics} label="Isometrici" />
           <StatCard icon="📦" bg="bg-purple-50" border="border-purple-200" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} eretti`} />
-          <StatCard icon="🔩" bg="bg-gray-50" border="border-gray-200" value={stats.supports} label="Supports" />
-          <StatCard icon="⚙️" bg="bg-amber-50" border="border-amber-200" value={stats.flanges} label="Flanges" />
-          <StatCard icon="🔥" bg="bg-orange-50" border="border-orange-200" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} completati`} />
+          <StatCard icon="🔩" bg="bg-gray-50" border="border-gray-200" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} assemblati`} />
+          <StatCard icon="⚙️" bg="bg-amber-50" border="border-amber-200" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} assemblate`} />
+          <StatCard icon="🔥" bg="bg-orange-50" border="border-orange-200" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} completate`} />
+          <StatCard icon="🏭" bg="bg-emerald-50" border="border-emerald-200" value={stats.equipment} label="Equipment" sub={`${stats.equipmentInstalled} installati`} />
         </div>
       </div>
 
@@ -789,50 +937,34 @@ export default function MTO() {
           {tabs.map(tab => (
             <button
               key={tab.id}
-              onClick={() => { setActiveTab(tab.id); setSearchTerm(''); setFilterIso('all'); setFilterStatus('all'); }}
+              onClick={() => { setActiveTab(tab.id); setSearchTerm(''); setFilterIso('all'); setFilterStatus('all'); setFilterEquipmentType('all'); setFilterEquipmentStatus('all'); }}
               className={`px-6 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
-                activeTab === tab.id 
-                  ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' 
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                activeTab === tab.id ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
               {tab.label}
-              {tab.count !== null && (
-                <span className="ml-2 px-2 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>
-              )}
+              {tab.count !== null && <span className="ml-2 px-2 py-0.5 bg-gray-200 rounded-full text-xs">{tab.count}</span>}
             </button>
           ))}
         </div>
 
-        {/* Filters */}
+        {/* Filters + Add Button */}
         {activeTab !== 'summary' && (
-          <div className="p-4 border-b bg-gray-50 flex flex-wrap gap-3">
+          <div className="p-4 border-b bg-gray-50 flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px]">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Cerca..."
-                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Cerca..." className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
-            <select 
-              value={filterIso} 
-              onChange={(e) => setFilterIso(e.target.value)} 
-              className="px-3 py-2 border rounded-lg"
-            >
-              <option value="all">Tutti gli ISO</option>
-              {isometrics.map(iso => (
-                <option key={iso.id} value={iso.iso_number}>{iso.iso_number}</option>
-              ))}
-            </select>
+            
+            {activeTab !== 'equipment' && (
+              <select value={filterIso} onChange={(e) => setFilterIso(e.target.value)} className="px-3 py-2 border rounded-lg">
+                <option value="all">Tutti gli ISO</option>
+                {isometrics.map(iso => <option key={iso.id} value={iso.iso_number}>{iso.iso_number}</option>)}
+              </select>
+            )}
+            
             {activeTab === 'spools' && (
-              <select 
-                value={filterStatus} 
-                onChange={(e) => setFilterStatus(e.target.value)} 
-                className="px-3 py-2 border rounded-lg"
-              >
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
                 <option value="all">Tutti gli stati</option>
                 <option value="in_production">In Produzione</option>
                 <option value="shipped">Spedito</option>
@@ -842,82 +974,55 @@ export default function MTO() {
                 <option value="erected">Eretto</option>
               </select>
             )}
+            
+            {activeTab === 'equipment' && (
+              <>
+                <select value={filterEquipmentType} onChange={(e) => setFilterEquipmentType(e.target.value)} className="px-3 py-2 border rounded-lg">
+                  <option value="all">Tutti i tipi</option>
+                  {Object.entries(EQUIPMENT_TYPES).map(([key, val]) => (
+                    <option key={key} value={key}>{val.icon} {val.labelIt}</option>
+                  ))}
+                </select>
+                <select value={filterEquipmentStatus} onChange={(e) => setFilterEquipmentStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
+                  <option value="all">Tutti gli stati</option>
+                  {Object.entries(EQUIPMENT_STATUS).map(([key, val]) => (
+                    <option key={key} value={key}>{val.icon} {val.labelIt}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            
+            <button
+              onClick={() => openAddModal(activeTab === 'spools' ? 'spool' : activeTab === 'supports' ? 'support' : activeTab === 'flanges' ? 'flange' : activeTab === 'welds' ? 'weld' : 'equipment')}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium"
+            >
+              ➕ Aggiungi
+            </button>
           </div>
         )}
 
         {/* Tab Content */}
         <div className="p-6">
-          {activeTab === 'spools' && (
-            <SpoolsTable 
-              spools={filteredSpools} 
-              onEdit={(item) => { setEditingItem(item); setEditingType('spool'); }}
-            />
-          )}
-          {activeTab === 'supports' && (
-            <SupportsTable 
-              supports={filteredSupports}
-              onEdit={(item) => { setEditingItem(item); setEditingType('support'); }}
-            />
-          )}
-          {activeTab === 'flanges' && (
-            <FlangesTable 
-              flanges={filteredFlanges}
-              onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }}
-            />
-          )}
-          {activeTab === 'welds' && (
-            <WeldsTable 
-              welds={filteredWelds}
-              onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }}
-            />
-          )}
-          {activeTab === 'summary' && (
-            <MaterialsSummary 
-              supportSummary={supportSummary}
-              flangeMaterialsSummary={flangeMaterialsSummary}
-              onUpdateInventory={handleUpdateInventory}
-            />
-          )}
+          {activeTab === 'spools' && <SpoolsTable spools={filteredSpools} onEdit={(item) => { setEditingItem(item); setEditingType('spool'); }} onDelete={(id) => handleDelete('spool', id)} />}
+          {activeTab === 'supports' && <SupportsTable supports={filteredSupports} onEdit={(item) => { setEditingItem(item); setEditingType('support'); }} onDelete={(id) => handleDelete('support', id)} />}
+          {activeTab === 'flanges' && <FlangesTable flanges={filteredFlanges} onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }} onDelete={(id) => handleDelete('flange', id)} />}
+          {activeTab === 'welds' && <WeldsTable welds={filteredWelds} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
+          {activeTab === 'equipment' && <ProjectEquipmentTable equipment={filteredEquipment} allEquipment={projectEquipment} onEdit={(item) => { setEditingItem(item); setEditingType('equipment'); }} onDelete={(id) => handleDelete('equipment', id)} />}
+          {activeTab === 'summary' && <MaterialsSummary supportSummary={supportSummary} flangeMaterialsSummary={flangeMaterialsSummary} onUpdateInventory={handleUpdateInventory} />}
         </div>
       </div>
 
-      {/* Import Modal */}
-      {showImportModal && (
-        <ImportModal
-          importFiles={importFiles}
-          onFileSelect={handleFileSelect}
-          onAnalyze={analyzeImport}
-          onClose={() => setShowImportModal(false)}
-          importing={importing}
-        />
-      )}
-
-      {/* Diff Modal */}
-      {showDiffModal && (
-        <DiffModal
-          diffs={importDiffs}
-          selectedDiffs={selectedDiffs}
-          setSelectedDiffs={setSelectedDiffs}
-          onApply={applySelectedDiffs}
-          onClose={() => setShowDiffModal(false)}
-          importing={importing}
-        />
-      )}
-
-      {/* Edit Modal */}
-      {editingItem && (
-        <EditModal
-          item={editingItem}
-          type={editingType}
-          onSave={(updates) => {
-            if (editingType === 'spool') handleUpdateSpool(editingItem.id, updates);
-            else if (editingType === 'support') handleUpdateSupport(editingItem.id, updates);
-            else if (editingType === 'flange') handleUpdateFlange(editingItem.id, updates);
-            else if (editingType === 'weld') handleUpdateWeld(editingItem.id, updates);
-          }}
-          onClose={() => setEditingItem(null)}
-        />
-      )}
+      {/* Modals */}
+      {showImportModal && <ImportModal importFiles={importFiles} onFileSelect={handleFileSelect} onAnalyze={analyzeImport} onClose={() => setShowImportModal(false)} importing={importing} />}
+      {showDiffModal && <DiffModal diffs={importDiffs} selectedDiffs={selectedDiffs} setSelectedDiffs={setSelectedDiffs} onApply={applySelectedDiffs} onClose={() => setShowDiffModal(false)} importing={importing} />}
+      {showAddModal && <AddModal type={addingType} spools={spools} isometrics={isometrics} projectEquipment={projectEquipment} onSave={addingType === 'spool' ? handleAddSpool : addingType === 'support' ? handleAddSupport : addingType === 'flange' ? handleAddFlange : addingType === 'weld' ? handleAddWeld : handleAddEquipment} onClose={() => setShowAddModal(false)} />}
+      {editingItem && <EditModal item={editingItem} type={editingType} projectEquipment={projectEquipment} onSave={(updates) => {
+        if (editingType === 'spool') handleUpdateSpool(editingItem.id, updates);
+        else if (editingType === 'support') handleUpdateSupport(editingItem.id, updates);
+        else if (editingType === 'flange') handleUpdateFlange(editingItem.id, updates);
+        else if (editingType === 'weld') handleUpdateWeld(editingItem.id, updates);
+        else if (editingType === 'equipment') handleUpdateEquipment(editingItem.id, updates);
+      }} onClose={() => setEditingItem(null)} />}
     </div>
   );
 }
@@ -952,8 +1057,17 @@ const SpoolStatusBadge = ({ status }) => {
   return <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>{config.label}</span>;
 };
 
+const EquipmentStatusBadge = ({ equipment }) => {
+  let status = 'pending';
+  if (equipment.installation_date) status = 'installed';
+  else if (equipment.planned_installation_date) status = 'in_position';
+  
+  const config = EQUIPMENT_STATUS[status];
+  return <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>{config.icon} {config.labelIt}</span>;
+};
+
 // Spools Table
-const SpoolsTable = ({ spools, onEdit }) => (
+const SpoolsTable = ({ spools, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -984,13 +1098,14 @@ const SpoolsTable = ({ spools, onEdit }) => (
             <td className="p-3 text-center">{spool.diameter_inch}"</td>
             <td className="p-3 text-center">{spool.weight_kg?.toFixed(1)} kg</td>
             <td className="p-3 text-center"><SpoolStatusBadge status={spool.site_status} /></td>
-            <td className="p-3 text-center text-xs">{spool.shipment_date ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.laydown_arrival ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.erected ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.shipment_date ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.ir_number ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.laydown_arrival ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.to_site ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.erected ? <span className="text-green-600">✔</span> : '—'}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(spool)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(spool.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1000,7 +1115,7 @@ const SpoolsTable = ({ spools, onEdit }) => (
 );
 
 // Supports Table
-const SupportsTable = ({ supports, onEdit }) => (
+const SupportsTable = ({ supports, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1026,11 +1141,12 @@ const SupportsTable = ({ supports, onEdit }) => (
             <td className="p-3 text-xs text-gray-600">{sup.iso_number}</td>
             <td className="p-3 text-center text-xs text-blue-600 font-mono">{sup.full_spool_no?.split('-').pop()}</td>
             <td className="p-3 text-center">{sup.weight_kg?.toFixed(2)} kg</td>
-            <td className="p-3 text-center text-xs">{sup.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{sup.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{sup.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.ir_number ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.delivered_to_site ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.assembly_date ? <span className="text-green-600">✔</span> : '—'}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(sup)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(sup.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1040,7 +1156,7 @@ const SupportsTable = ({ supports, onEdit }) => (
 );
 
 // Flanges Table
-const FlangesTable = ({ flanges, onEdit }) => (
+const FlangesTable = ({ flanges, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1073,10 +1189,11 @@ const FlangesTable = ({ flanges, onEdit }) => (
             <td className="p-3 text-center text-xs">{fl.diameter_inch}" / {fl.pressure_rating}</td>
             <td className="p-3 text-center text-xs font-mono">{fl.gasket_code}</td>
             <td className="p-3 text-center text-xs"><span className="font-mono">{fl.bolt_code}</span> <span className="text-gray-400">×{fl.bolt_qty}</span></td>
-            <td className="p-3 text-center text-xs">{fl.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{fl.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{fl.delivered_to_site ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{fl.assembly_date ? <span className="text-green-600">✔</span> : '—'}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(fl)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(fl.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1086,7 +1203,7 @@ const FlangesTable = ({ flanges, onEdit }) => (
 );
 
 // Welds Table
-const WeldsTable = ({ welds, onEdit }) => (
+const WeldsTable = ({ welds, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1119,14 +1236,13 @@ const WeldsTable = ({ welds, onEdit }) => (
             <td className="p-3 text-center text-xs">{w.diameter_inch}"</td>
             <td className="p-3 text-center text-xs">{w.thickness_mm}mm</td>
             <td className="p-3 text-center">
-              {w.is_dissimilar ? (
-                <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium">⚠️ SI</span>
-              ) : '—'}
+              {w.is_dissimilar ? <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium">⚠️ SI</span> : '—'}
             </td>
-            <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✔</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✔</span> : '—'}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1135,14 +1251,83 @@ const WeldsTable = ({ welds, onEdit }) => (
   </div>
 );
 
+// Project Equipment Table
+const ProjectEquipmentTable = ({ equipment, allEquipment, onEdit, onDelete }) => {
+  const getParentTag = (parentId) => {
+    const parent = allEquipment.find(e => e.id === parentId);
+    return parent?.tag || '—';
+  };
+
+  return (
+    <div className="overflow-x-auto border rounded-lg">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="text-left p-3 font-medium">Tag</th>
+            <th className="text-left p-3 font-medium">Descrizione</th>
+            <th className="text-center p-3 font-medium">Tipo</th>
+            <th className="text-center p-3 font-medium">Peso</th>
+            <th className="text-center p-3 font-medium">Main Eq.</th>
+            <th className="text-center p-3 font-medium">Area</th>
+            <th className="text-center p-3 font-medium">Stato</th>
+            <th className="text-center p-3 font-medium">Data Install.</th>
+            <th className="text-center p-3 font-medium">Azioni</th>
+          </tr>
+        </thead>
+        <tbody>
+          {equipment.length === 0 ? (
+            <tr><td colSpan={9} className="p-8 text-center text-gray-400">Nessun equipment trovato</td></tr>
+          ) : equipment.map(eq => {
+            const typeInfo = EQUIPMENT_TYPES[eq.equipment_type_code] || EQUIPMENT_TYPES.other;
+            return (
+              <tr key={eq.id} className={`border-t hover:bg-gray-50 ${!eq.is_main_equipment ? 'bg-gray-50' : ''}`}>
+                <td className="p-3">
+                  <div className="flex items-center gap-2">
+                    {!eq.is_main_equipment && <span className="text-gray-400 ml-4">└</span>}
+                    <span className="font-mono font-medium text-emerald-700">{eq.tag}</span>
+                  </div>
+                </td>
+                <td className="p-3 text-gray-600 max-w-[200px] truncate">{eq.description}</td>
+                <td className="p-3 text-center">
+                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">
+                    {typeInfo.icon} {typeInfo.labelIt}
+                  </span>
+                </td>
+                <td className="p-3 text-center text-xs">{eq.weight_kg ? `${eq.weight_kg.toLocaleString()} kg` : '—'}</td>
+                <td className="p-3 text-center text-xs">
+                  {eq.is_main_equipment ? (
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">Main</span>
+                  ) : (
+                    <span className="text-gray-500">→ {getParentTag(eq.main_equipment_id)}</span>
+                  )}
+                </td>
+                <td className="p-3 text-center text-xs text-gray-600">{eq.area || '—'}</td>
+                <td className="p-3 text-center"><EquipmentStatusBadge equipment={eq} /></td>
+                <td className="p-3 text-center text-xs">
+                  {eq.installation_date ? (
+                    <span className="text-green-600">{new Date(eq.installation_date).toLocaleDateString('it-IT')}</span>
+                  ) : eq.planned_installation_date ? (
+                    <span className="text-gray-400">Plan: {new Date(eq.planned_installation_date).toLocaleDateString('it-IT')}</span>
+                  ) : '—'}
+                </td>
+                <td className="p-3 text-center">
+                  <button onClick={() => onEdit(eq)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+                  <button onClick={() => onDelete(eq.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 // Materials Summary
 const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInventory }) => (
   <div className="space-y-6">
-    {/* Support Summary */}
     <div className="bg-gray-50 rounded-xl p-5 border">
-      <h4 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        🔩 Riepilogo Supports per Mark
-      </h4>
+      <h4 className="font-semibold text-gray-700 mb-4">🔩 Riepilogo Supports per Mark</h4>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-white">
@@ -1166,17 +1351,12 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
                   <td className="p-3 border font-mono font-medium">{item.support_mark}</td>
                   <td className="p-3 border text-center font-bold text-blue-700">{item.qty_necessary}</td>
                   <td className="p-3 border text-center">
-                    <input
-                      type="number"
-                      defaultValue={item.qty_warehouse}
-                      onBlur={(e) => onUpdateInventory('support', item.support_mark, e.target.value)}
-                      className="w-20 text-center border rounded px-2 py-1"
-                    />
+                    <input type="number" defaultValue={item.qty_warehouse} onBlur={(e) => onUpdateInventory('support', item.support_mark, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
                   </td>
                   <td className="p-3 border text-center text-amber-700">{item.qty_delivered}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? `✓ OK` : `⚠️ -${remaining - available}`}
+                      {isOk ? '✔ OK' : `⚠️ -${remaining - available}`}
                     </span>
                   </td>
                 </tr>
@@ -1187,11 +1367,8 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
       </div>
     </div>
 
-    {/* Flange Materials Summary */}
     <div className="bg-amber-50 rounded-xl p-5 border border-amber-200">
-      <h4 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-        ⚙️ Riepilogo Materiali Flange
-      </h4>
+      <h4 className="font-semibold text-gray-700 mb-4">⚙️ Riepilogo Materiali Flange</h4>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-white">
@@ -1208,32 +1385,22 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
             {flangeMaterialsSummary.length === 0 ? (
               <tr><td colSpan={6} className="p-4 text-center text-gray-400">Nessun dato</td></tr>
             ) : flangeMaterialsSummary.map((item, idx) => {
-              const available = item.qty_warehouse - item.qty_delivered;
-              const remaining = item.qty_necessary - item.qty_delivered;
+              const available = item.qty_warehouse - (item.qty_delivered || 0);
+              const remaining = item.qty_necessary - (item.qty_delivered || 0);
               const isOk = available >= remaining;
-              const typeColor = item.material_type === 'gasket' ? 'bg-purple-100 text-purple-700' :
-                               item.material_type === 'bolt' ? 'bg-gray-100 text-gray-700' : 'bg-cyan-100 text-cyan-700';
+              const typeColor = item.material_type === 'gasket' ? 'bg-purple-100 text-purple-700' : item.material_type === 'bolt' ? 'bg-gray-100 text-gray-700' : 'bg-cyan-100 text-cyan-700';
               return (
                 <tr key={idx} className="border-t">
                   <td className="p-3 border font-mono font-medium">{item.material_code}</td>
-                  <td className="p-3 border text-center">
-                    <span className={`px-2 py-0.5 rounded text-xs ${typeColor}`}>
-                      {item.material_type === 'gasket' ? 'Gasket' : item.material_type === 'bolt' ? 'Bolt' : 'Insulation'}
-                    </span>
-                  </td>
+                  <td className="p-3 border text-center"><span className={`px-2 py-0.5 rounded text-xs ${typeColor}`}>{item.material_type === 'gasket' ? 'Gasket' : item.material_type === 'bolt' ? 'Bolt' : 'Insulation'}</span></td>
                   <td className="p-3 border text-center font-bold text-blue-700">{item.qty_necessary}</td>
                   <td className="p-3 border text-center">
-                    <input
-                      type="number"
-                      defaultValue={item.qty_warehouse}
-                      onBlur={(e) => onUpdateInventory('flange', { code: item.material_code, type: item.material_type }, e.target.value)}
-                      className="w-20 text-center border rounded px-2 py-1"
-                    />
+                    <input type="number" defaultValue={item.qty_warehouse} onBlur={(e) => onUpdateInventory('flange', { code: item.material_code, type: item.material_type }, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
                   </td>
-                  <td className="p-3 border text-center text-amber-700">{item.qty_delivered}</td>
+                  <td className="p-3 border text-center text-amber-700">{item.qty_delivered || 0}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? '✓ OK' : `⚠️ -${remaining - available}`}
+                      {isOk ? '✔ OK' : `⚠️ -${remaining - available}`}
                     </span>
                   </td>
                 </tr>
@@ -1252,7 +1419,8 @@ const ImportModal = ({ importFiles, onFileSelect, onAnalyze, onClose, importing 
     { key: 'spools', label: 'Spools', icon: '📦' },
     { key: 'supports', label: 'Supports', icon: '🔩' },
     { key: 'flanges', label: 'Flanged Joints', icon: '⚙️' },
-    { key: 'welds', label: 'Welds', icon: '🔥' }
+    { key: 'welds', label: 'Welds', icon: '🔥' },
+    { key: 'equipment', label: 'Equipment', icon: '🏭' }
   ];
 
   return (
@@ -1260,46 +1428,26 @@ const ImportModal = ({ importFiles, onFileSelect, onAnalyze, onClose, importing 
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
         <div className="p-6 border-b">
           <h2 className="text-xl font-bold text-gray-800">📥 Importa Dati Excel</h2>
-          <p className="text-sm text-gray-500 mt-1">Seleziona i file da importare (4 file separati)</p>
+          <p className="text-sm text-gray-500 mt-1">Seleziona i file da importare</p>
         </div>
         <div className="p-6 space-y-4">
           {fileTypes.map(({ key, label, icon }) => (
-            <div 
-              key={key}
-              className={`flex items-center gap-4 p-4 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${
-                importFiles[key] ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-              }`}
-            >
+            <div key={key} className={`flex items-center gap-4 p-4 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${importFiles[key] ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'}`}>
               <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-xl">{icon}</div>
               <div className="flex-1">
                 <p className="font-medium text-gray-700">{label}</p>
-                <p className="text-xs text-gray-400">
-                  {importFiles[key] ? importFiles[key].name : 'Clicca per selezionare'}
-                </p>
+                <p className="text-xs text-gray-400">{importFiles[key] ? importFiles[key].name : 'Clicca per selezionare'}</p>
               </div>
               <label className="cursor-pointer">
-                {importFiles[key] ? (
-                  <span className="text-green-600 text-xl">✓</span>
-                ) : (
-                  <span className="text-gray-300 text-xl">📎</span>
-                )}
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => e.target.files[0] && onFileSelect(key, e.target.files[0])}
-                />
+                {importFiles[key] ? <span className="text-green-600 text-xl">✔</span> : <span className="text-gray-300 text-xl">📎</span>}
+                <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => e.target.files[0] && onFileSelect(key, e.target.files[0])} />
               </label>
             </div>
           ))}
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button
-            onClick={onAnalyze}
-            disabled={Object.keys(importFiles).length === 0 || importing}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <button onClick={onAnalyze} disabled={Object.keys(importFiles).length === 0 || importing} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
             {importing ? 'Analisi...' : 'Analizza File →'}
           </button>
         </div>
@@ -1318,29 +1466,15 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
       </div>
       <div className="flex-1 overflow-y-auto p-6">
         {diffs.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Nessuna differenza rilevata. I dati sono già aggiornati.</p>
+          <p className="text-center text-gray-500 py-8">Nessuna differenza. I dati sono già aggiornati.</p>
         ) : (
           <div className="space-y-3">
             {diffs.map((diff, idx) => (
-              <label
-                key={idx}
-                className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${
-                  selectedDiffs[idx] ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedDiffs[idx] || false}
-                  onChange={(e) => setSelectedDiffs({ ...selectedDiffs, [idx]: e.target.checked })}
-                  className="mt-1 w-5 h-5 text-blue-600 rounded"
-                />
+              <label key={idx} className={`flex items-start gap-3 p-4 rounded-lg border-2 cursor-pointer transition-colors ${selectedDiffs[idx] ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                <input type="checkbox" checked={selectedDiffs[idx] || false} onChange={(e) => setSelectedDiffs({ ...selectedDiffs, [idx]: e.target.checked })} className="mt-1 w-5 h-5 text-blue-600 rounded" />
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      diff.type === 'new' ? 'bg-green-100 text-green-700' :
-                      diff.type === 'modified' ? 'bg-amber-100 text-amber-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${diff.type === 'new' ? 'bg-green-100 text-green-700' : diff.type === 'modified' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                       {diff.type === 'new' ? '➕ NUOVO' : diff.type === 'modified' ? '✏️ MODIFICATO' : '🗑️ RIMOSSO'}
                     </span>
                     <span className="text-sm font-medium text-gray-700 capitalize">{diff.entity}</span>
@@ -1354,24 +1488,11 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
         )}
       </div>
       <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-        <button
-          onClick={() => {
-            const all = {};
-            diffs.forEach((_, idx) => all[idx] = true);
-            setSelectedDiffs(all);
-          }}
-          className="text-sm text-blue-600 hover:text-blue-800"
-        >
-          ✓ Seleziona Tutti
-        </button>
+        <button onClick={() => { const all = {}; diffs.forEach((_, idx) => all[idx] = true); setSelectedDiffs(all); }} className="text-sm text-blue-600 hover:text-blue-800">✔ Seleziona Tutti</button>
         <div className="flex gap-3">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button
-            onClick={onApply}
-            disabled={Object.values(selectedDiffs).filter(Boolean).length === 0 || importing}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-          >
-            {importing ? 'Applicazione...' : `✓ Applica (${Object.values(selectedDiffs).filter(Boolean).length})`}
+          <button onClick={onApply} disabled={Object.values(selectedDiffs).filter(Boolean).length === 0 || importing} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+            {importing ? 'Applicazione...' : `✔ Applica (${Object.values(selectedDiffs).filter(Boolean).length})`}
           </button>
         </div>
       </div>
@@ -1379,25 +1500,212 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
   </div>
 );
 
-// Edit Modal (simplified - would need expansion for each type)
-const EditModal = ({ item, type, onSave, onClose }) => {
+// Add Modal (Inserimento Manuale)
+const AddModal = ({ type, spools, isometrics, projectEquipment, onSave, onClose }) => {
+  const [formData, setFormData] = useState({});
+
+  const handleSubmit = () => {
+    if (type === 'spool') {
+      if (!formData.full_spool_no || !formData.iso_number || !formData.spool_no) {
+        alert('Compila i campi obbligatori: Full Spool No, ISO Number, Spool No');
+        return;
+      }
+    } else if (type === 'support') {
+      if (!formData.support_tag_no || !formData.support_mark) {
+        alert('Compila i campi obbligatori: Support Tag No, Support Mark');
+        return;
+      }
+    } else if (type === 'flange') {
+      if (!formData.flange_tag) {
+        alert('Compila il campo obbligatorio: Flange Tag');
+        return;
+      }
+    } else if (type === 'weld') {
+      if (!formData.full_weld_no || !formData.weld_no) {
+        alert('Compila i campi obbligatori: Full Weld No, Weld No');
+        return;
+      }
+    } else if (type === 'equipment') {
+      if (!formData.tag) {
+        alert('Compila il campo obbligatorio: Tag');
+        return;
+      }
+    }
+    onSave(formData);
+  };
+
+  const titles = { 
+    spool: '📦 Nuovo Spool', 
+    support: '🔩 Nuovo Support', 
+    flange: '⚙️ Nuova Flange', 
+    weld: '🔥 Nuova Weld',
+    equipment: '🏭 Nuovo Equipment'
+  };
+
+  const mainEquipmentOptions = projectEquipment.filter(e => e.is_main_equipment);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b sticky top-0 bg-white">
+          <h2 className="text-lg font-bold text-gray-800">{titles[type]}</h2>
+        </div>
+        <div className="p-6 space-y-4">
+          {type === 'spool' && (
+            <>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Spool No *</label><input type="text" value={formData.full_spool_no || ''} onChange={e => setFormData({...formData, full_spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="PRJ-ISO001-SP001" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number *</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool No *</label><input type="text" value={formData.spool_no || ''} onChange={e => setFormData({...formData, spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="SP001" /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Lunghezza (m)</label><input type="number" step="0.01" value={formData.length_m || ''} onChange={e => setFormData({...formData, length_m: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+            </>
+          )}
+          {type === 'support' && (
+            <>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Support Tag No *</label><input type="text" value={formData.support_tag_no || ''} onChange={e => setFormData({...formData, support_tag_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Support Mark *</label><input type="text" value={formData.support_mark || ''} onChange={e => setFormData({...formData, support_mark: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="MG02-B" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Spool No (collegamento)</label>
+                <select value={formData.full_spool_no || ''} onChange={e => setFormData({...formData, full_spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                  <option value="">-- Seleziona Spool --</option>
+                  {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+          {type === 'flange' && (
+            <>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Flange Tag *</label><input type="text" value={formData.flange_tag || ''} onChange={e => setFormData({...formData, flange_tag: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="HF100001" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select value={formData.flange_type || ''} onChange={e => setFormData({...formData, flange_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">--</option><option value="SP">SP</option><option value="SM">SM</option><option value="SE">SE</option><option value="SV">SV</option><option value="SI">SI</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Rating</label><input type="text" value={formData.pressure_rating || ''} onChange={e => setFormData({...formData, pressure_rating: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="150#" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Gasket Code</label><input type="text" value={formData.gasket_code || ''} onChange={e => setFormData({...formData, gasket_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Bolt Code</label><input type="text" value={formData.bolt_code || ''} onChange={e => setFormData({...formData, bolt_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Bolt Qty</label><input type="number" value={formData.bolt_qty || ''} onChange={e => setFormData({...formData, bolt_qty: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+            </>
+          )}
+          {type === 'weld' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Weld No *</label><input type="text" value={formData.full_weld_no || ''} onChange={e => setFormData({...formData, full_weld_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="PRJ-ISO001-W001" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Weld No *</label><input type="text" value={formData.weld_no || ''} onChange={e => setFormData({...formData, weld_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="W001" /></div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool 1</label>
+                  <select value={formData.full_first_spool || ''} onChange={e => setFormData({...formData, full_first_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">--</option>
+                    {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
+                  </select>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool 2</label>
+                  <select value={formData.full_second_spool || ''} onChange={e => setFormData({...formData, full_second_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">--</option>
+                    {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select value={formData.weld_type || ''} onChange={e => setFormData({...formData, weld_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">--</option><option value="BW">BW</option><option value="SW">SW</option><option value="FW">FW</option>
+                  </select>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Ø (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Thick (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.is_dissimilar || false} onChange={e => setFormData({...formData, is_dissimilar: e.target.checked})} className="w-4 h-4" /><span className="text-sm text-gray-700">Saldatura Dissimile</span></label></div>
+            </>
+          )}
+          {type === 'equipment' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Tag *</label><input type="text" value={formData.tag || ''} onChange={e => setFormData({...formData, tag: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="C-101" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                  <select value={formData.equipment_type_code || ''} onChange={e => setFormData({...formData, equipment_type_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">-- Seleziona --</option>
+                    {Object.entries(EQUIPMENT_TYPES).map(([key, val]) => (
+                      <option key={key} value={key}>{val.icon} {val.labelIt}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label><input type="text" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Main Process Compressor" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: parseFloat(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Dimensioni</label><input type="text" value={formData.dimensions || ''} onChange={e => setFormData({...formData, dimensions: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="2.5m x 1.5m x 3m" /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><input type="text" value={formData.area || ''} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Process" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Zona</label><input type="text" value={formData.zone || ''} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Elevazione</label><input type="text" value={formData.elevation || ''} onChange={e => setFormData({...formData, elevation: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="+10.5m" /></div>
+              </div>
+              <div className="border-t pt-4 mt-2">
+                <label className="flex items-center gap-2 cursor-pointer mb-3">
+                  <input type="checkbox" checked={formData.is_main_equipment !== false} onChange={e => setFormData({...formData, is_main_equipment: e.target.checked, main_equipment_id: e.target.checked ? null : formData.main_equipment_id})} className="w-4 h-4" />
+                  <span className="text-sm text-gray-700">Equipment Principale (Main)</span>
+                </label>
+                {formData.is_main_equipment === false && (
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Main Equipment (Parent)</label>
+                    <select value={formData.main_equipment_id || ''} onChange={e => setFormData({...formData, main_equipment_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                      <option value="">-- Seleziona Main Equipment --</option>
+                      {mainEquipmentOptions.map(eq => (
+                        <option key={eq.id} value={eq.id}>{eq.tag} - {eq.description}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Data Pianificata</label><input type="date" value={formData.planned_installation_date || ''} onChange={e => setFormData({...formData, planned_installation_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Data Installazione</label><input type="date" value={formData.installation_date || ''} onChange={e => setFormData({...formData, installation_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
+          <button onClick={handleSubmit} className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">✔ Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Edit Modal
+const EditModal = ({ item, type, projectEquipment, onSave, onClose }) => {
   const [formData, setFormData] = useState({ ...item });
 
   const handleSave = () => {
     const updates = {};
-    
     if (type === 'spool') {
       updates.shipment_date = formData.shipment_date || null;
       updates.ir_number = formData.ir_number || null;
-      updates.ir_date = formData.ir_date || null;
       updates.laydown_arrival = formData.laydown_arrival || null;
       updates.to_site = formData.to_site || null;
       updates.erected = formData.erected || null;
     } else if (type === 'support') {
       updates.ir_number = formData.ir_number || null;
-      updates.ir_date = formData.ir_date || null;
       updates.delivered_to_site = formData.delivered_to_site || null;
-      updates.delivered_to = formData.delivered_to || null;
       updates.assembly_date = formData.assembly_date || null;
     } else if (type === 'flange') {
       updates.ir_number = formData.ir_number || null;
@@ -1406,17 +1714,32 @@ const EditModal = ({ item, type, onSave, onClose }) => {
     } else if (type === 'weld') {
       updates.fitup_date = formData.fitup_date || null;
       updates.weld_date = formData.weld_date || null;
+    } else if (type === 'equipment') {
+      updates.tag = formData.tag;
+      updates.description = formData.description;
+      updates.equipment_type_code = formData.equipment_type_code;
+      updates.weight_kg = formData.weight_kg;
+      updates.dimensions = formData.dimensions;
+      updates.area = formData.area;
+      updates.zone = formData.zone;
+      updates.elevation = formData.elevation;
+      updates.is_main_equipment = formData.is_main_equipment;
+      updates.main_equipment_id = formData.main_equipment_id || null;
+      updates.planned_installation_date = formData.planned_installation_date || null;
+      updates.installation_date = formData.installation_date || null;
     }
-    
     onSave(updates);
   };
 
-  const titles = {
-    spool: `📦 Modifica Spool: ${item.spool_no}`,
-    support: `🔩 Modifica Support: ${item.support_tag_no}`,
-    flange: `⚙️ Modifica Flange: ${item.flange_tag}`,
-    weld: `🔥 Modifica Weld: ${item.weld_no}`
+  const titles = { 
+    spool: `📦 Modifica: ${item.spool_no}`, 
+    support: `🔩 Modifica: ${item.support_tag_no}`, 
+    flange: `⚙️ Modifica: ${item.flange_tag}`, 
+    weld: `🔥 Modifica: ${item.weld_no}`,
+    equipment: `🏭 Modifica: ${item.tag}`
   };
+
+  const mainEquipmentOptions = (projectEquipment || []).filter(e => e.is_main_equipment && e.id !== item.id);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1428,83 +1751,85 @@ const EditModal = ({ item, type, onSave, onClose }) => {
           {type === 'spool' && (
             <>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Shipment Date</label>
-                  <input type="date" value={formData.shipment_date || ''} onChange={e => setFormData({...formData, shipment_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label>
-                  <input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Shipment Date</label><input type="date" value={formData.shipment_date || ''} onChange={e => setFormData({...formData, shipment_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Laydown Arrival</label>
-                  <input type="date" value={formData.laydown_arrival || ''} onChange={e => setFormData({...formData, laydown_arrival: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">To Site</label>
-                  <input type="date" value={formData.to_site || ''} onChange={e => setFormData({...formData, to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Laydown Arrival</label><input type="date" value={formData.laydown_arrival || ''} onChange={e => setFormData({...formData, laydown_arrival: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">To Site</label><input type="date" value={formData.to_site || ''} onChange={e => setFormData({...formData, to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Erected</label>
-                <input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Erected</label><input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
             </>
           )}
           {type === 'support' && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label>
-                  <input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label>
-                  <input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label>
-                <input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
             </>
           )}
           {type === 'flange' && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label>
-                  <input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label>
-                  <input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label>
-                <input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
             </>
           )}
           {type === 'weld' && (
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fitup Date</label>
-                <input type="date" value={formData.fitup_date || ''} onChange={e => setFormData({...formData, fitup_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Weld Date</label>
-                <input type="date" value={formData.weld_date || ''} onChange={e => setFormData({...formData, weld_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Fitup Date</label><input type="date" value={formData.fitup_date || ''} onChange={e => setFormData({...formData, fitup_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Weld Date</label><input type="date" value={formData.weld_date || ''} onChange={e => setFormData({...formData, weld_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
             </div>
+          )}
+          {type === 'equipment' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Tag</label><input type="text" value={formData.tag || ''} onChange={e => setFormData({...formData, tag: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                  <select value={formData.equipment_type_code || ''} onChange={e => setFormData({...formData, equipment_type_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                    <option value="">--</option>
+                    {Object.entries(EQUIPMENT_TYPES).map(([key, val]) => (
+                      <option key={key} value={key}>{val.icon} {val.labelIt}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label><input type="text" value={formData.description || ''} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: parseFloat(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Dimensioni</label><input type="text" value={formData.dimensions || ''} onChange={e => setFormData({...formData, dimensions: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><input type="text" value={formData.area || ''} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Zona</label><input type="text" value={formData.zone || ''} onChange={e => setFormData({...formData, zone: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Elevazione</label><input type="text" value={formData.elevation || ''} onChange={e => setFormData({...formData, elevation: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div className="border-t pt-4 mt-2">
+                <label className="flex items-center gap-2 cursor-pointer mb-3">
+                  <input type="checkbox" checked={formData.is_main_equipment !== false} onChange={e => setFormData({...formData, is_main_equipment: e.target.checked, main_equipment_id: e.target.checked ? null : formData.main_equipment_id})} className="w-4 h-4" />
+                  <span className="text-sm text-gray-700">Equipment Principale (Main)</span>
+                </label>
+                {formData.is_main_equipment === false && (
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Main Equipment (Parent)</label>
+                    <select value={formData.main_equipment_id || ''} onChange={e => setFormData({...formData, main_equipment_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                      <option value="">-- Seleziona Main Equipment --</option>
+                      {mainEquipmentOptions.map(eq => (
+                        <option key={eq.id} value={eq.id}>{eq.tag} - {eq.description}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Data Pianificata</label><input type="date" value={formData.planned_installation_date || ''} onChange={e => setFormData({...formData, planned_installation_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Data Installazione</label><input type="date" value={formData.installation_date || ''} onChange={e => setFormData({...formData, installation_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+            </>
           )}
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✔ Salva</button>
         </div>
       </div>
     </div>
