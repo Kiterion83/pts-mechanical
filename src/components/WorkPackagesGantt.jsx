@@ -2,7 +2,10 @@ import React, { useState, useMemo } from 'react';
 
 // ============================================================================
 // WORK PACKAGES GANTT CHART
-// Aggiornato per supportare giorni lavorativi configurabili per progetto
+// Con supporto per:
+// - Giorni lavorativi configurabili per progetto
+// - Visualizzazione conflitti risorse (sovrapposizioni squadre)
+// - Calcolo risorse effettive con divisioni
 // ============================================================================
 
 const DISCIPLINE_COLORS = {
@@ -31,8 +34,16 @@ const jsDateToDayKey = (date) => {
   return dayMap[date.getDay()];
 };
 
+// Confronta due date (solo giorno, senza ora)
+const isSameDay = (d1, d2) => {
+  return d1.getFullYear() === d2.getFullYear() &&
+         d1.getMonth() === d2.getMonth() &&
+         d1.getDate() === d2.getDate();
+};
+
 export default function WorkPackagesGantt({ workPackages, squads, calculateProgress, activeProject }) {
   const [zoom, setZoom] = useState('month');
+  const [showConflictTooltip, setShowConflictTooltip] = useState(null);
   
   // Date range state con date pickers
   const [rangeStart, setRangeStart] = useState(() => {
@@ -87,7 +98,166 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
   // Filtra WP con date
   const wpsWithDates = workPackages.filter(wp => wp.planned_start && wp.planned_end);
 
-  // Navigazione rapida
+  // ============================================================================
+  // CONFLICT DETECTION
+  // ============================================================================
+  
+  // Trova conflitti per ogni WP (stessa squadra, date sovrapposte)
+  const wpConflicts = useMemo(() => {
+    const conflicts = {};
+    
+    wpsWithDates.forEach(wp => {
+      if (!wp.squad_id) return;
+      
+      const wpStart = parseDate(wp.planned_start);
+      const wpEnd = parseDate(wp.planned_end);
+      
+      // Trova altri WP con stessa squadra e date sovrapposte
+      const overlapping = wpsWithDates.filter(other => {
+        if (other.id === wp.id) return false;
+        if (other.squad_id !== wp.squad_id) return false;
+        if (other.status === 'completed') return false;
+        
+        const otherStart = parseDate(other.planned_start);
+        const otherEnd = parseDate(other.planned_end);
+        
+        // Check sovrapposizione
+        return !(wpEnd < otherStart || wpStart > otherEnd);
+      });
+      
+      if (overlapping.length > 0) {
+        conflicts[wp.id] = overlapping;
+      }
+    });
+    
+    return conflicts;
+  }, [wpsWithDates]);
+
+  // Calcola per ogni giorno quali squadre hanno conflitti
+  const dailyConflicts = useMemo(() => {
+    const result = {};
+    
+    dates.forEach(date => {
+      const dateKey = formatDateISO(date);
+      const squadsOnDay = {};
+      
+      // Raggruppa WP per squadra in questo giorno
+      wpsWithDates.forEach(wp => {
+        if (!wp.squad_id) return;
+        
+        const wpStart = parseDate(wp.planned_start);
+        const wpEnd = parseDate(wp.planned_end);
+        
+        if (date >= wpStart && date <= wpEnd) {
+          if (!squadsOnDay[wp.squad_id]) {
+            squadsOnDay[wp.squad_id] = [];
+          }
+          squadsOnDay[wp.squad_id].push(wp);
+        }
+      });
+      
+      // Identifica squadre con più di un WP
+      const conflictingSquads = Object.entries(squadsOnDay)
+        .filter(([_, wps]) => wps.length > 1)
+        .map(([squadId, wps]) => ({ squadId, wps }));
+      
+      if (conflictingSquads.length > 0) {
+        result[dateKey] = conflictingSquads;
+      }
+    });
+    
+    return result;
+  }, [dates, wpsWithDates]);
+
+  // ============================================================================
+  // RESOURCE CALCULATION
+  // ============================================================================
+
+  // Conta membri squadra (foreman + membri, NO supervisor)
+  const getSquadMemberCount = (squadId) => {
+    const squad = squads.find(s => s.id === squadId);
+    if (!squad) return 0;
+    
+    let count = squad.squad_members?.length || 0;
+    if (squad.foreman_id) count++;
+    
+    return count;
+  };
+
+  // Calcola risorse effettive per un giorno (con divisioni)
+  const getEffectiveResources = (date) => {
+    const dateKey = formatDateISO(date);
+    const squadResources = {};
+    
+    // Raggruppa WP per squadra attivi in questo giorno
+    wpsWithDates.forEach(wp => {
+      if (!wp.squad_id) return;
+      
+      const wpStart = parseDate(wp.planned_start);
+      const wpEnd = parseDate(wp.planned_end);
+      
+      if (date >= wpStart && date <= wpEnd) {
+        if (!squadResources[wp.squad_id]) {
+          squadResources[wp.squad_id] = {
+            memberCount: getSquadMemberCount(wp.squad_id),
+            wps: []
+          };
+        }
+        squadResources[wp.squad_id].wps.push(wp);
+      }
+    });
+    
+    // Calcola risorse totali
+    let total = 0;
+    
+    Object.values(squadResources).forEach(({ memberCount, wps }) => {
+      if (wps.length > 1) {
+        // Controlla se almeno uno ha split_resources
+        const anySplit = wps.some(wp => wp.split_resources);
+        
+        if (anySplit) {
+          // Risorse divise: conta solo una volta
+          total += memberCount;
+        } else {
+          // Nessuna divisione: potenziale errore di pianificazione
+          // Mostra comunque il totale ma sarà evidenziato come conflitto
+          total += memberCount;
+        }
+      } else {
+        total += memberCount;
+      }
+    });
+    
+    return total;
+  };
+
+  // Calcola risorse per WP specifico in un giorno (per tooltip)
+  const getWPResourcesOnDay = (wp, date) => {
+    if (!wp.squad_id) return 0;
+    
+    const memberCount = getSquadMemberCount(wp.squad_id);
+    
+    // Controlla se ci sono altri WP della stessa squadra in questo giorno
+    const sameSquadWPs = wpsWithDates.filter(other => {
+      if (other.squad_id !== wp.squad_id) return false;
+      
+      const otherStart = parseDate(other.planned_start);
+      const otherEnd = parseDate(other.planned_end);
+      
+      return date >= otherStart && date <= otherEnd;
+    });
+    
+    if (sameSquadWPs.length > 1 && wp.split_resources) {
+      return memberCount / sameSquadWPs.length;
+    }
+    
+    return memberCount;
+  };
+
+  // ============================================================================
+  // NAVIGATION & UI
+  // ============================================================================
+
   const goToToday = () => {
     const today = new Date();
     const start = new Date(today);
@@ -116,12 +286,8 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
     const viewStart = dates[0];
     const viewEnd = dates[dates.length - 1];
 
-    // Se completamente fuori vista
-    if (wpEnd < viewStart || wpStart > viewEnd) {
-      return null;
-    }
+    if (wpEnd < viewStart || wpStart > viewEnd) return null;
 
-    // Calcola posizione - confronto per date senza ora
     const startDiff = Math.max(0, Math.round((wpStart - viewStart) / (1000 * 60 * 60 * 24)));
     const endDiff = Math.min(dates.length - 1, Math.round((wpEnd - viewStart) / (1000 * 60 * 60 * 24)));
 
@@ -134,11 +300,7 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
   // Check se oggi è visibile
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayIndex = dates.findIndex(d => 
-    d.getFullYear() === today.getFullYear() && 
-    d.getMonth() === today.getMonth() && 
-    d.getDate() === today.getDate()
-  );
+  const todayIndex = dates.findIndex(d => isSameDay(d, today));
 
   // Formatta header mese
   const getMonthHeaders = () => {
@@ -161,7 +323,6 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
       }
     });
     
-    // Ultimo mese
     if (dates.length > 0) {
       headers.push({
         label: new Date(dates[startIdx]).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' }),
@@ -174,22 +335,6 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
 
   const monthHeaders = getMonthHeaders();
 
-  // Conta solo: Foreman + Operatori + Helper (NO supervisor/superintendent)
-  const getSquadMemberCount = (squadId) => {
-    const squad = squads.find(s => s.id === squadId);
-    if (!squad) return 0;
-    
-    // squad_members contiene operatori e helper
-    let count = squad.squad_members?.length || 0;
-    
-    // Aggiungi foreman se esiste (1 persona)
-    if (squad.foreman_id) count++;
-    
-    // NON aggiungere supervisor_id (supervisore non conta come risorsa diretta)
-    
-    return count;
-  };
-
   // Genera etichette giorni lavorativi per la legenda
   const getWorkingDaysLabel = () => {
     const dayNames = { mon: 'Lun', tue: 'Mar', wed: 'Mer', thu: 'Gio', fri: 'Ven', sat: 'Sab', sun: 'Dom' };
@@ -198,6 +343,9 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
       .map(([key, _]) => dayNames[key]);
     return activeDays.join('-');
   };
+
+  // Conta conflitti totali
+  const totalConflicts = Object.keys(wpConflicts).length;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -294,10 +442,22 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
           <div className="w-4 h-3 rounded bg-gray-300"></div>
           <span>Non lavorativo</span>
         </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-3 rounded bg-amber-200 border border-amber-400"></div>
+          <span>Conflitto risorse</span>
+        </div>
         <span className="text-gray-400">|</span>
         <span className="text-gray-500">
           📅 {getWorkingDaysLabel()} ({workingDaysCount}gg/sett)
         </span>
+        {totalConflicts > 0 && (
+          <>
+            <span className="text-gray-400">|</span>
+            <span className="text-amber-600 font-medium">
+              ⚠️ {totalConflicts} WP con conflitti
+            </span>
+          </>
+        )}
         <span className="text-gray-400">|</span>
         <span className="text-gray-500">Periodo: {dates.length} giorni</span>
       </div>
@@ -333,16 +493,21 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
               <div className="w-[300px] shrink-0 border-r"></div>
               <div className="flex">
                 {dates.map((date, idx) => {
+                  const dateKey = formatDateISO(date);
                   const isNonWorking = !isWorkingDay(date);
                   const isToday = idx === todayIndex;
+                  const hasConflict = dailyConflicts[dateKey];
+                  
                   return (
                     <div
                       key={idx}
                       style={{ width: config.cellWidth }}
                       className={`text-center text-xs py-1 border-r ${
                         isToday ? 'bg-red-100 text-red-700 font-bold' : 
-                        isNonWorking ? 'bg-gray-200 text-gray-400' : 'text-gray-600'
+                        isNonWorking ? 'bg-gray-200 text-gray-400' :
+                        hasConflict ? 'bg-amber-100 text-amber-700' : 'text-gray-600'
                       }`}
+                      title={hasConflict ? `${hasConflict.length} squadre con sovrapposizione` : ''}
                     >
                       {zoom === 'quarter' ? '' : date.getDate()}
                     </div>
@@ -361,6 +526,8 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                 const barStyle = getBarStyle(wp);
                 const progress = calculateProgress(wp);
                 const color = DISCIPLINE_COLORS[wp.wp_type] || DISCIPLINE_COLORS.piping;
+                const hasConflict = wpConflicts[wp.id];
+                const conflictCount = hasConflict?.length || 0;
 
                 return (
                   <div key={wp.id} className="flex border-b hover:bg-gray-50">
@@ -372,24 +539,51 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                         }`}>
                           {wp.code}
                         </span>
-                        <span className="text-sm text-gray-700 truncate">{wp.description}</span>
+                        <span className="text-sm text-gray-700 truncate flex-1">{wp.description}</span>
+                        {hasConflict && (
+                          <span 
+                            className="text-amber-500 cursor-help"
+                            title={`Conflitto con: ${hasConflict.map(c => c.code).join(', ')}`}
+                          >
+                            ⚠️
+                          </span>
+                        )}
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {wp.squad ? `Sq.${wp.squad.squad_number} (${getSquadMemberCount(wp.squad_id)} pers.)` : 'Non assegnato'} • {progress.toFixed(0)}%
+                      <div className="text-xs text-gray-500 mt-1 flex items-center gap-2">
+                        <span>
+                          {wp.squad ? `Sq.${wp.squad.squad_number} (${getSquadMemberCount(wp.squad_id)} pers.)` : 'Non assegnato'}
+                        </span>
+                        {wp.split_resources && (
+                          <span className="bg-amber-100 text-amber-700 px-1 rounded text-[10px]">
+                            ➗ diviso
+                          </span>
+                        )}
+                        <span>• {progress.toFixed(0)}%</span>
                       </div>
                     </div>
 
                     {/* Area Gantt */}
                     <div className="flex-1 relative" style={{ height: 50 }}>
-                      {/* Griglia giorni non lavorativi */}
+                      {/* Griglia giorni */}
                       <div className="absolute inset-0 flex">
                         {dates.map((date, idx) => {
+                          const dateKey = formatDateISO(date);
                           const isNonWorking = !isWorkingDay(date);
+                          const dayConflicts = dailyConflicts[dateKey];
+                          
+                          // Controlla se QUESTO WP ha conflitto in questo giorno
+                          const wpHasConflictOnDay = dayConflicts?.some(c => 
+                            c.wps.some(cwp => cwp.id === wp.id)
+                          );
+                          
                           return (
                             <div
                               key={idx}
                               style={{ width: config.cellWidth }}
-                              className={`border-r ${isNonWorking ? 'bg-gray-100' : ''}`}
+                              className={`border-r ${
+                                isNonWorking ? 'bg-gray-100' :
+                                wpHasConflictOnDay ? 'bg-amber-50' : ''
+                              }`}
                             />
                           );
                         })}
@@ -406,19 +600,30 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                       {/* Barra WP */}
                       {barStyle && (
                         <div
-                          className="absolute top-2 h-7 rounded-md flex items-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                          className={`absolute top-2 h-7 rounded-md flex items-center overflow-hidden cursor-pointer hover:opacity-90 transition-opacity ${
+                            hasConflict ? 'ring-2 ring-amber-400 ring-offset-1' : ''
+                          }`}
                           style={{
                             left: barStyle.left + 2,
                             width: barStyle.width,
                             backgroundColor: color
                           }}
-                          title={`${wp.code}: ${wp.description}\n${wp.planned_start} → ${wp.planned_end}\nProgress: ${progress.toFixed(1)}%`}
+                          title={`${wp.code}: ${wp.description}\n${wp.planned_start} → ${wp.planned_end}\nProgress: ${progress.toFixed(1)}%${hasConflict ? `\n⚠️ Conflitto con: ${hasConflict.map(c => c.code).join(', ')}` : ''}`}
                         >
                           {/* Progress fill */}
                           <div
                             className="absolute inset-0 bg-black/20"
                             style={{ width: `${progress}%` }}
                           />
+                          {/* Conflict stripe pattern */}
+                          {hasConflict && !wp.split_resources && (
+                            <div 
+                              className="absolute inset-0 opacity-30"
+                              style={{
+                                background: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(245, 158, 11, 0.5) 3px, rgba(245, 158, 11, 0.5) 6px)'
+                              }}
+                            />
+                          )}
                           {/* Label */}
                           {barStyle.width > 60 && (
                             <span className="relative z-10 text-white text-xs px-2 truncate">
@@ -441,9 +646,10 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                 </div>
                 <div className="flex">
                   {dates.map((date, idx) => {
+                    const dateKey = formatDateISO(date);
                     const isNonWorking = !isWorkingDay(date);
+                    const hasConflict = dailyConflicts[dateKey];
                     
-                    // Se non è lavorativo, mostra "-"
                     if (isNonWorking) {
                       return (
                         <div
@@ -456,27 +662,21 @@ export default function WorkPackagesGantt({ workPackages, squads, calculateProgr
                       );
                     }
 
-                    // Conta TUTTI i membri delle squadre assegnate a WP attivi in questa data
-                    let resources = 0;
-                    wpsWithDates.forEach(wp => {
-                      const wpStart = parseDate(wp.planned_start);
-                      const wpEnd = parseDate(wp.planned_end);
-                      if (wpStart && wpEnd && date >= wpStart && date <= wpEnd) {
-                        if (wp.squad_id) {
-                          resources += getSquadMemberCount(wp.squad_id);
-                        }
-                      }
-                    });
-
+                    const resources = getEffectiveResources(date);
+                    
                     return (
                       <div
                         key={idx}
                         style={{ width: config.cellWidth }}
                         className={`text-center text-xs py-1.5 border-r font-medium ${
+                          hasConflict ? 'bg-amber-100 text-amber-700' :
                           resources > 0 ? 'bg-blue-100 text-blue-700' : 'text-gray-400'
                         }`}
+                        title={hasConflict ? 'Risorse con sovrapposizione' : ''}
                       >
-                        {resources > 0 ? resources : '-'}
+                        {resources > 0 ? (
+                          Number.isInteger(resources) ? resources : resources.toFixed(1)
+                        ) : '-'}
                       </div>
                     );
                   })}
