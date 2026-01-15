@@ -5,12 +5,43 @@ import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
 // WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
+// Con gestione conflitti risorse per squadre sovrapposte
 // ============================================================================
 
+// Utility function per check conflitti squadra
+const checkSquadConflicts = (squadId, startDate, endDate, allWorkPackages, excludeWPId = null) => {
+  if (!squadId || !startDate || !endDate) return [];
+  
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+  
+  const newStart = parseDate(startDate);
+  const newEnd = parseDate(endDate);
+  
+  if (!newStart || !newEnd) return [];
+  
+  const conflicts = allWorkPackages.filter(wp => {
+    if (excludeWPId && wp.id === excludeWPId) return false;
+    if (wp.squad_id !== squadId) return false;
+    if (wp.status === 'completed') return false;
+    
+    const wpStart = parseDate(wp.planned_start);
+    const wpEnd = parseDate(wp.planned_end);
+    
+    if (!wpStart || !wpEnd) return false;
+    
+    const hasOverlap = !(newEnd < wpStart || newStart > wpEnd);
+    return hasOverlap;
+  });
+  
+  return conflicts;
+};
+
 export default function WorkPackages() {
-  // Get project from context (same as Dashboard)
   const { activeProject, loading: projectLoading } = useProject();
-  // State principale
   const [workPackages, setWorkPackages] = useState([]);
   const [squads, setSquads] = useState([]);
   const [isometrics, setIsometrics] = useState([]);
@@ -20,7 +51,6 @@ export default function WorkPackages() {
   const [flanges, setFlanges] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // UI State
   const [activeTab, setActiveTab] = useState('list');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -28,15 +58,10 @@ export default function WorkPackages() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedWP, setExpandedWP] = useState(null);
   
-  // Modal State
   const [showCreateWPP, setShowCreateWPP] = useState(false);
   const [showCreateWPA, setShowCreateWPA] = useState(false);
   const [editingWP, setEditingWP] = useState(null);
 
-  // ============================================================================
-  // DATA FETCHING
-  // ============================================================================
-  
   useEffect(() => {
     if (activeProject?.id) {
       fetchAllData();
@@ -45,14 +70,12 @@ export default function WorkPackages() {
 
   const fetchAllData = async () => {
     setLoading(true);
-    console.log('WorkPackages: Fetching data for project:', activeProject?.id);
     try {
       await Promise.all([
         fetchWorkPackages(),
         fetchSquads(),
         fetchMTOData()
       ]);
-      console.log('WorkPackages: Data loaded successfully');
     } catch (error) {
       console.error('WorkPackages: Error fetching data:', error);
       alert('Errore caricamento dati: ' + error.message);
@@ -62,7 +85,6 @@ export default function WorkPackages() {
   };
 
   const fetchWorkPackages = async () => {
-    console.log('Fetching work_packages...');
     const { data, error } = await supabase
       .from('work_packages')
       .select(`
@@ -74,26 +96,15 @@ export default function WorkPackages() {
       .is('deleted_at', null)
       .order('code');
     
-    if (error) {
-      console.error('Error fetching work_packages:', error);
-      throw error;
-    }
+    if (error) throw error;
     
-    console.log('Work packages loaded:', data?.length || 0);
-    
-    // Fetch activities per WP
     const wpIds = data?.map(wp => wp.id) || [];
     if (wpIds.length > 0) {
-      const { data: activities, error: actError } = await supabase
+      const { data: activities } = await supabase
         .from('wp_activities')
         .select('*')
         .in('work_package_id', wpIds);
       
-      if (actError) {
-        console.error('Error fetching wp_activities:', actError);
-      }
-      
-      // Attach activities to WPs
       data.forEach(wp => {
         wp.activities = activities?.filter(a => a.work_package_id === wp.id) || [];
       });
@@ -103,94 +114,59 @@ export default function WorkPackages() {
   };
 
   const fetchSquads = async () => {
-    console.log('Fetching squads...');
     const { data, error } = await supabase
       .from('squads')
       .select('*, squad_members(id), supervisor_id, foreman_id')
       .eq('project_id', activeProject.id)
       .order('squad_number');
     
-    if (error) {
-      console.error('Error fetching squads:', error);
-    }
-    console.log('Squads loaded:', data?.length || 0, data);
+    if (error) console.error('Error fetching squads:', error);
     setSquads(data || []);
   };
 
   const fetchMTOData = async () => {
-    console.log('Fetching MTO data...');
-    
     try {
-      const { data: isoData, error: isoError } = await supabase
+      const { data: isoData } = await supabase
         .from('mto_isometrics')
         .select('*')
         .eq('project_id', activeProject.id)
         .eq('status', 'active');
-      if (isoError) console.error('Error fetching isometrics:', isoError);
       setIsometrics(isoData || []);
-      console.log('Isometrics loaded:', isoData?.length || 0);
-    } catch (e) {
-      console.error('Isometrics fetch failed:', e);
-      setIsometrics([]);
-    }
+    } catch (e) { setIsometrics([]); }
     
     try {
-      const { data: spoolData, error: spoolError } = await supabase
+      const { data: spoolData } = await supabase
         .from('mto_spools')
         .select('*')
         .eq('project_id', activeProject.id);
-      if (spoolError) console.error('Error fetching spools:', spoolError);
       setSpools(spoolData || []);
-      console.log('Spools loaded:', spoolData?.length || 0);
-    } catch (e) {
-      console.error('Spools fetch failed:', e);
-      setSpools([]);
-    }
+    } catch (e) { setSpools([]); }
     
     try {
-      const { data: weldData, error: weldError } = await supabase
+      const { data: weldData } = await supabase
         .from('mto_welds')
         .select('*')
         .eq('project_id', activeProject.id);
-      if (weldError) console.error('Error fetching welds:', weldError);
       setWelds(weldData || []);
-      console.log('Welds loaded:', weldData?.length || 0);
-    } catch (e) {
-      console.error('Welds fetch failed:', e);
-      setWelds([]);
-    }
+    } catch (e) { setWelds([]); }
     
     try {
-      const { data: suppData, error: suppError } = await supabase
+      const { data: suppData } = await supabase
         .from('mto_supports')
         .select('*')
         .eq('project_id', activeProject.id);
-      if (suppError) console.error('Error fetching supports:', suppError);
       setSupports(suppData || []);
-      console.log('Supports loaded:', suppData?.length || 0);
-    } catch (e) {
-      console.error('Supports fetch failed:', e);
-      setSupports([]);
-    }
+    } catch (e) { setSupports([]); }
     
     try {
-      const { data: flangeData, error: flangeError } = await supabase
+      const { data: flangeData } = await supabase
         .from('mto_flanges')
         .select('*')
         .eq('project_id', activeProject.id);
-      if (flangeError) console.error('Error fetching flanges:', flangeError);
       setFlanges(flangeData || []);
-      console.log('Flanges loaded:', flangeData?.length || 0);
-    } catch (e) {
-      console.error('Flanges fetch failed:', e);
-      setFlanges([]);
-    }
+    } catch (e) { setFlanges([]); }
   };
 
-  // ============================================================================
-  // CALCULATIONS
-  // ============================================================================
-  
   const calculateWPProgress = (wp) => {
     if (wp.wp_type === 'action') {
       return wp.manual_progress || 0;
@@ -247,10 +223,6 @@ export default function WorkPackages() {
     };
   };
 
-  // ============================================================================
-  // FILTERS
-  // ============================================================================
-  
   const filteredWPs = useMemo(() => {
     return workPackages.filter(wp => {
       if (filterType !== 'all' && wp.wp_type !== filterType) return false;
@@ -283,10 +255,6 @@ export default function WorkPackages() {
     };
   }, [workPackages]);
 
-  // ============================================================================
-  // HANDLERS
-  // ============================================================================
-  
   const handleDeleteWP = async (wp) => {
     if (!confirm(`Eliminare ${wp.code}?`)) return;
     
@@ -302,10 +270,6 @@ export default function WorkPackages() {
     }
   };
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
-  
   if (!projectLoading && !activeProject) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
@@ -315,15 +279,7 @@ export default function WorkPackages() {
     );
   }
   
-  if (projectLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-  
-  if (loading) {
+  if (projectLoading || loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -467,17 +423,35 @@ export default function WorkPackages() {
 
       {/* Modals */}
       {showCreateWPP && (
-        <CreateWPPWizard project={activeProject} squads={squads} isometrics={isometrics} spools={spools} welds={welds} supports={supports} flanges={flanges} onClose={() => setShowCreateWPP(false)} onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }} />
+        <CreateWPPWizard 
+          project={activeProject} 
+          squads={squads} 
+          isometrics={isometrics} 
+          spools={spools} 
+          welds={welds} 
+          supports={supports} 
+          flanges={flanges} 
+          allWorkPackages={workPackages}
+          onClose={() => setShowCreateWPP(false)} 
+          onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }} 
+        />
       )}
       
       {showCreateWPA && (
-        <CreateWPAModal project={activeProject} squads={squads} onClose={() => setShowCreateWPA(false)} onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} />
+        <CreateWPAModal 
+          project={activeProject} 
+          squads={squads} 
+          allWorkPackages={workPackages}
+          onClose={() => setShowCreateWPA(false)} 
+          onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }} 
+        />
       )}
       
       {editingWP && (
         <EditWPModal 
           wp={editingWP} 
           squads={squads} 
+          allWorkPackages={workPackages}
           onClose={() => setEditingWP(null)} 
           onSuccess={() => { setEditingWP(null); fetchWorkPackages(); }} 
         />
@@ -536,6 +510,150 @@ const SiteStatusBadge = ({ status }) => {
 };
 
 // ============================================================================
+// RESOURCE CONFLICT MODAL
+// ============================================================================
+
+const ResourceConflictModal = ({ conflicts, squadInfo, newWPDates, onSplitResources, onChangeSquad, onClose }) => {
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const calculateOverlapDays = (wp) => {
+    const wpStart = parseDate(wp.planned_start);
+    const wpEnd = parseDate(wp.planned_end);
+    const newStart = parseDate(newWPDates.start);
+    const newEnd = parseDate(newWPDates.end);
+    
+    if (!wpStart || !wpEnd || !newStart || !newEnd) return 0;
+    
+    const overlapStart = new Date(Math.max(wpStart, newStart));
+    const overlapEnd = new Date(Math.min(wpEnd, newEnd));
+    
+    if (overlapStart > overlapEnd) return 0;
+    return Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    const date = parseDate(dateStr);
+    return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  const totalConflicts = conflicts.length + 1;
+  const resourcesPerWP = (squadInfo.memberCount / totalConflicts).toFixed(1);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
+        {/* Header */}
+        <div className="bg-amber-50 border-b border-amber-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center">
+              <span className="text-2xl">⚠️</span>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-amber-800">Conflitto Risorse</h2>
+              <p className="text-sm text-amber-600">Squadra già impegnata su altri WP</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-5 space-y-4">
+          {/* Squad Info */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-lg">👥</span>
+              <span className="font-semibold">
+                Squadra {squadInfo.squad_number} {squadInfo.name ? `- ${squadInfo.name}` : ''}
+              </span>
+              <span className="bg-blue-200 px-2 py-0.5 rounded text-sm font-bold">
+                {squadInfo.memberCount} persone
+              </span>
+            </div>
+          </div>
+
+          {/* Conflicting WPs */}
+          <div>
+            <p className="text-sm font-medium text-gray-700 mb-2">La squadra è già assegnata a:</p>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {conflicts.map(wp => (
+                <div key={wp.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
+                  <div>
+                    <span className={`font-mono text-xs px-1.5 py-0.5 rounded mr-2 ${
+                      wp.wp_type === 'piping' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                    }`}>
+                      {wp.code}
+                    </span>
+                    <span className="text-sm text-gray-700">{wp.description}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 text-right">
+                    <div>📅 {formatDate(wp.planned_start)} - {formatDate(wp.planned_end)}</div>
+                    <div className="text-amber-600 font-medium">{calculateOverlapDays(wp)} gg sovrapposizione</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Options */}
+          <div className="border-t pt-4">
+            <p className="text-sm font-medium text-gray-700 mb-3">Come vuoi gestire il conflitto?</p>
+            
+            <div className="grid gap-3">
+              <div className="border-2 border-blue-200 rounded-lg p-3 bg-blue-50">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                    <span className="text-xl">➗</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-800">Dividi Risorse</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Le {squadInfo.memberCount} persone verranno divise su {totalConflicts} WP
+                    </p>
+                    <div className="mt-2 bg-blue-100 rounded px-2 py-1 inline-block">
+                      <span className="text-blue-800 font-bold">{resourcesPerWP} persone/WP</span>
+                      <span className="text-blue-600 text-sm ml-1">nei giorni sovrapposti</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-2 border-gray-200 rounded-lg p-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0">
+                    <span className="text-xl">✏️</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-800">Cambia Squadra</p>
+                    <p className="text-sm text-gray-500 mt-1">Assegna una squadra diversa a questo WP</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 p-4 border-t bg-gray-50">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors">
+            Annulla
+          </button>
+          <button onClick={onChangeSquad} className="flex-1 px-4 py-2.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2">
+            <span>✏️</span> Cambia Squadra
+          </button>
+          <button onClick={onSplitResources} className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+            <span>➗</span> Dividi ({resourcesPerWP})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // WP PIPING CARD
 // ============================================================================
 
@@ -568,6 +686,7 @@ const WPPipingCard = ({ wp, stats, progress, spools, welds, supports, flanges, e
               <span className="font-mono text-sm bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-semibold">{wp.code}</span>
               <span className="bg-blue-100 text-blue-800 px-2 py-0.5 text-xs rounded-full font-medium">Piping</span>
               <StatusBadge status={wp.status} />
+              {wp.split_resources && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 text-xs rounded-full font-medium">➗ Diviso</span>}
               <h3 className="font-medium text-gray-800 truncate">{wp.description}</h3>
             </div>
             <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
@@ -667,11 +786,13 @@ const WPActionCard = ({ wp, onEdit, onDelete }) => {
             <span className="font-mono text-sm bg-green-50 text-green-700 px-2 py-0.5 rounded font-semibold">{wp.code}</span>
             <span className="bg-green-100 text-green-800 px-2 py-0.5 text-xs rounded-full font-medium">Action</span>
             <StatusBadge status={wp.status} />
+            {wp.split_resources && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 text-xs rounded-full font-medium">➗ Diviso</span>}
             <h3 className="font-medium text-gray-800">{wp.description}</h3>
           </div>
           <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
             {wp.area && <span>📍 {wp.area}</span>}
             {wp.squad && <span>👥 Sq.{wp.squad.squad_number}</span>}
+            {wp.planned_start && <span>📅 {wp.planned_start} → {wp.planned_end}</span>}
           </div>
           <div className="mt-3 flex items-center gap-3 max-w-md">
             <ProgressBar percent={progress} color="bg-green-500" />
@@ -689,10 +810,10 @@ const WPActionCard = ({ wp, onEdit, onDelete }) => {
 };
 
 // ============================================================================
-// CREATE WP-P WIZARD
+// CREATE WP-P WIZARD - Con gestione conflitti
 // ============================================================================
 
-const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports, flanges, onClose, onSuccess }) => {
+const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports, flanges, allWorkPackages, onClose, onSuccess }) => {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({ description: '', area: '', notes: '' });
@@ -702,6 +823,9 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
   const [selectedSquad, setSelectedSquad] = useState('');
   const [plannedStart, setPlannedStart] = useState('');
   const [plannedEnd, setPlannedEnd] = useState('');
+  const [splitResources, setSplitResources] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
   
   const areas = [...new Set(isometrics.map(i => i.area).filter(Boolean))];
   const filteredIsos = selectedArea ? isometrics.filter(i => i.area === selectedArea) : isometrics;
@@ -738,13 +862,36 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     generateCode();
   }, [project.id]);
 
+  // Check conflitti quando cambiano squadra o date
+  useEffect(() => {
+    if (selectedSquad && plannedStart && plannedEnd) {
+      const foundConflicts = checkSquadConflicts(selectedSquad, plannedStart, plannedEnd, allWorkPackages);
+      if (foundConflicts.length > 0) {
+        setConflicts(foundConflicts);
+        setShowConflictModal(true);
+      } else {
+        setConflicts([]);
+        setSplitResources(false);
+      }
+    }
+  }, [selectedSquad, plannedStart, plannedEnd]);
+
+  const getSquadInfo = () => {
+    const squad = squads.find(s => s.id === selectedSquad);
+    if (!squad) return null;
+    let memberCount = squad.squad_members?.length || 0;
+    if (squad.foreman_id) memberCount++;
+    return { id: squad.id, squad_number: squad.squad_number, name: squad.name, memberCount };
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       const { data: wpData, error: wpError } = await supabase.from('work_packages').insert({
         project_id: project.id, code: nextCode, wp_type: 'piping', description: formData.description,
         area: formData.area || null, squad_id: selectedSquad || null, planned_start: plannedStart || null,
-        planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned'
+        planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned',
+        split_resources: splitResources
       }).select().single();
       if (wpError) throw wpError;
       
@@ -767,129 +914,170 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-          <div><h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2><p className="text-sm text-gray-500">Step {step} di 4</p></div>
-          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
-        </div>
-        
-        <div className="flex border-b">
-          {['Info Base', 'Seleziona Spool', 'Riepilogo', 'Assegnazione'].map((label, idx) => (
-            <div key={idx} className={`flex-1 py-3 text-center text-sm font-medium border-b-2 ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
-              {step > idx + 1 ? '✓ ' : `${idx + 1}. `}{label}
-            </div>
-          ))}
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-6">
-          {step === 1 && (
-            <div className="space-y-4 max-w-2xl">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">Seleziona...</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
-              </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Linea 24&quot; HC" className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Note</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-            </div>
-          )}
+    <>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
+            <div><h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2><p className="text-sm text-gray-500">Step {step} di 4</p></div>
+            <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
+          </div>
           
-          {step === 2 && (
-            <div className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={selectedArea} onChange={e => { setSelectedArea(e.target.value); setSelectedIso(''); }} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutte</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label><select value={selectedIso} onChange={e => setSelectedIso(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutti</option>{filteredIsos.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}</select></div>
+          <div className="flex border-b">
+            {['Info Base', 'Seleziona Spool', 'Riepilogo', 'Assegnazione'].map((label, idx) => (
+              <div key={idx} className={`flex-1 py-3 text-center text-sm font-medium border-b-2 ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
+                {step > idx + 1 ? '✓ ' : `${idx + 1}. `}{label}
               </div>
-              <div className="flex items-center justify-between mb-2"><h4 className="font-medium text-gray-700">Spool ({filteredSpools.length})</h4><span className="text-sm text-blue-600 font-medium">{selectedSpools.length} sel.</span></div>
-              <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
-                {filteredSpools.map(spool => {
-                  const iso = isometrics.find(i => i.id === spool.isometric_id);
-                  const spoolWelds = welds.filter(w => w.spool_1_id === spool.id || w.spool_2_id === spool.id);
-                  const spoolSupports = supports.filter(s => s.spool_id === spool.id);
-                  const spoolFlanges = flanges.filter(f => f.part_1_id === spool.id);
-                  const hasDissimilar = spoolWelds.some(w => w.is_dissimilar);
-                  const isSelected = selectedSpools.includes(spool.id);
-                  return (
-                    <label key={spool.id} className={`flex items-center gap-3 p-3 cursor-pointer ${hasDissimilar ? 'bg-yellow-50' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                      <input type="checkbox" checked={isSelected} onChange={e => { if (e.target.checked) setSelectedSpools([...selectedSpools, spool.id]); else setSelectedSpools(selectedSpools.filter(id => id !== spool.id)); }} className="w-4 h-4 text-blue-600 rounded" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2"><span className="font-mono font-medium text-sm">{spool.spool_number}</span>{hasDissimilar && <span className="text-yellow-600 text-xs bg-yellow-100 px-1.5 py-0.5 rounded">⚠️</span>}</div>
-                        <div className="text-xs text-gray-500">{iso?.iso_number} • {iso?.area}</div>
+            ))}
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-6">
+            {step === 1 && (
+              <div className="space-y-4 max-w-2xl">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">Seleziona...</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+                </div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Linea 24&quot; HC" className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Note</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+            )}
+            
+            {step === 2 && (
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={selectedArea} onChange={e => { setSelectedArea(e.target.value); setSelectedIso(''); }} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutte</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label><select value={selectedIso} onChange={e => setSelectedIso(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutti</option>{filteredIsos.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}</select></div>
+                </div>
+                <div className="flex items-center justify-between mb-2"><h4 className="font-medium text-gray-700">Spool ({filteredSpools.length})</h4><span className="text-sm text-blue-600 font-medium">{selectedSpools.length} sel.</span></div>
+                <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
+                  {filteredSpools.map(spool => {
+                    const iso = isometrics.find(i => i.id === spool.isometric_id);
+                    const spoolWelds = welds.filter(w => w.spool_1_id === spool.id || w.spool_2_id === spool.id);
+                    const spoolSupports = supports.filter(s => s.spool_id === spool.id);
+                    const spoolFlanges = flanges.filter(f => f.part_1_id === spool.id);
+                    const hasDissimilar = spoolWelds.some(w => w.is_dissimilar);
+                    const isSelected = selectedSpools.includes(spool.id);
+                    return (
+                      <label key={spool.id} className={`flex items-center gap-3 p-3 cursor-pointer ${hasDissimilar ? 'bg-yellow-50' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                        <input type="checkbox" checked={isSelected} onChange={e => { if (e.target.checked) setSelectedSpools([...selectedSpools, spool.id]); else setSelectedSpools(selectedSpools.filter(id => id !== spool.id)); }} className="w-4 h-4 text-blue-600 rounded" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2"><span className="font-mono font-medium text-sm">{spool.spool_number}</span>{hasDissimilar && <span className="text-yellow-600 text-xs bg-yellow-100 px-1.5 py-0.5 rounded">⚠️</span>}</div>
+                          <div className="text-xs text-gray-500">{iso?.iso_number} • {iso?.area}</div>
+                        </div>
+                        <div className="flex gap-3 text-xs"><span className="text-orange-600">{spoolWelds.length}W</span><span className="text-gray-500">{spoolSupports.reduce((s,x) => s + Number(x.total_weight_kg || 0), 0).toFixed(0)}kg</span><span className="text-purple-600">{spoolFlanges.length}F</span></div>
+                        <SiteStatusBadge status={spool.site_status} />
+                      </label>
+                    );
+                  })}
+                </div>
+                {selectedSpools.length > 0 && <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between"><span className="font-medium text-blue-800">📦 {selectedSpools.length} spool</span><button onClick={() => setSelectedSpools([])} className="text-sm text-blue-600">Deseleziona</button></div>}
+              </div>
+            )}
+            
+            {step === 3 && (
+              <div className="space-y-6">
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4"><h4 className="font-bold text-green-800 mb-2">✓ {selectedSpools.length} Spool</h4><div className="flex flex-wrap gap-2">{selectedSpools.map(spId => { const sp = spools.find(s => s.id === spId); return <span key={spId} className="bg-white px-2 py-1 rounded text-xs border font-mono">{sp?.short_name || sp?.spool_number}</span>; })}</div></div>
+                {totals.hasDissimilar && <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-start gap-3"><span className="text-2xl">⚠️</span><div><h4 className="font-bold text-yellow-800">Giunti Dissimili</h4><p className="text-sm text-yellow-700">WPS speciale richiesta</p></div></div>}
+                <div className="bg-white border rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 px-4 py-3 font-semibold border-b">📊 Quantità</div>
+                  <div className="p-4 space-y-4">
+                    <div className="flex justify-between py-3 border-b"><span>🔥 Welding</span><span className="font-bold text-xl">{totals.welds} joints</span></div>
+                    <div className="flex justify-between py-3 border-b"><span>🔩 Supports</span><span className="font-bold text-xl">{totals.supportsKg.toFixed(1)} kg</span></div>
+                    <div className="flex justify-between py-3"><span>⚙️ Flanges</span><span className="font-bold text-xl">{totals.flanges} joints</span></div>
+                  </div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-800 mb-3">📐 Pesi</h4>
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className={`rounded-lg p-3 ${totals.welds > 0 ? 'bg-white border-2 border-orange-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-orange-600">{weights.welding}%</div><div className="text-xs">Welding</div></div>
+                    <div className={`rounded-lg p-3 ${totals.supportsKg > 0 ? 'bg-white border-2 border-gray-400' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-gray-600">{weights.supports}%</div><div className="text-xs">Supports</div></div>
+                    <div className={`rounded-lg p-3 ${totals.flanges > 0 ? 'bg-white border-2 border-purple-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-purple-600">{weights.flanges}%</div><div className="text-xs">Flanges</div></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {step === 4 && (
+              <div className="space-y-4 max-w-2xl">
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Squadra
+                    {splitResources && <span className="ml-2 text-amber-600 text-xs font-normal">➗ risorse divise</span>}
+                  </label>
+                  <select 
+                    value={selectedSquad} 
+                    onChange={e => { setSelectedSquad(e.target.value); setSplitResources(false); }} 
+                    className={`w-full px-3 py-2 border rounded-lg ${splitResources ? 'border-amber-400 bg-amber-50' : ''}`}
+                  >
+                    <option value="">-- Non assegnare --</option>
+                    {squads.map(sq => {
+                      let count = sq.squad_members?.length || 0;
+                      if (sq.foreman_id) count++;
+                      return <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({count} pers.)</option>;
+                    })}
+                  </select>
+                </div>
+                {splitResources && conflicts.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-amber-500 text-lg">⚠️</span>
+                      <div className="text-sm">
+                        <p className="font-medium text-amber-800">Risorse divise</p>
+                        <p className="text-amber-700">La squadra è condivisa con: {conflicts.map(c => c.code).join(', ')}</p>
                       </div>
-                      <div className="flex gap-3 text-xs"><span className="text-orange-600">{spoolWelds.length}W</span><span className="text-gray-500">{spoolSupports.reduce((s,x) => s + Number(x.total_weight_kg || 0), 0).toFixed(0)}kg</span><span className="text-purple-600">{spoolFlanges.length}F</span></div>
-                      <SiteStatusBadge status={spool.site_status} />
-                    </label>
-                  );
-                })}
+                    </div>
+                  </div>
+                )}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><p className="text-sm text-amber-700">💡 Puoi assegnare anche dopo</p></div>
               </div>
-              {selectedSpools.length > 0 && <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between"><span className="font-medium text-blue-800">📦 {selectedSpools.length} spool</span><button onClick={() => setSelectedSpools([])} className="text-sm text-blue-600">Deseleziona</button></div>}
-            </div>
-          )}
+            )}
+          </div>
           
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4"><h4 className="font-bold text-green-800 mb-2">✓ {selectedSpools.length} Spool</h4><div className="flex flex-wrap gap-2">{selectedSpools.map(spId => { const sp = spools.find(s => s.id === spId); return <span key={spId} className="bg-white px-2 py-1 rounded text-xs border font-mono">{sp?.short_name || sp?.spool_number}</span>; })}</div></div>
-              {totals.hasDissimilar && <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-start gap-3"><span className="text-2xl">⚠️</span><div><h4 className="font-bold text-yellow-800">Giunti Dissimili</h4><p className="text-sm text-yellow-700">WPS speciale richiesta</p></div></div>}
-              <div className="bg-white border rounded-lg overflow-hidden">
-                <div className="bg-gray-100 px-4 py-3 font-semibold border-b">📊 Quantità</div>
-                <div className="p-4 space-y-4">
-                  <div className="flex justify-between py-3 border-b"><span>🔥 Welding</span><span className="font-bold text-xl">{totals.welds} joints</span></div>
-                  <div className="flex justify-between py-3 border-b"><span>🔩 Supports</span><span className="font-bold text-xl">{totals.supportsKg.toFixed(1)} kg</span></div>
-                  <div className="flex justify-between py-3"><span>⚙️ Flanges</span><span className="font-bold text-xl">{totals.flanges} joints</span></div>
-                </div>
-              </div>
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-800 mb-3">📐 Pesi</h4>
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div className={`rounded-lg p-3 ${totals.welds > 0 ? 'bg-white border-2 border-orange-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-orange-600">{weights.welding}%</div><div className="text-xs">Welding</div></div>
-                  <div className={`rounded-lg p-3 ${totals.supportsKg > 0 ? 'bg-white border-2 border-gray-400' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-gray-600">{weights.supports}%</div><div className="text-xs">Supports</div></div>
-                  <div className={`rounded-lg p-3 ${totals.flanges > 0 ? 'bg-white border-2 border-purple-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-purple-600">{weights.flanges}%</div><div className="text-xs">Flanges</div></div>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          {step === 4 && (
-            <div className="space-y-4 max-w-2xl">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label><select value={selectedSquad} onChange={e => setSelectedSquad(e.target.value)} className="w-full px-3 py-2 border rounded-lg"><option value="">-- Non assegnare --</option>{squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({sq.squad_members?.length || 0})</option>)}</select></div>
-              <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-              </div>
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><p className="text-sm text-amber-700">💡 Puoi assegnare anche dopo</p></div>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex justify-between items-center p-4 border-t bg-gray-50">
-          <button onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1} className={`px-4 py-2 rounded-lg font-medium ${step === 1 ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-200'}`}>← Indietro</button>
-          {step < 4 ? (
-            <button onClick={() => setStep(step + 1)} disabled={(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0)} className={`px-6 py-2 rounded-lg font-medium ${(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0) ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Avanti →</button>
-          ) : (
-            <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea WP'}</button>
-          )}
+          <div className="flex justify-between items-center p-4 border-t bg-gray-50">
+            <button onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1} className={`px-4 py-2 rounded-lg font-medium ${step === 1 ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-200'}`}>← Indietro</button>
+            {step < 4 ? (
+              <button onClick={() => setStep(step + 1)} disabled={(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0)} className={`px-6 py-2 rounded-lg font-medium ${(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0) ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Avanti →</button>
+            ) : (
+              <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea WP'}</button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+      
+      {/* Modal Conflitto */}
+      {showConflictModal && selectedSquad && getSquadInfo() && (
+        <ResourceConflictModal
+          conflicts={conflicts}
+          squadInfo={getSquadInfo()}
+          newWPDates={{ start: plannedStart, end: plannedEnd }}
+          onSplitResources={() => { setSplitResources(true); setShowConflictModal(false); }}
+          onChangeSquad={() => { setSelectedSquad(''); setSplitResources(false); setShowConflictModal(false); setConflicts([]); }}
+          onClose={() => setShowConflictModal(false)}
+        />
+      )}
+    </>
   );
 };
 
 // ============================================================================
-// CREATE WP-A MODAL
+// CREATE WP-A MODAL - Con gestione conflitti
 // ============================================================================
 
-const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
+const CreateWPAModal = ({ project, squads, allWorkPackages, onClose, onSuccess }) => {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({ 
-    description: '', 
-    area: '', 
-    notes: '', 
-    squad_id: '', 
-    planned_start: '', 
-    planned_end: '',
-    estimated_hours: ''
+    description: '', area: '', notes: '', squad_id: '', 
+    planned_start: '', planned_end: '', estimated_hours: ''
   });
   const [nextCode, setNextCode] = useState('WP-A-001');
+  const [splitResources, setSplitResources] = useState(false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
+  const [conflictChecked, setConflictChecked] = useState(false);
   
   useEffect(() => {
     const generateCode = async () => {
@@ -899,6 +1087,18 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
     generateCode();
   }, [project.id]);
 
+  // Check conflitti quando cambiano squadra o date
+  useEffect(() => {
+    if (formData.squad_id && formData.planned_start && formData.planned_end && !conflictChecked) {
+      const foundConflicts = checkSquadConflicts(formData.squad_id, formData.planned_start, formData.planned_end, allWorkPackages);
+      if (foundConflicts.length > 0) {
+        setConflicts(foundConflicts);
+        setShowConflictModal(true);
+        setConflictChecked(true);
+      }
+    }
+  }, [formData.squad_id, formData.planned_start, formData.planned_end, conflictChecked]);
+
   const handleSave = async () => {
     if (!formData.description) { alert('Descrizione obbligatoria'); return; }
     setSaving(true);
@@ -907,89 +1107,138 @@ const CreateWPAModal = ({ project, squads, onClose, onSuccess }) => {
         project_id: project.id, code: nextCode, wp_type: 'action', description: formData.description,
         area: formData.area || null, squad_id: formData.squad_id || null, planned_start: formData.planned_start || null,
         planned_end: formData.planned_end || null, notes: formData.notes || null, status: formData.squad_id ? 'planned' : 'not_assigned', 
-        manual_progress: 0, estimated_hours: formData.estimated_hours ? Number(formData.estimated_hours) : null
+        manual_progress: 0, estimated_hours: formData.estimated_hours ? Number(formData.estimated_hours) : null,
+        split_resources: splitResources
       });
       if (error) throw error;
       onSuccess();
     } catch (error) { alert('Errore: ' + error.message); } finally { setSaving(false); }
   };
 
+  const getSquadInfo = () => {
+    const squad = squads.find(s => s.id === formData.squad_id);
+    if (!squad) return null;
+    let memberCount = squad.squad_members?.length || 0;
+    if (squad.foreman_id) memberCount++;
+    return { id: squad.id, squad_number: squad.squad_number, name: squad.name, memberCount };
+  };
+
+  const handleSquadChange = (e) => {
+    setFormData({...formData, squad_id: e.target.value});
+    setSplitResources(false);
+    setConflictChecked(false);
+    setConflicts([]);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100 sticky top-0">
-          <h2 className="text-xl font-bold text-gray-800">⚡ Nuovo WP Action</h2>
-          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
-        </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
-            <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+    <>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100 sticky top-0">
+            <h2 className="text-xl font-bold text-gray-800">⚡ Nuovo WP Action</h2>
+            <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
-            <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Preparazione area..." className="w-full px-3 py-2 border rounded-lg" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Dettagli</label>
-            <textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-              <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
+              <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
-              <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} placeholder="Es: 40" className="w-full px-3 py-2 border rounded-lg" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
-              <select value={formData.squad_id} onChange={e => setFormData({...formData, squad_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                <option value="">-- Seleziona --</option>
-                {squads.map(sq => <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name}</option>)}
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
+              <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Preparazione area..." className="w-full px-3 py-2 border rounded-lg" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
-              <input type="text" value={formData.squad_id ? 'Pianificato' : 'Non Assegnato'} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dettagli</label>
+              <textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
+                <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} placeholder="Es: 40" className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
+                <input type="date" value={formData.planned_start} onChange={e => { setFormData({...formData, planned_start: e.target.value}); setConflictChecked(false); }} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
+                <input type="date" value={formData.planned_end} onChange={e => { setFormData({...formData, planned_end: e.target.value}); setConflictChecked(false); }} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Squadra
+                  {splitResources && <span className="ml-2 text-amber-600 text-xs font-normal">➗ diviso</span>}
+                </label>
+                <select 
+                  value={formData.squad_id} 
+                  onChange={handleSquadChange} 
+                  className={`w-full px-3 py-2 border rounded-lg ${splitResources ? 'border-amber-400 bg-amber-50' : ''}`}
+                >
+                  <option value="">-- Seleziona --</option>
+                  {squads.map(sq => {
+                    let count = sq.squad_members?.length || 0;
+                    if (sq.foreman_id) count++;
+                    return <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({count} pers.)</option>;
+                  })}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
+                <input type="text" value={formData.squad_id ? 'Pianificato' : 'Non Assegnato'} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+              </div>
+            </div>
+            
+            {splitResources && conflicts.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500 text-lg">⚠️</span>
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-800">Risorse divise</p>
+                    <p className="text-amber-700">La squadra è condivisa con: {conflicts.map(c => c.code).join(', ')}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
+              <span className="text-blue-500">📁</span>
+              <p className="text-sm text-blue-700">I documenti possono essere aggiunti dopo la creazione del WP.</p>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
-              <input type="date" value={formData.planned_start} onChange={e => setFormData({...formData, planned_start: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
-              <input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-            </div>
+          <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+            <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
+            <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea'}</button>
           </div>
-          
-          {/* Nota documenti */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
-            <span className="text-blue-500">📁</span>
-            <p className="text-sm text-blue-700">
-              I documenti possono essere aggiunti dopo la creazione del WP, tramite il pulsante modifica (✏️).
-            </p>
-          </div>
-        </div>
-        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea'}</button>
         </div>
       </div>
-    </div>
+      
+      {showConflictModal && formData.squad_id && getSquadInfo() && (
+        <ResourceConflictModal
+          conflicts={conflicts}
+          squadInfo={getSquadInfo()}
+          newWPDates={{ start: formData.planned_start, end: formData.planned_end }}
+          onSplitResources={() => { setSplitResources(true); setShowConflictModal(false); }}
+          onChangeSquad={() => { setFormData({...formData, squad_id: ''}); setSplitResources(false); setShowConflictModal(false); setConflicts([]); }}
+          onClose={() => setShowConflictModal(false)}
+        />
+      )}
+    </>
   );
 };
 
 // ============================================================================
-// EDIT WP MODAL (for both Piping and Action)
+// EDIT WP MODAL - Con gestione conflitti
 // ============================================================================
 
-const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
+const EditWPModal = ({ wp, squads, allWorkPackages, onClose, onSuccess }) => {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     description: wp.description || '',
@@ -1002,12 +1251,25 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
     manual_progress: wp.manual_progress || 0,
     estimated_hours: wp.estimated_hours || ''
   });
+  
+  const [splitResources, setSplitResources] = useState(wp.split_resources || false);
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [conflicts, setConflicts] = useState([]);
+  const [originalSquadId] = useState(wp.squad_id);
+
+  // Check conflitti quando cambia squadra (solo se diversa dall'originale)
+  useEffect(() => {
+    if (formData.squad_id && formData.planned_start && formData.planned_end && formData.squad_id !== originalSquadId) {
+      const foundConflicts = checkSquadConflicts(formData.squad_id, formData.planned_start, formData.planned_end, allWorkPackages, wp.id);
+      if (foundConflicts.length > 0) {
+        setConflicts(foundConflicts);
+        setShowConflictModal(true);
+      }
+    }
+  }, [formData.squad_id]);
 
   const handleSave = async () => {
-    if (!formData.description) { 
-      alert('Descrizione obbligatoria'); 
-      return; 
-    }
+    if (!formData.description) { alert('Descrizione obbligatoria'); return; }
     setSaving(true);
     try {
       const updateData = {
@@ -1018,26 +1280,36 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
         planned_start: formData.planned_start || null,
         planned_end: formData.planned_end || null,
         status: formData.status,
+        split_resources: splitResources,
         updated_at: new Date().toISOString()
       };
       
-      // Per WP Action, aggiorna anche manual_progress e estimated_hours
       if (wp.wp_type === 'action') {
         updateData.manual_progress = Number(formData.manual_progress) || 0;
         updateData.estimated_hours = formData.estimated_hours ? Number(formData.estimated_hours) : null;
       }
       
-      const { error } = await supabase
-        .from('work_packages')
-        .update(updateData)
-        .eq('id', wp.id);
-      
+      const { error } = await supabase.from('work_packages').update(updateData).eq('id', wp.id);
       if (error) throw error;
       onSuccess();
-    } catch (error) { 
-      alert('Errore: ' + error.message); 
-    } finally { 
-      setSaving(false); 
+    } catch (error) { alert('Errore: ' + error.message); } finally { setSaving(false); }
+  };
+
+  const getSquadInfo = () => {
+    const squad = squads.find(s => s.id === formData.squad_id);
+    if (!squad) return null;
+    let memberCount = squad.squad_members?.length || 0;
+    if (squad.foreman_id) memberCount++;
+    return { id: squad.id, squad_number: squad.squad_number, name: squad.name, memberCount };
+  };
+
+  const handleSquadChange = (e) => {
+    const newSquadId = e.target.value;
+    setFormData({...formData, squad_id: newSquadId});
+    if (newSquadId === originalSquadId) {
+      setSplitResources(wp.split_resources || false);
+    } else {
+      setSplitResources(false);
     }
   };
 
@@ -1047,168 +1319,137 @@ const EditWPModal = ({ wp, squads, onClose, onSuccess }) => {
   const icon = isPiping ? '🔧' : '⚡';
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className={`flex items-center justify-between p-4 border-b bg-gradient-to-r ${headerColor} sticky top-0`}>
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">{icon} Modifica {wp.code}</h2>
-            <p className="text-sm text-gray-500">{isPiping ? 'Work Package Piping' : 'Work Package Action'}</p>
-          </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
-        </div>
-        
-        <div className="p-6 space-y-4">
-          {/* Codice (readonly) */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
-            <input type="text" value={wp.code} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
-          </div>
-          
-          {/* Descrizione */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
-            <input 
-              type="text" 
-              value={formData.description} 
-              onChange={e => setFormData({...formData, description: e.target.value})} 
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
-          </div>
-          
-          {/* Note */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-            <textarea 
-              rows={3} 
-              value={formData.notes} 
-              onChange={e => setFormData({...formData, notes: e.target.value})} 
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
-          </div>
-          
-          {/* Area + Squadra */}
-          <div className="grid grid-cols-2 gap-4">
+    <>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+          <div className={`flex items-center justify-between p-4 border-b bg-gradient-to-r ${headerColor} sticky top-0`}>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-              <input 
-                type="text" 
-                value={formData.area} 
-                onChange={e => setFormData({...formData, area: e.target.value})} 
-                className="w-full px-3 py-2 border rounded-lg" 
-              />
+              <h2 className="text-xl font-bold text-gray-800">{icon} Modifica {wp.code}</h2>
+              <p className="text-sm text-gray-500">{isPiping ? 'Work Package Piping' : 'Work Package Action'}</p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
-              <select 
-                value={formData.squad_id} 
-                onChange={e => setFormData({...formData, squad_id: e.target.value})} 
-                className="w-full px-3 py-2 border rounded-lg"
-              >
-                <option value="">-- Non assegnato --</option>
-                {squads.map(sq => (
-                  <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name}</option>
-                ))}
-              </select>
-            </div>
+            <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
           </div>
           
-          {/* Status + Progress (solo per Action) */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
-              <select 
-                value={formData.status} 
-                onChange={e => setFormData({...formData, status: e.target.value})} 
-                className="w-full px-3 py-2 border rounded-lg"
-              >
-                <option value="not_assigned">Non Assegnato</option>
-                <option value="planned">Pianificato</option>
-                <option value="in_progress">In Corso</option>
-                <option value="completed">Completato</option>
-              </select>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
+              <input type="text" value={wp.code} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
             </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
+              <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+              <textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Squadra
+                  {splitResources && <span className="ml-2 text-amber-600 text-xs font-normal">➗ diviso</span>}
+                </label>
+                <select 
+                  value={formData.squad_id} 
+                  onChange={handleSquadChange} 
+                  className={`w-full px-3 py-2 border rounded-lg ${splitResources ? 'border-amber-400 bg-amber-50' : ''}`}
+                >
+                  <option value="">-- Non assegnato --</option>
+                  {squads.map(sq => {
+                    let count = sq.squad_members?.length || 0;
+                    if (sq.foreman_id) count++;
+                    return <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({count} pers.)</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+            
+            {splitResources && conflicts.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500 text-lg">⚠️</span>
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-800">Risorse divise</p>
+                    <p className="text-amber-700">La squadra è condivisa con: {conflicts.map(c => c.code).join(', ')}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Stato</label>
+                <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
+                  <option value="not_assigned">Non Assegnato</option>
+                  <option value="planned">Pianificato</option>
+                  <option value="in_progress">In Corso</option>
+                  <option value="completed">Completato</option>
+                </select>
+              </div>
+              {!isPiping && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Progress %</label>
+                  <input type="number" min="0" max="100" value={formData.manual_progress} onChange={e => setFormData({...formData, manual_progress: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                </div>
+              )}
+              {isPiping && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Progress</label>
+                  <input type="text" value="Calcolato automaticamente" readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-500" />
+                </div>
+              )}
+            </div>
+            
             {!isPiping && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Progress %</label>
-                <input 
-                  type="number" 
-                  min="0" 
-                  max="100"
-                  value={formData.manual_progress} 
-                  onChange={e => setFormData({...formData, manual_progress: e.target.value})} 
-                  className="w-full px-3 py-2 border rounded-lg" 
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
+                <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} placeholder="Es: 40" className="w-full px-3 py-2 border rounded-lg" />
               </div>
             )}
-            {isPiping && (
+            
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Progress</label>
-                <input 
-                  type="text" 
-                  value="Calcolato automaticamente" 
-                  readOnly 
-                  className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-500" 
-                />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
+                <input type="date" value={formData.planned_start} onChange={e => setFormData({...formData, planned_start: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
+                <input type="date" value={formData.planned_end} onChange={e => setFormData({...formData, planned_end: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+              </div>
+            </div>
+            
+            {!isPiping && (
+              <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
             )}
           </div>
           
-          {/* Monte Ore (solo per Action) */}
-          {!isPiping && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Monte Ore Stimato</label>
-              <input 
-                type="number" 
-                value={formData.estimated_hours} 
-                onChange={e => setFormData({...formData, estimated_hours: e.target.value})} 
-                placeholder="Es: 40"
-                className="w-full px-3 py-2 border rounded-lg" 
-              />
-            </div>
-          )}
-          
-          {/* Date */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
-              <input 
-                type="date" 
-                value={formData.planned_start} 
-                onChange={e => setFormData({...formData, planned_start: e.target.value})} 
-                className="w-full px-3 py-2 border rounded-lg" 
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
-              <input 
-                type="date" 
-                value={formData.planned_end} 
-                onChange={e => setFormData({...formData, planned_end: e.target.value})} 
-                className="w-full px-3 py-2 border rounded-lg" 
-              />
-            </div>
+          <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+            <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
+            <button onClick={handleSave} disabled={saving} className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}>
+              {saving ? 'Salvataggio...' : '✓ Salva Modifiche'}
+            </button>
           </div>
-          
-          {/* Documenti (solo per WP Action) */}
-          {!isPiping && (
-            <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
-          )}
-        </div>
-        
-        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
-          <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">
-            Annulla
-          </button>
-          <button 
-            onClick={handleSave} 
-            disabled={saving} 
-            className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}
-          >
-            {saving ? 'Salvataggio...' : '✓ Salva Modifiche'}
-          </button>
         </div>
       </div>
-    </div>
+      
+      {showConflictModal && formData.squad_id && getSquadInfo() && (
+        <ResourceConflictModal
+          conflicts={conflicts}
+          squadInfo={getSquadInfo()}
+          newWPDates={{ start: formData.planned_start, end: formData.planned_end }}
+          onSplitResources={() => { setSplitResources(true); setShowConflictModal(false); }}
+          onChangeSquad={() => { setFormData({...formData, squad_id: originalSquadId || ''}); setSplitResources(wp.split_resources || false); setShowConflictModal(false); setConflicts([]); }}
+          onClose={() => setShowConflictModal(false)}
+        />
+      )}
+    </>
   );
 };
 
@@ -1226,7 +1467,6 @@ const WPDocuments = ({ workPackageId, projectId }) => {
   const [downloadHistory, setDownloadHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // Get current user
   useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -1235,7 +1475,6 @@ const WPDocuments = ({ workPackageId, projectId }) => {
     getUser();
   }, []);
 
-  // Carica documenti
   useEffect(() => {
     fetchDocuments();
   }, [workPackageId]);
@@ -1249,14 +1488,11 @@ const WPDocuments = ({ workPackageId, projectId }) => {
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
     
-    if (error) {
-      console.error('Error fetching documents:', error);
-    }
+    if (error) console.error('Error fetching documents:', error);
     setDocuments(data || []);
     setLoading(false);
   };
 
-  // Fetch download history
   const fetchDownloadHistory = async () => {
     const { data } = await supabase
       .from('wp_document_downloads')
@@ -1268,42 +1504,28 @@ const WPDocuments = ({ workPackageId, projectId }) => {
     setDownloadHistory(data || []);
   };
 
-  // Upload handler
   const handleUpload = async (files) => {
     if (!files || files.length === 0) return;
-    
     setUploading(true);
     
     for (const file of files) {
       try {
-        // 1. Upload to storage
-        const fileExt = file.name.split('.').pop();
         const fileName = `${workPackageId}/${Date.now()}_${file.name}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('wp-documents')
-          .upload(fileName, file);
-        
+        const { error: uploadError } = await supabase.storage.from('wp-documents').upload(fileName, file);
         if (uploadError) throw uploadError;
         
-        // 2. Save metadata
-        const { error: dbError } = await supabase
-          .from('wp_documents')
-          .insert({
-            work_package_id: workPackageId,
-            project_id: projectId,
-            file_name: file.name,
-            file_type: file.type || 'application/octet-stream',
-            file_size: file.size,
-            storage_path: fileName,
-            uploaded_by: user?.id,
-            uploaded_by_name: user?.email || 'Unknown'
-          });
-        
+        const { error: dbError } = await supabase.from('wp_documents').insert({
+          work_package_id: workPackageId,
+          project_id: projectId,
+          file_name: file.name,
+          file_type: file.type || 'application/octet-stream',
+          file_size: file.size,
+          storage_path: fileName,
+          uploaded_by: user?.id,
+          uploaded_by_name: user?.email || 'Unknown'
+        });
         if (dbError) throw dbError;
-        
       } catch (error) {
-        console.error('Upload error:', error);
         alert(`Errore upload ${file.name}: ${error.message}`);
       }
     }
@@ -1312,40 +1534,16 @@ const WPDocuments = ({ workPackageId, projectId }) => {
     fetchDocuments();
   };
 
-  // Drag & Drop handlers
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setDragOver(true);
-  };
+  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); setDragOver(false); };
+  const handleDrop = (e) => { e.preventDefault(); setDragOver(false); handleUpload(Array.from(e.dataTransfer.files)); };
+  const handleFileInput = (e) => { handleUpload(Array.from(e.target.files)); };
 
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    handleUpload(files);
-  };
-
-  const handleFileInput = (e) => {
-    const files = Array.from(e.target.files);
-    handleUpload(files);
-  };
-
-  // Download with audit
   const handleDownload = async (doc) => {
     try {
-      // 1. Get signed URL
-      const { data: urlData, error: urlError } = await supabase.storage
-        .from('wp-documents')
-        .createSignedUrl(doc.storage_path, 60);
-      
+      const { data: urlData, error: urlError } = await supabase.storage.from('wp-documents').createSignedUrl(doc.storage_path, 60);
       if (urlError) throw urlError;
       
-      // 2. Log download
       await supabase.from('wp_document_downloads').insert({
         document_id: doc.id,
         work_package_id: workPackageId,
@@ -1354,49 +1552,32 @@ const WPDocuments = ({ workPackageId, projectId }) => {
         downloaded_by_email: user?.email
       });
       
-      // 3. Open download
       window.open(urlData.signedUrl, '_blank');
-      
     } catch (error) {
-      console.error('Download error:', error);
       alert('Errore download: ' + error.message);
     }
   };
 
-  // Preview
   const handlePreview = async (doc) => {
     try {
-      const { data: urlData, error } = await supabase.storage
-        .from('wp-documents')
-        .createSignedUrl(doc.storage_path, 300);
-      
+      const { data: urlData, error } = await supabase.storage.from('wp-documents').createSignedUrl(doc.storage_path, 300);
       if (error) throw error;
-      
       setPreviewDoc({ ...doc, previewUrl: urlData.signedUrl });
     } catch (error) {
-      console.error('Preview error:', error);
       alert('Errore anteprima: ' + error.message);
     }
   };
 
-  // Delete
   const handleDelete = async (doc) => {
     if (!confirm(`Eliminare "${doc.file_name}"?`)) return;
-    
     try {
-      // Soft delete
-      await supabase
-        .from('wp_documents')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', doc.id);
-      
+      await supabase.from('wp_documents').update({ deleted_at: new Date().toISOString() }).eq('id', doc.id);
       fetchDocuments();
     } catch (error) {
       alert('Errore eliminazione: ' + error.message);
     }
   };
 
-  // File icon by type
   const getFileIcon = (fileType) => {
     if (fileType?.includes('pdf')) return '📄';
     if (fileType?.includes('image')) return '🖼️';
@@ -1406,7 +1587,6 @@ const WPDocuments = ({ workPackageId, projectId }) => {
     return '📎';
   };
 
-  // Format file size
   const formatSize = (bytes) => {
     if (!bytes) return '-';
     if (bytes < 1024) return bytes + ' B';
@@ -1414,27 +1594,18 @@ const WPDocuments = ({ workPackageId, projectId }) => {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
-  // Check if previewable
-  const isPreviewable = (fileType) => {
-    return fileType?.includes('image') || fileType?.includes('pdf');
-  };
+  const isPreviewable = (fileType) => fileType?.includes('image') || fileType?.includes('pdf');
 
   return (
     <div className="border-t pt-4 mt-4">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="font-semibold text-gray-700 flex items-center gap-2">
-          📁 Documenti ({documents.length})
-        </h4>
-        <button
-          onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchDownloadHistory(); }}
-          className="text-xs text-blue-600 hover:text-blue-800"
-        >
+        <h4 className="font-semibold text-gray-700 flex items-center gap-2">📁 Documenti ({documents.length})</h4>
+        <button onClick={() => { setShowHistory(!showHistory); if (!showHistory) fetchDownloadHistory(); }} className="text-xs text-blue-600 hover:text-blue-800">
           {showHistory ? '← Torna ai documenti' : '📋 Cronologia download'}
         </button>
       </div>
 
       {showHistory ? (
-        // Download History
         <div className="max-h-60 overflow-y-auto border rounded-lg">
           {downloadHistory.length === 0 ? (
             <p className="text-center text-gray-400 py-4 text-sm">Nessun download registrato</p>
@@ -1461,14 +1632,11 @@ const WPDocuments = ({ workPackageId, projectId }) => {
         </div>
       ) : (
         <>
-          {/* Drop Zone */}
           <div
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${
-              dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
-            }`}
+            className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'}`}
           >
             {uploading ? (
               <div className="flex items-center justify-center gap-2 text-blue-600">
@@ -1481,12 +1649,7 @@ const WPDocuments = ({ workPackageId, projectId }) => {
                   📤 Trascina qui i file o{' '}
                   <label className="text-blue-600 hover:text-blue-800 cursor-pointer underline">
                     sfoglia
-                    <input
-                      type="file"
-                      multiple
-                      onChange={handleFileInput}
-                      className="hidden"
-                    />
+                    <input type="file" multiple onChange={handleFileInput} className="hidden" />
                   </label>
                 </p>
                 <p className="text-xs text-gray-400 mt-1">PDF, Immagini, Documenti (max 10MB)</p>
@@ -1494,7 +1657,6 @@ const WPDocuments = ({ workPackageId, projectId }) => {
             )}
           </div>
 
-          {/* Documents List */}
           {loading ? (
             <div className="text-center py-4 text-gray-400">Caricamento...</div>
           ) : documents.length === 0 ? (
@@ -1506,34 +1668,14 @@ const WPDocuments = ({ workPackageId, projectId }) => {
                   <span className="text-xl">{getFileIcon(doc.file_type)}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-700 truncate">{doc.file_name}</p>
-                    <p className="text-xs text-gray-400">
-                      {formatSize(doc.file_size)} • {new Date(doc.created_at).toLocaleDateString('it-IT')}
-                    </p>
+                    <p className="text-xs text-gray-400">{formatSize(doc.file_size)} • {new Date(doc.created_at).toLocaleDateString('it-IT')}</p>
                   </div>
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {isPreviewable(doc.file_type) && (
-                      <button 
-                        onClick={() => handlePreview(doc)}
-                        className="p-1.5 hover:bg-blue-100 rounded text-blue-600" 
-                        title="Anteprima"
-                      >
-                        👁️
-                      </button>
+                      <button onClick={() => handlePreview(doc)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600" title="Anteprima">👁️</button>
                     )}
-                    <button 
-                      onClick={() => handleDownload(doc)}
-                      className="p-1.5 hover:bg-green-100 rounded text-green-600" 
-                      title="Download"
-                    >
-                      ⬇️
-                    </button>
-                    <button 
-                      onClick={() => handleDelete(doc)}
-                      className="p-1.5 hover:bg-red-100 rounded text-red-600" 
-                      title="Elimina"
-                    >
-                      🗑️
-                    </button>
+                    <button onClick={() => handleDownload(doc)} className="p-1.5 hover:bg-green-100 rounded text-green-600" title="Download">⬇️</button>
+                    <button onClick={() => handleDelete(doc)} className="p-1.5 hover:bg-red-100 rounded text-red-600" title="Elimina">🗑️</button>
                   </div>
                 </div>
               ))}
@@ -1542,19 +1684,13 @@ const WPDocuments = ({ workPackageId, projectId }) => {
         </>
       )}
 
-      {/* Preview Modal */}
       {previewDoc && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4" onClick={() => setPreviewDoc(null)}>
           <div className="bg-white rounded-xl max-w-4xl max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-3 border-b bg-gray-50">
               <span className="font-medium text-sm truncate">{previewDoc.file_name}</span>
               <div className="flex gap-2">
-                <button 
-                  onClick={() => handleDownload(previewDoc)}
-                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                >
-                  ⬇️ Download
-                </button>
+                <button onClick={() => handleDownload(previewDoc)} className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">⬇️ Download</button>
                 <button onClick={() => setPreviewDoc(null)} className="p-1 hover:bg-gray-200 rounded">✕</button>
               </div>
             </div>
