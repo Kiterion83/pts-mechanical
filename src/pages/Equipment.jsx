@@ -1,1397 +1,1224 @@
-import { useState, useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
-import { useProject } from '../contexts/ProjectContext'
-import { supabase } from '../lib/supabase'
-import { 
-  Truck, Plus, Search, Filter, X, Check, Edit, Trash2,
-  ChevronDown, ChevronRight, Building2, Calendar, DollarSign,
-  AlertTriangle, Wrench, Hammer, Settings, Star, Info, Hash,
-  Package, PlusCircle
-} from 'lucide-react'
+import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../lib/supabase';
+import { useProject } from '../contexts/ProjectContext';
+import { useTranslation } from 'react-i18next';
+import * as XLSX from 'xlsx';
 
 // ============================================================================
-// CONFIGURAZIONE CATEGORIE
-// ============================================================================
-
-const CATEGORIES = {
-  vehicle: { 
-    label: 'Mezzo', 
-    labelEn: 'Vehicle', 
-    icon: Truck, 
-    color: 'bg-blue-100 text-blue-800',
-    iconColor: 'text-blue-600'
-  },
-  equipment: { 
-    label: 'Equipment', 
-    labelEn: 'Equipment', 
-    icon: Package, 
-    color: 'bg-green-100 text-green-800',
-    iconColor: 'text-green-600'
-  },
-  tool: { 
-    label: 'Attrezzo', 
-    labelEn: 'Tool', 
-    icon: Wrench, 
-    color: 'bg-orange-100 text-orange-800',
-    iconColor: 'text-orange-600'
-  }
-}
-
-// Tipi predefiniti (built-in)
-const DEFAULT_EQUIPMENT_TYPES = {
-  // VEHICLES (Mezzi)
-  crane: { label: 'Gru', labelEn: 'Crane', category: 'vehicle' },
-  truck: { label: 'Camion', labelEn: 'Truck', category: 'vehicle' },
-  tanker_truck: { label: 'Camion Cisterna', labelEn: 'Tanker Truck', category: 'vehicle' },
-  forklift: { label: 'Muletto', labelEn: 'Forklift', category: 'vehicle' },
-  excavator: { label: 'Escavatore', labelEn: 'Excavator', category: 'vehicle' },
-  wheel_loader: { label: 'Pala Meccanica', labelEn: 'Wheel Loader', category: 'vehicle' },
-  lorry: { label: 'Autocarro', labelEn: 'Lorry', category: 'vehicle' },
-  aerial_platform: { label: 'Piattaforma Aerea', labelEn: 'Aerial Platform', category: 'vehicle' },
-  compressor_vehicle: { label: 'Compressore', labelEn: 'Compressor', category: 'vehicle' },
-  concrete_mixer: { label: 'Betoniera', labelEn: 'Concrete Mixer', category: 'vehicle' },
-  
-  // EQUIPMENT
-  light_tower: { label: 'Torre Faro', labelEn: 'Light Tower', category: 'equipment' },
-  generator: { label: 'Generatore', labelEn: 'Generator', category: 'equipment' },
-  welding_machine: { label: 'Saldatrice', labelEn: 'Welding Machine', category: 'equipment' },
-  pipe_coupler: { label: 'Accoppiatore Piping', labelEn: 'Pipe Coupler', category: 'equipment' },
-  pump: { label: 'Pompa', labelEn: 'Pump', category: 'equipment' },
-  compactor: { label: 'Compattatore', labelEn: 'Compactor', category: 'equipment' },
-  air_compressor: { label: 'Compressore Aria', labelEn: 'Air Compressor', category: 'equipment' },
-  scaffolding: { label: 'Ponteggio', labelEn: 'Scaffolding', category: 'equipment' },
-  container: { label: 'Container', labelEn: 'Container', category: 'equipment' },
-  dryer: { label: 'Essiccatore', labelEn: 'Dryer', category: 'equipment' },
-  
-  // TOOLS (Attrezzi)
-  grinder: { label: 'Smerigliatrice', labelEn: 'Grinder', category: 'tool' },
-  drill: { label: 'Trapano', labelEn: 'Drill', category: 'tool' },
-  screwdriver: { label: 'Avvitatore', labelEn: 'Screwdriver', category: 'tool' },
-  torch: { label: 'Cannello', labelEn: 'Torch', category: 'tool' },
-  torque_wrench: { label: 'Chiave Dinamometrica', labelEn: 'Torque Wrench', category: 'tool' },
-  pipe_cutter: { label: 'Tagliatubi', labelEn: 'Pipe Cutter', category: 'tool' },
-  beveling_machine: { label: 'Smussatrice', labelEn: 'Beveling Machine', category: 'tool' },
-  hydraulic_jack: { label: 'Martinetto Idraulico', labelEn: 'Hydraulic Jack', category: 'tool' }
-}
-
-const RATE_TYPES = {
-  lump_sum: { label: 'Forfettario', labelEn: 'Lump Sum' },
-  hourly: { label: 'Orario', labelEn: 'Hourly' },
-  daily: { label: 'Giornaliero', labelEn: 'Daily' },
-  weekly: { label: 'Settimanale', labelEn: 'Weekly' },
-  monthly: { label: 'Mensile', labelEn: 'Monthly' }
-}
-
-const OWNERSHIP_TYPES = {
-  owned: { label: 'Proprietà', labelEn: 'Owned', color: 'bg-emerald-100 text-emerald-800' },
-  rented: { label: 'Noleggio', labelEn: 'Rented', color: 'bg-amber-100 text-amber-800' }
-}
-
-// ============================================================================
-// COMPONENTI HELPER
-// ============================================================================
-
-function CategoryBadge({ category, size = 'normal' }) {
-  const config = CATEGORIES[category] || { label: category, color: 'bg-gray-100 text-gray-800', icon: Package }
-  const sizeClass = size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs'
-  const Icon = config.icon
-  
-  return (
-    <span className={`${config.color} ${sizeClass} rounded-full font-medium whitespace-nowrap inline-flex items-center gap-1`}>
-      <Icon size={size === 'small' ? 10 : 12} />
-      {config.label}
-    </span>
-  )
-}
-
-function OwnershipBadge({ ownership }) {
-  const config = OWNERSHIP_TYPES[ownership] || { label: ownership, color: 'bg-gray-100 text-gray-800' }
-  return (
-    <span className={`${config.color} px-2 py-0.5 text-xs rounded-full font-medium`}>
-      {config.label}
-    </span>
-  )
-}
-
-// Popup lista equipment
-function EquipmentListPopup({ equipment, title, isVisible, onClose, type, equipmentTypes }) {
-  if (!isVisible) return null
-  
-  const bgColor = type === 'assigned' ? 'bg-green-600' : type === 'unassigned' ? 'bg-amber-500' : 'bg-primary'
-  
-  // Usa equipmentTypes passato come prop, altrimenti fallback a DEFAULT
-  const types = equipmentTypes || DEFAULT_EQUIPMENT_TYPES
-  
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className={`${bgColor} px-4 py-3 rounded-t-xl flex items-center justify-between`}>
-          <span className="font-semibold text-white text-lg">
-            {title} ({equipment.length})
-          </span>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg">
-            <X size={20} className="text-white" />
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4">
-          {equipment.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">Nessun elemento</p>
-          ) : (
-            <div className="space-y-2">
-              {equipment.map(eq => (
-                <div key={eq.id} className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg">
-                  <CategoryBadge category={eq.category} size="small" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium text-gray-800">
-                      {types[eq.type]?.label || eq.type}
-                    </span>
-                    {eq.description && (
-                      <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>
-                    )}
-                  </div>
-                  <OwnershipBadge ownership={eq.ownership} />
-                  <span className="text-sm text-gray-500 font-mono">
-                    {eq.plate_number || eq.serial_number || '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div className="border-t px-4 py-3 bg-gray-50 rounded-b-xl">
-          <button onClick={onClose} className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            Chiudi
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// COMPONENTE PRINCIPALE
+// EQUIPMENT PAGE
+// Gestione Equipment con tipi dinamici, gerarchia Main Equipment, Import Excel
 // ============================================================================
 
 export default function Equipment() {
-  const { t } = useTranslation()
-  const { activeProject } = useProject()
+  const { t } = useTranslation();
+  const { activeProject, loading: projectLoading } = useProject();
   
-  // State principale
-  const [equipment, setEquipment] = useState([])
-  const [companies, setCompanies] = useState([])
-  const [assignments, setAssignments] = useState({}) // { equipmentId: squadInfo }
-  const [customTypes, setCustomTypes] = useState([]) // Tipi personalizzati dal DB
-  const [loading, setLoading] = useState(true)
+  // Data state
+  const [equipment, setEquipment] = useState([]);
+  const [equipmentTypes, setEquipmentTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
   
-  // UI State
-  const [showModal, setShowModal] = useState(false)
-  const [editingEquipment, setEditingEquipment] = useState(null)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
-  const [expandedDetail, setExpandedDetail] = useState(null)
-  const [showNewTypeModal, setShowNewTypeModal] = useState(false)
+  // UI state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'hierarchy'
   
-  // Filtri
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterCategory, setFilterCategory] = useState('')
-  const [filterOwnership, setFilterOwnership] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
+  // Modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [showTypeModal, setShowTypeModal] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
   
-  // Popup dashboard
-  const [popupData, setPopupData] = useState(null)
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    category: 'vehicle',
-    type: '',
-    description: '',
-    ownership: 'owned',
-    ownerCompanyId: '',
-    serialNumber: '',
-    plateNumber: '',
-    notes: ''
-  })
-  
-  // Form nuovo tipo
-  const [newTypeForm, setNewTypeForm] = useState({
-    labelIt: '',
-    labelEn: '',
-    category: 'vehicle'
-  })
-  
-  // Rate form state
-  const [rates, setRates] = useState([])
-  const [newRate, setNewRate] = useState({
-    rateType: 'daily',
-    amount: '',
-    validFrom: new Date().toISOString().split('T')[0],
-    validTo: '',
-    appliesWeekdays: true,
-    appliesWeekends: true,
-    notes: ''
-  })
+  // Import state
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState([]);
+  const [importing, setImporting] = useState(false);
 
   // ============================================================================
-  // CARICAMENTO DATI
+  // DATA FETCHING
   // ============================================================================
-  
+
   useEffect(() => {
-    if (activeProject) {
-      loadData()
+    if (activeProject?.id) {
+      fetchAllData();
     }
-  }, [activeProject])
+  }, [activeProject?.id]);
 
-  const loadData = async () => {
+  const fetchAllData = async () => {
+    setLoading(true);
     try {
-      setLoading(true)
-      
-      // Carica companies
-      const { data: companiesData } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('project_id', activeProject.id)
-        .eq('status', 'active')
-        .order('is_main', { ascending: false })
-      setCompanies(companiesData || [])
-      
-      // Carica tipi personalizzati
-      const { data: typesData } = await supabase
-        .from('equipment_types')
-        .select('*')
-        .eq('project_id', activeProject.id)
-        .eq('is_active', true)
-        .order('label_it')
-      setCustomTypes(typesData || [])
-      
-      // Carica equipment con tariffe
-      const { data: equipmentData } = await supabase
-        .from('equipment')
-        .select(`
-          *,
-          owner_company:companies(id, company_name, is_main),
-          equipment_rates(*)
-        `)
-        .eq('project_id', activeProject.id)
-        .neq('status', 'inactive')
-        .order('category')
-        .order('type')
-      setEquipment(equipmentData || [])
-      
-      // Carica assegnazioni attive
-      const { data: assignmentsData } = await supabase
-        .from('equipment_assignments')
-        .select(`
-          *,
-          squad:squads(id, squad_number, name)
-        `)
-        .eq('status', 'active')
-      
-      const assignmentsMap = {}
-      ;(assignmentsData || []).forEach(a => {
-        assignmentsMap[a.equipment_id] = a
-      })
-      setAssignments(assignmentsMap)
-      
-    } catch (err) {
-      console.error('Error loading data:', err)
+      await Promise.all([
+        fetchEquipment(),
+        fetchEquipmentTypes()
+      ]);
+    } catch (error) {
+      console.error('Equipment: Error fetching data:', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-  
+  };
+
+  const fetchEquipment = async () => {
+    const { data, error } = await supabase
+      .from('project_equipment')
+      .select(`
+        *,
+        equipment_type:equipment_types(id, type_code, type_name, type_name_it, icon),
+        main_equipment:project_equipment!main_equipment_id(id, tag, description)
+      `)
+      .eq('project_id', activeProject.id)
+      .is('deleted_at', null)
+      .order('tag');
+    
+    if (error) {
+      console.error('Error fetching equipment:', error);
+    } else {
+      setEquipment(data || []);
+    }
+  };
+
+  const fetchEquipmentTypes = async () => {
+    // Fetch both system defaults and project-specific types
+    const { data, error } = await supabase
+      .from('equipment_types')
+      .select('*')
+      .or(`project_id.is.null,project_id.eq.${activeProject.id}`)
+      .eq('is_active', true)
+      .order('sort_order');
+    
+    if (error) {
+      console.error('Error fetching equipment types:', error);
+    } else {
+      setEquipmentTypes(data || []);
+    }
+  };
+
   // ============================================================================
-  // TIPI EQUIPMENT COMBINATI (predefiniti + personalizzati)
+  // STATS
   // ============================================================================
-  
-  const EQUIPMENT_TYPES = {
-    ...DEFAULT_EQUIPMENT_TYPES,
-    ...customTypes.reduce((acc, t) => {
-      acc[t.type_key] = { 
-        label: t.label_it, 
-        labelEn: t.label_en || t.label_it, 
-        category: t.category,
-        isCustom: true 
+
+  const stats = useMemo(() => {
+    const total = equipment.length;
+    const installed = equipment.filter(e => e.installation_date).length;
+    const mainEquipment = equipment.filter(e => e.is_main_equipment).length;
+    const subEquipment = equipment.filter(e => !e.is_main_equipment).length;
+    const totalWeight = equipment.reduce((sum, e) => sum + (e.weight_kg || 0), 0);
+    
+    return { total, installed, mainEquipment, subEquipment, totalWeight };
+  }, [equipment]);
+
+  // ============================================================================
+  // FILTERS
+  // ============================================================================
+
+  const filteredEquipment = useMemo(() => {
+    return equipment.filter(e => {
+      // Type filter
+      if (filterType !== 'all' && e.equipment_type?.type_code !== filterType) return false;
+      
+      // Status filter
+      if (filterStatus === 'installed' && !e.installation_date) return false;
+      if (filterStatus === 'pending' && e.installation_date) return false;
+      if (filterStatus === 'main' && !e.is_main_equipment) return false;
+      if (filterStatus === 'sub' && e.is_main_equipment) return false;
+      
+      // Search
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase();
+        if (!e.tag?.toLowerCase().includes(search) &&
+            !e.description?.toLowerCase().includes(search) &&
+            !e.equipment_type?.type_name?.toLowerCase().includes(search)) {
+          return false;
+        }
       }
-      return acc
-    }, {})
-  }
+      
+      return true;
+    });
+  }, [equipment, filterType, filterStatus, searchTerm]);
+
+  // Hierarchical view: group by main equipment
+  const hierarchicalEquipment = useMemo(() => {
+    const mainItems = equipment.filter(e => e.is_main_equipment);
+    const subItems = equipment.filter(e => !e.is_main_equipment);
+    
+    return mainItems.map(main => ({
+      ...main,
+      subEquipment: subItems.filter(sub => sub.main_equipment_id === main.id)
+    }));
+  }, [equipment]);
 
   // ============================================================================
-  // CALCOLI DASHBOARD
+  // CRUD HANDLERS
   // ============================================================================
-  
-  // Equipment assegnati
-  const assignedIds = new Set(Object.keys(assignments))
-  const assignedEquipment = equipment.filter(eq => assignedIds.has(eq.id))
-  const unassignedEquipment = equipment.filter(eq => !assignedIds.has(eq.id))
-  
-  // Stats per tipo
-  const typeStats = Object.entries(EQUIPMENT_TYPES).map(([typeKey, typeConfig]) => {
-    const items = equipment.filter(eq => eq.type === typeKey)
-    const assigned = items.filter(eq => assignedIds.has(eq.id))
-    return {
-      type: typeKey,
-      category: typeConfig.category,
-      label: typeConfig.label,
-      labelEn: typeConfig.labelEn,
-      total: items.length,
-      assigned: assigned.length,
-      unassigned: items.length - assigned.length,
-      items,
-      assignedItems: assigned,
-      unassignedItems: items.filter(eq => !assignedIds.has(eq.id))
+
+  const handleAddEquipment = async (data) => {
+    const { error } = await supabase.from('project_equipment').insert({
+      project_id: activeProject.id,
+      ...data
+    });
+    
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchEquipment();
+      setShowAddModal(false);
     }
-  }).filter(s => s.total > 0)
-  
-  // Stats per categoria
-  const categoryStats = Object.entries(CATEGORIES).map(([catKey, catConfig]) => {
-    const items = equipment.filter(eq => eq.category === catKey)
-    const assigned = items.filter(eq => assignedIds.has(eq.id))
-    return {
-      category: catKey,
-      label: catConfig.label,
-      labelEn: catConfig.labelEn,
-      icon: catConfig.icon,
-      color: catConfig.color,
-      iconColor: catConfig.iconColor,
-      total: items.length,
-      assigned: assigned.length,
-      unassigned: items.length - assigned.length,
-      percentage: items.length > 0 ? Math.round((assigned.length / items.length) * 100) : 0,
-      items,
-      assignedItems: assigned,
-      unassignedItems: items.filter(eq => !assignedIds.has(eq.id))
+  };
+
+  const handleUpdateEquipment = async (id, updates) => {
+    const { error } = await supabase
+      .from('project_equipment')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchEquipment();
+      setEditingItem(null);
     }
-  })
+  };
+
+  const handleDeleteEquipment = async (id) => {
+    if (!confirm('Sei sicuro di voler eliminare questo equipment?')) return;
+    
+    const { error } = await supabase
+      .from('project_equipment')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchEquipment();
+    }
+  };
 
   // ============================================================================
-  // FILTRI
+  // EQUIPMENT TYPES MANAGEMENT
   // ============================================================================
-  
-  const filteredEquipment = equipment.filter(eq => {
-    const searchLower = searchTerm.toLowerCase()
-    const typeConfig = EQUIPMENT_TYPES[eq.type]
-    const typeLabel = typeConfig?.label || eq.type
-    const typeLabelEn = typeConfig?.labelEn || ''
+
+  const handleAddType = async (typeData) => {
+    const { error } = await supabase.from('equipment_types').insert({
+      project_id: activeProject.id,
+      ...typeData,
+      is_system_default: false
+    });
     
-    const matchesSearch = 
-      typeLabel.toLowerCase().includes(searchLower) ||
-      typeLabelEn.toLowerCase().includes(searchLower) ||
-      eq.description?.toLowerCase().includes(searchLower) ||
-      eq.serial_number?.toLowerCase().includes(searchLower) ||
-      eq.plate_number?.toLowerCase().includes(searchLower) ||
-      eq.owner_company?.company_name?.toLowerCase().includes(searchLower)
-    
-    const matchesCategory = !filterCategory || eq.category === filterCategory
-    const matchesOwnership = !filterOwnership || eq.ownership === filterOwnership
-    const matchesCompany = !filterCompany || eq.owner_company_id === filterCompany
-    
-    return matchesSearch && matchesCategory && matchesOwnership && matchesCompany
-  })
+    if (error) {
+      alert('Errore: ' + error.message);
+    } else {
+      fetchEquipmentTypes();
+    }
+  };
 
   // ============================================================================
-  // GESTIONE FORM
+  // IMPORT EXCEL
   // ============================================================================
-  
-  const resetForm = () => {
-    const mainCompany = companies.find(c => c.is_main)
-    setFormData({
-      category: 'vehicle',
-      type: '',
-      description: '',
-      ownership: 'owned',
-      ownerCompanyId: mainCompany?.id || '',
-      serialNumber: '',
-      plateNumber: '',
-      notes: ''
-    })
-    setRates([])
-    setNewRate({
-      rateType: 'daily',
-      amount: '',
-      validFrom: new Date().toISOString().split('T')[0],
-      validTo: '',
-      appliesWeekdays: true,
-      appliesWeekends: true,
-      notes: ''
-    })
-  }
-  
-  const openAddModal = () => {
-    resetForm()
-    setEditingEquipment(null)
-    setShowModal(true)
-  }
-  
-  const openEditModal = async (eq) => {
-    setFormData({
-      category: eq.category,
-      type: eq.type,
-      description: eq.description || '',
-      ownership: eq.ownership,
-      ownerCompanyId: eq.owner_company_id || '',
-      serialNumber: eq.serial_number || '',
-      plateNumber: eq.plate_number || '',
-      notes: eq.notes || ''
-    })
-    
-    // Converti le tariffe dal DB al formato del form
-    const formRates = (eq.equipment_rates || []).map(r => ({
-      id: r.id,
-      rateType: r.rate_type,
-      amount: r.amount,
-      validFrom: r.valid_from,
-      validTo: r.valid_to || '',
-      appliesWeekdays: r.applies_weekdays !== false,
-      appliesWeekends: r.applies_weekends !== false,
-      notes: r.notes || ''
-    }))
-    setRates(formRates)
-    setEditingEquipment(eq)
-    setShowModal(true)
-  }
 
-  // ============================================================================
-  // GESTIONE TARIFFE
-  // ============================================================================
-  
-  const addRate = () => {
-    if (!newRate.amount || !newRate.validFrom) {
-      alert('Inserisci importo e data inizio')
-      return
-    }
-    
-    setRates([...rates, { 
-      ...newRate, 
-      id: `temp-${Date.now()}`,
-      amount: parseFloat(newRate.amount)
-    }])
-    
-    setNewRate({
-      rateType: 'daily',
-      amount: '',
-      validFrom: new Date().toISOString().split('T')[0],
-      validTo: '',
-      appliesWeekdays: true,
-      appliesWeekends: true,
-      notes: ''
-    })
-  }
-  
-  const removeRate = (rateId) => {
-    setRates(rates.filter(r => r.id !== rateId))
-  }
-
-  // ============================================================================
-  // SALVATAGGIO
-  // ============================================================================
-  
-  const handleSave = async () => {
-    if (!formData.type) {
-      alert('Seleziona un tipo')
-      return
-    }
-    
-    if (formData.ownership === 'rented' && !formData.ownerCompanyId) {
-      alert('Seleziona l\'azienda di noleggio')
-      return
-    }
+  const handleFileSelect = async (file) => {
+    setImportFile(file);
     
     try {
-      const mainCompany = companies.find(c => c.is_main)
+      const data = await parseExcelFile(file);
+      setImportPreview(data.slice(0, 10)); // Preview first 10 rows
+    } catch (error) {
+      console.error('Error parsing file:', error);
+      alert('Errore lettura file: ' + error.message);
+    }
+  };
+
+  const parseExcelFile = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const workbook = XLSX.read(e.target.result, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const data = XLSX.utils.sheet_to_json(worksheet);
+          resolve(data);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    
+    setImporting(true);
+    try {
+      const data = await parseExcelFile(importFile);
       
-      const equipmentDataToSave = {
-        project_id: activeProject.id,
-        category: formData.category,
-        type: formData.type,
-        description: formData.description.trim() || null,
-        ownership: formData.ownership,
-        owner_company_id: formData.ownership === 'owned' 
-          ? mainCompany?.id 
-          : formData.ownerCompanyId || null,
-        serial_number: formData.serialNumber.trim() || null,
-        plate_number: formData.plateNumber.trim() || null,
-        notes: formData.notes.trim() || null
-      }
+      let imported = 0;
+      let errors = 0;
       
-      let equipmentId
-      
-      if (editingEquipment) {
-        // Update
+      for (const row of data) {
+        const mapped = mapExcelToDb(row);
+        
+        // Find or skip type
+        if (mapped.equipment_type_code) {
+          const type = equipmentTypes.find(t => 
+            t.type_code.toLowerCase() === mapped.equipment_type_code.toLowerCase()
+          );
+          if (type) {
+            mapped.equipment_type_id = type.id;
+          }
+        }
+        delete mapped.equipment_type_code;
+        
+        // Find main equipment if specified
+        if (mapped.main_equipment_tag) {
+          const mainEq = equipment.find(e => e.tag === mapped.main_equipment_tag);
+          if (mainEq) {
+            mapped.main_equipment_id = mainEq.id;
+            mapped.is_main_equipment = false;
+          }
+        }
+        delete mapped.main_equipment_tag;
+        
+        mapped.project_id = activeProject.id;
+        mapped.imported_at = new Date().toISOString();
+        
         const { error } = await supabase
-          .from('equipment')
-          .update(equipmentDataToSave)
-          .eq('id', editingEquipment.id)
+          .from('project_equipment')
+          .upsert(mapped, { onConflict: 'project_id,tag' });
         
-        if (error) throw error
-        equipmentId = editingEquipment.id
-        
-        // Elimina vecchie tariffe
-        await supabase
-          .from('equipment_rates')
-          .delete()
-          .eq('equipment_id', equipmentId)
-      } else {
-        // Insert
-        const { data, error } = await supabase
-          .from('equipment')
-          .insert([equipmentDataToSave])
-          .select()
-          .single()
-        
-        if (error) throw error
-        equipmentId = data.id
+        if (error) {
+          console.error('Import error for row:', row, error);
+          errors++;
+        } else {
+          imported++;
+        }
       }
       
-      // Inserisci tariffe
-      if (rates.length > 0) {
-        const ratesData = rates.map(r => ({
-          equipment_id: equipmentId,
-          rate_type: r.rateType,
-          amount: parseFloat(r.amount),
-          valid_from: r.validFrom,
-          valid_to: r.validTo || null,
-          applies_weekdays: r.appliesWeekdays,
-          applies_weekends: r.appliesWeekends,
-          notes: r.notes || null
-        }))
-        
-        const { error: ratesError } = await supabase
-          .from('equipment_rates')
-          .insert(ratesData)
-        
-        if (ratesError) throw ratesError
-      }
+      await fetchEquipment();
+      setShowImportModal(false);
+      setImportFile(null);
+      setImportPreview([]);
       
-      setShowModal(false)
-      resetForm()
-      loadData()
-    } catch (err) {
-      console.error('Error saving:', err)
-      alert('Errore: ' + err.message)
+      alert(`Import completato!\n✅ Importati: ${imported}\n❌ Errori: ${errors}`);
+    } catch (error) {
+      console.error('Import error:', error);
+      alert('Errore import: ' + error.message);
+    } finally {
+      setImporting(false);
     }
-  }
+  };
+
+  const mapExcelToDb = (row) => {
+    return {
+      equipment_id: row.Equipment_ID?.toString(),
+      tag: row.Tag || row.Equipment_Tag,
+      description: row.Description,
+      equipment_type_code: row.Type || row.Equipment_Type,
+      weight_kg: parseFloat(row.Weight_kg) || null,
+      dimensions: row.Dimensions,
+      is_main_equipment: row.Is_Main === 'Yes' || row.Is_Main === true || row.Is_Main === 1,
+      main_equipment_tag: row.Main_Equipment_Tag || row.Parent_Tag,
+      area: row.Area,
+      zone: row.Zone,
+      elevation: row.Elevation,
+      planned_installation_date: parseExcelDate(row.Planned_Date),
+      installation_date: parseExcelDate(row.Installation_Date),
+      week_plan: row.Week_Plan
+    };
+  };
+
+  const parseExcelDate = (value) => {
+    if (!value) return null;
+    if (typeof value === 'number') {
+      const date = new Date((value - 25569) * 86400 * 1000);
+      return date.toISOString().split('T')[0];
+    }
+    if (typeof value === 'string') {
+      const date = new Date(value);
+      if (!isNaN(date)) return date.toISOString().split('T')[0];
+    }
+    return null;
+  };
 
   // ============================================================================
-  // ELIMINAZIONE
+  // EXPORT TEMPLATE
   // ============================================================================
-  
-  const handleDelete = async (eq) => {
-    try {
-      // Prima rimuovi tutte le assegnazioni attive di questo equipment
-      const { error: assignmentError } = await supabase
-        .from('equipment_assignments')
-        .update({ 
-          status: 'removed', 
-          removed_at: new Date().toISOString() 
-        })
-        .eq('equipment_id', eq.id)
-        .eq('status', 'active')
-      
-      if (assignmentError) {
-        console.warn('Error removing assignments:', assignmentError)
-        // Continua comunque con l'eliminazione
-      }
-      
-      // Poi imposta l'equipment come inattivo
-      const { error } = await supabase
-        .from('equipment')
-        .update({ status: 'inactive' })
-        .eq('id', eq.id)
-      
-      if (error) throw error
-      
-      setShowDeleteConfirm(null)
-      loadData()
-    } catch (err) {
-      console.error('Error deleting:', err)
-      alert('Errore: ' + err.message)
-    }
-  }
 
-  // ============================================================================
-  // GESTIONE NUOVO TIPO
-  // ============================================================================
-  
-  const handleSaveNewType = async () => {
-    if (!newTypeForm.labelIt.trim()) {
-      alert('Inserisci il nome italiano')
-      return
-    }
+  const exportTemplate = () => {
+    const template = [{
+      Equipment_ID: 1,
+      Tag: 'C-101',
+      Description: 'Main Process Compressor',
+      Type: 'COMPRESSOR',
+      Weight_kg: 5000,
+      Dimensions: '3.0m x 2.0m x 2.5m',
+      Is_Main: 'Yes',
+      Main_Equipment_Tag: '',
+      Area: 'PROCESS',
+      Zone: 'A',
+      Elevation: '+5.0m',
+      Planned_Date: '2025-03-15',
+      Installation_Date: '',
+      Week_Plan: 'W12-2025'
+    }];
     
-    // Genera type_key dal nome italiano
-    const typeKey = newTypeForm.labelIt
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_]/g, '')
-    
-    // Verifica se esiste già
-    if (EQUIPMENT_TYPES[typeKey] || DEFAULT_EQUIPMENT_TYPES[typeKey]) {
-      alert('Questo tipo esiste già!')
-      return
-    }
-    
-    try {
-      const { error } = await supabase
-        .from('equipment_types')
-        .insert([{
-          project_id: activeProject.id,
-          type_key: typeKey,
-          label_it: newTypeForm.labelIt.trim(),
-          label_en: newTypeForm.labelEn.trim() || null,
-          category: newTypeForm.category
-        }])
-      
-      if (error) throw error
-      
-      // Chiudi modal e ricarica
-      setShowNewTypeModal(false)
-      setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
-      
-      // Ricarica tipi
-      loadData()
-      
-      // Seleziona il nuovo tipo nel form
-      setTimeout(() => {
-        setFormData(prev => ({ ...prev, type: typeKey }))
-      }, 500)
-      
-    } catch (err) {
-      console.error('Error saving type:', err)
-      alert('Errore: ' + err.message)
-    }
-  }
-
-  // ============================================================================
-  // TIPI FILTRATI PER CATEGORIA
-  // ============================================================================
-  
-  const typesForCategory = Object.entries(EQUIPMENT_TYPES)
-    .filter(([_, config]) => config.category === formData.category)
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Equipment');
+    XLSX.writeFile(wb, 'Equipment_Template.xlsx');
+  };
 
   // ============================================================================
   // RENDER
   // ============================================================================
-  
-  if (!activeProject) {
+
+  if (!projectLoading && !activeProject) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Truck size={64} className="text-gray-300 mb-4" />
-        <p className="text-gray-500">Seleziona un progetto</p>
+      <div className="flex flex-col items-center justify-center h-64 text-gray-500">
+        <p className="text-lg">Nessun progetto selezionato</p>
       </div>
-    )
+    );
   }
 
-  if (loading) {
+  if (projectLoading || loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="space-y-6">
-      {/* ============ HEADER ============ */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Truck className="text-primary" />
-            Mezzi / Equipment / Tools
-          </h1>
-          <p className="text-gray-500 mt-1">
-            {activeProject.name} • {equipment.length} elementi totali
-          </p>
-        </div>
-        
-        <button onClick={openAddModal} className="btn-primary flex items-center gap-2">
-          <Plus size={20} />
-          Nuovo
-        </button>
-      </div>
-
-      {/* ============ DASHBOARD ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <Settings size={20} />
-          Dashboard
-        </h2>
-        
-        {/* Riepilogo per categoria */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          {categoryStats.map(stat => {
-            const Icon = stat.icon
-            return (
-              <div key={stat.category} className="bg-gray-50 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}>
-                    <Icon size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{stat.label}</h3>
-                    <p className="text-sm text-gray-500">{stat.total} totali</p>
-                  </div>
-                </div>
-                
-                <div className="flex gap-4 text-sm">
-                  <span 
-                    className={`text-green-600 ${stat.assigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                    onClick={() => stat.assigned > 0 && setPopupData({
-                      type: 'assigned',
-                      equipment: stat.assignedItems,
-                      title: `${stat.label} - Assegnati`
-                    })}
-                  >
-                    {stat.assigned} assegnati
-                  </span>
-                  <span 
-                    className={`text-amber-600 ${stat.unassigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                    onClick={() => stat.unassigned > 0 && setPopupData({
-                      type: 'unassigned',
-                      equipment: stat.unassignedItems,
-                      title: `${stat.label} - Disponibili`
-                    })}
-                  >
-                    {stat.unassigned} disponibili
-                  </span>
-                </div>
-                
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-green-500 h-2 rounded-full transition-all"
-                      style={{ width: `${stat.percentage}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-600 w-8 text-right">{stat.percentage}%</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        
-        {/* Dettaglio per tipo */}
-        {typeStats.length > 0 && (
-          <div className="border-t pt-4">
-            <h3 className="font-medium text-gray-700 mb-3">Dettaglio per Tipo</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-              {typeStats.map(stat => (
-                <div 
-                  key={stat.type}
-                  className="bg-gray-50 rounded-lg p-3 cursor-pointer hover:bg-gray-100 transition-colors"
-                  onClick={() => setPopupData({
-                    type: 'all',
-                    equipment: stat.items,
-                    title: `${stat.label} (${stat.labelEn})`
-                  })}
-                >
-                  <div className="text-2xl font-bold text-gray-800">{stat.total}</div>
-                  <div className="text-xs text-gray-600 truncate" title={stat.label}>{stat.label}</div>
-                  <div className="text-xs mt-1 flex gap-1">
-                    <span className="text-green-600 font-medium">{stat.assigned}</span>
-                    <span className="text-gray-400">/</span>
-                    <span className="text-amber-600 font-medium">{stat.unassigned}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+              🏭 Equipment
+            </h1>
+            <p className="text-gray-500 mt-1">{activeProject?.name} • Gestione apparecchiature</p>
           </div>
-        )}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium"
+            >
+              ➕ Nuovo Equipment
+            </button>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
+            >
+              📥 Importa Excel
+            </button>
+            <button
+              onClick={exportTemplate}
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2 text-sm font-medium"
+            >
+              📤 Esporta Template
+            </button>
+            <button
+              onClick={() => setShowTypeModal(true)}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium"
+            >
+              ⚙️ Gestisci Tipi
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
+          <StatCard icon="🏭" bg="bg-blue-50" border="border-blue-200" 
+            value={stats.total} label="Totale" />
+          <StatCard icon="✅" bg="bg-green-50" border="border-green-200" 
+            value={stats.installed} label="Installati" 
+            sub={stats.total > 0 ? `${Math.round(stats.installed/stats.total*100)}%` : '0%'} />
+          <StatCard icon="⭐" bg="bg-purple-50" border="border-purple-200" 
+            value={stats.mainEquipment} label="Main Equipment" />
+          <StatCard icon="🔗" bg="bg-amber-50" border="border-amber-200" 
+            value={stats.subEquipment} label="Sub-Equipment" />
+          <StatCard icon="⚖️" bg="bg-gray-50" border="border-gray-200" 
+            value={`${(stats.totalWeight/1000).toFixed(1)}t`} label="Peso Totale" />
+        </div>
       </div>
 
-      {/* ============ FILTRI ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cerca per tipo, descrizione, targa..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Cerca per tag, descrizione..."
+              className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
           
           <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="px-3 py-2 border rounded-lg"
           >
-            <option value="">Tutte le categorie</option>
-            {Object.entries(CATEGORIES).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
+            <option value="all">Tutti i tipi</option>
+            {equipmentTypes.map(type => (
+              <option key={type.id} value={type.type_code}>
+                {type.icon} {type.type_name}
+              </option>
             ))}
           </select>
           
           <select
-            value={filterOwnership}
-            onChange={(e) => setFilterOwnership(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="px-3 py-2 border rounded-lg"
           >
-            <option value="">Proprietà/Noleggio</option>
-            <option value="owned">Proprietà</option>
-            <option value="rented">Noleggio</option>
+            <option value="all">Tutti gli stati</option>
+            <option value="installed">✅ Installati</option>
+            <option value="pending">⏳ Da installare</option>
+            <option value="main">⭐ Solo Main</option>
+            <option value="sub">🔗 Solo Sub</option>
           </select>
           
-          <select
-            value={filterCompany}
-            onChange={(e) => setFilterCompany(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="">Tutte le aziende</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>{c.is_main && '★ '}{c.company_name}</option>
-            ))}
-          </select>
+          <div className="flex border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-2 text-sm ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              📋 Lista
+            </button>
+            <button
+              onClick={() => setViewMode('hierarchy')}
+              className={`px-3 py-2 text-sm ${viewMode === 'hierarchy' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+            >
+              🌳 Gerarchia
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ============ LISTA EQUIPMENT ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {filteredEquipment.length === 0 ? (
-          <div className="p-12 text-center">
-            <Truck size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500">
-              {equipment.length === 0 ? 'Nessun elemento inserito' : 'Nessun elemento trovato con i filtri attivi'}
-            </p>
-            {equipment.length === 0 && (
-              <button onClick={openAddModal} className="mt-4 btn-primary">
-                <Plus size={18} className="inline mr-1" />
-                Aggiungi il primo
-              </button>
-            )}
-          </div>
+      {/* Equipment List/Hierarchy */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        {viewMode === 'list' ? (
+          <EquipmentTable
+            equipment={filteredEquipment}
+            onEdit={setEditingItem}
+            onDelete={handleDeleteEquipment}
+          />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Categoria</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Tipo</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Descrizione</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Proprietà</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Azienda</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Targa/Seriale</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium text-gray-600">Assegnato a</th>
-                  <th className="text-center px-4 py-3 text-sm font-medium text-gray-600">Azioni</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filteredEquipment.map(eq => {
-                  const assignment = assignments[eq.id]
-                  const typeConfig = EQUIPMENT_TYPES[eq.type]
-                  return (
-                    <tr key={eq.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <CategoryBadge category={eq.category} size="small" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-gray-800">
-                          {typeConfig?.label || eq.type}
-                        </span>
-                        <br />
-                        <span className="text-xs text-gray-400">
-                          {typeConfig?.labelEn || ''}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-sm max-w-[200px]">
-                        <span className="truncate block" title={eq.description}>
-                          {eq.description || '—'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <OwnershipBadge ownership={eq.ownership} />
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        <div className="flex items-center gap-1">
-                          {eq.owner_company?.is_main && (
-                            <Star size={12} className="text-yellow-500 fill-yellow-500" />
-                          )}
-                          <span className="truncate max-w-[120px]" title={eq.owner_company?.company_name}>
-                            {eq.owner_company?.company_name || '—'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-sm text-gray-600">
-                        {eq.plate_number || eq.serial_number || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {assignment ? (
-                          <span className="text-green-600 text-sm font-medium">
-                            Squadra {assignment.squad?.squad_number}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-sm">Disponibile</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-center gap-1">
-                          <button
-                            onClick={() => openEditModal(eq)}
-                            className="p-1.5 hover:bg-blue-100 rounded text-blue-600"
-                            title="Modifica"
-                          >
-                            <Edit size={16} />
-                          </button>
-                          <button
-                            onClick={() => setShowDeleteConfirm(eq)}
-                            className="p-1.5 hover:bg-red-100 rounded text-red-600"
-                            title="Elimina"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <EquipmentHierarchy
+            equipment={hierarchicalEquipment}
+            onEdit={setEditingItem}
+            onDelete={handleDeleteEquipment}
+          />
         )}
       </div>
 
-      {/* ============ MODAL CREA/MODIFICA ============ */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
-              <h2 className="text-xl font-bold text-gray-800">
-                {editingEquipment ? 'Modifica' : 'Nuovo'} Mezzo/Equipment/Tool
-              </h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-4 space-y-4">
-              {/* Categoria e Tipo */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Categoria <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value, type: '' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {Object.entries(CATEGORIES).map(([key, config]) => (
-                      <option key={key} value={key}>{config.label} / {config.labelEn}</option>
-                    ))}
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo <span className="text-red-500">*</span>
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary min-w-0"
-                    >
-                      <option value="">-- Seleziona --</option>
-                      {typesForCategory.map(([key, config]) => (
-                        <option key={key} value={key}>
-                          {config.label} / {config.labelEn}
-                          {config.isCustom && ' ★'}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
-                        setShowNewTypeModal(true)
-                      }}
-                      className="px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-1 flex-shrink-0"
-                      title="Aggiungi nuovo tipo"
-                    >
-                      <PlusCircle size={18} />
-                      <span className="hidden sm:inline text-sm">Nuovo</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Descrizione */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Es: Gru 50 ton, Generatore 100kW, Saldatrice MIG..."
-                />
-              </div>
-              
-              {/* Proprietà e Azienda */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Proprietà</label>
-                  <select
-                    value={formData.ownership}
-                    onChange={(e) => {
-                      const newOwnership = e.target.value
-                      setFormData({ 
-                        ...formData, 
-                        ownership: newOwnership,
-                        ownerCompanyId: ''
-                      })
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="owned">Proprietà (Aziendale)</option>
-                    <option value="rented">Noleggio</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {formData.ownership === 'owned' ? 'Azienda Proprietaria' : 'Azienda Noleggio'}
-                    {formData.ownership === 'rented' && <span className="text-red-500"> *</span>}
-                  </label>
-                  {formData.ownership === 'owned' ? (
-                    <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600">
-                      {companies.find(c => c.is_main)?.company_name || 'Azienda principale'}
-                      <Star size={12} className="inline ml-1 text-yellow-500 fill-yellow-500" />
-                    </div>
-                  ) : (
-                    <select
-                      value={formData.ownerCompanyId}
-                      onChange={(e) => setFormData({ ...formData, ownerCompanyId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">-- Seleziona Noleggiatore --</option>
-                      {companies
-                        .filter(c => !c.is_main)
-                        .map(c => (
-                          <option key={c.id} value={c.id}>{c.company_name}</option>
-                        ))
-                      }
-                    </select>
-                  )}
-                </div>
-              </div>
-              
-              {/* Identificazione */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Targa</label>
-                  <input
-                    type="text"
-                    value={formData.plateNumber}
-                    onChange={(e) => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-                    placeholder="AB123CD"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Numero di Serie</label>
-                  <input
-                    type="text"
-                    value={formData.serialNumber}
-                    onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-                    placeholder="SN-123456"
-                  />
-                </div>
-              </div>
-              
-              {/* Tariffe (solo per noleggio) */}
-              {formData.ownership === 'rented' && (
-                <div className="border-t pt-4">
-                  <h3 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
-                    <DollarSign size={18} />
-                    Tariffe Noleggio
-                  </h3>
-                  
-                  {/* Lista tariffe esistenti */}
-                  {rates.length > 0 && (
-                    <div className="space-y-2 mb-4">
-                      {rates.map(rate => (
-                        <div key={rate.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                          <span className="font-medium text-sm">
-                            {RATE_TYPES[rate.rateType]?.label}
-                          </span>
-                          <span className="text-lg font-bold text-primary">
-                            €{parseFloat(rate.amount).toFixed(2)}
-                          </span>
-                          <span className="text-sm text-gray-500 flex-1">
-                            Dal {new Date(rate.validFrom).toLocaleDateString('it-IT')}
-                            {rate.validTo && ` al ${new Date(rate.validTo).toLocaleDateString('it-IT')}`}
-                          </span>
-                          <div className="flex gap-1 text-xs">
-                            {rate.appliesWeekdays && (
-                              <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Lun-Ven</span>
-                            )}
-                            {rate.appliesWeekends && (
-                              <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Sab-Dom</span>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => removeRate(rate.id)}
-                            className="p-1 hover:bg-red-100 rounded text-red-500"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  
-                  {/* Form nuova tariffa */}
-                  <div className="bg-blue-50 rounded-lg p-4 space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Tipo Tariffa</label>
-                        <select
-                          value={newRate.rateType}
-                          onChange={(e) => setNewRate({ ...newRate, rateType: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        >
-                          {Object.entries(RATE_TYPES).map(([key, config]) => (
-                            <option key={key} value={key}>{config.label} / {config.labelEn}</option>
-                          ))}
-                        </select>
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Importo (€)</label>
-                        <input
-                          type="number"
-                          value={newRate.amount}
-                          onChange={(e) => setNewRate({ ...newRate, amount: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                        />
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Valido Dal</label>
-                        <input
-                          type="date"
-                          value={newRate.validFrom}
-                          onChange={(e) => setNewRate({ ...newRate, validFrom: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Valido Fino (opz.)</label>
-                        <input
-                          type="date"
-                          value={newRate.validTo}
-                          onChange={(e) => setNewRate({ ...newRate, validTo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        />
-                      </div>
-                    </div>
-                    
-                    {/* Giorni applicabili */}
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={newRate.appliesWeekdays}
-                          onChange={(e) => setNewRate({ ...newRate, appliesWeekdays: e.target.checked })}
-                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        Lun-Ven (Feriali)
-                      </label>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={newRate.appliesWeekends}
-                          onChange={(e) => setNewRate({ ...newRate, appliesWeekends: e.target.checked })}
-                          className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                        />
-                        Sab-Dom (Weekend)
-                      </label>
-                    </div>
-                    
-                    <button
-                      onClick={addRate}
-                      className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                    >
-                      + Aggiungi Tariffa
-                    </button>
-                  </div>
-                </div>
-              )}
-              
-              {/* Note */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Note aggiuntive..."
-                />
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
-              <button 
-                onClick={() => setShowModal(false)} 
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Annulla
-              </button>
-              <button 
-                onClick={handleSave} 
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark flex items-center gap-2"
-              >
-                <Check size={18} />
-                {editingEquipment ? 'Salva Modifiche' : 'Crea'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Modals */}
+      {showAddModal && (
+        <AddEquipmentModal
+          equipmentTypes={equipmentTypes}
+          mainEquipmentList={equipment.filter(e => e.is_main_equipment)}
+          onSave={handleAddEquipment}
+          onClose={() => setShowAddModal(false)}
+        />
       )}
-
-      {/* ============ MODAL CONFERMA ELIMINAZIONE ============ */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="text-red-600" size={24} />
-              </div>
-              <div>
-                <h3 className="font-bold text-gray-800">Elimina</h3>
-                <p className="text-sm text-gray-500">
-                  {EQUIPMENT_TYPES[showDeleteConfirm.type]?.label} 
-                  {showDeleteConfirm.description && ` - ${showDeleteConfirm.description}`}
-                </p>
-              </div>
-            </div>
-            
-            <p className="text-gray-600 mb-6">
-              Sei sicuro di voler eliminare questo elemento? L'operazione può essere annullata solo da un amministratore.
-            </p>
-            
-            <div className="flex justify-end gap-3">
-              <button 
-                onClick={() => setShowDeleteConfirm(null)} 
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Annulla
-              </button>
-              <button
-                onClick={() => handleDelete(showDeleteConfirm)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                Elimina
-              </button>
-            </div>
-          </div>
-        </div>
+      
+      {editingItem && (
+        <EditEquipmentModal
+          item={editingItem}
+          equipmentTypes={equipmentTypes}
+          mainEquipmentList={equipment.filter(e => e.is_main_equipment && e.id !== editingItem.id)}
+          onSave={(updates) => handleUpdateEquipment(editingItem.id, updates)}
+          onClose={() => setEditingItem(null)}
+        />
       )}
-
-      {/* ============ POPUP LISTA EQUIPMENT ============ */}
-      <EquipmentListPopup
-        equipment={popupData?.equipment || []}
-        title={popupData?.title || ''}
-        isVisible={popupData !== null}
-        onClose={() => setPopupData(null)}
-        type={popupData?.type || 'all'}
-        equipmentTypes={EQUIPMENT_TYPES}
-      />
-
-      {/* ============ MODAL NUOVO TIPO ============ */}
-      {showNewTypeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <PlusCircle className="text-green-600" size={20} />
-                Nuovo Tipo
-              </h2>
-              <button 
-                onClick={() => setShowNewTypeModal(false)} 
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Categoria
-                </label>
-                <select
-                  value={newTypeForm.category}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, category: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  {Object.entries(CATEGORIES).map(([key, config]) => (
-                    <option key={key} value={key}>{config.label}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome Italiano <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newTypeForm.labelIt}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelIt: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Es: Essiccatore"
-                  autoFocus
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome Inglese
-                </label>
-                <input
-                  type="text"
-                  value={newTypeForm.labelEn}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelEn: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Es: Dryer"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
-              <button 
-                onClick={() => setShowNewTypeModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Annulla
-              </button>
-              <button 
-                onClick={handleSaveNewType}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-              >
-                <Check size={18} />
-                Crea Tipo
-              </button>
-            </div>
-          </div>
-        </div>
+      
+      {showImportModal && (
+        <ImportModal
+          importFile={importFile}
+          importPreview={importPreview}
+          onFileSelect={handleFileSelect}
+          onImport={handleImport}
+          onClose={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); }}
+          importing={importing}
+        />
+      )}
+      
+      {showTypeModal && (
+        <TypesModal
+          types={equipmentTypes}
+          projectId={activeProject.id}
+          onAddType={handleAddType}
+          onClose={() => setShowTypeModal(false)}
+          onRefresh={fetchEquipmentTypes}
+        />
       )}
     </div>
-  )
+  );
 }
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+const StatCard = ({ icon, bg, border, value, label, sub }) => (
+  <div className={`${bg} rounded-lg p-4 border ${border}`}>
+    <div className="flex items-center gap-2">
+      <span className="text-xl">{icon}</span>
+      <div>
+        <div className="text-2xl font-bold text-gray-700">{value}</div>
+        <div className="text-xs text-gray-600">{label}</div>
+        {sub && <div className="text-xs text-gray-400">{sub}</div>}
+      </div>
+    </div>
+  </div>
+);
+
+// Equipment Table (List View)
+const EquipmentTable = ({ equipment, onEdit, onDelete }) => (
+  <div className="overflow-x-auto">
+    <table className="w-full text-sm">
+      <thead className="bg-gray-100">
+        <tr>
+          <th className="text-left p-3 font-medium">Tag</th>
+          <th className="text-left p-3 font-medium">Tipo</th>
+          <th className="text-left p-3 font-medium">Descrizione</th>
+          <th className="text-center p-3 font-medium">Main/Sub</th>
+          <th className="text-center p-3 font-medium">Peso</th>
+          <th className="text-center p-3 font-medium">Installato</th>
+          <th className="text-center p-3 font-medium">Azioni</th>
+        </tr>
+      </thead>
+      <tbody>
+        {equipment.length === 0 ? (
+          <tr>
+            <td colSpan={7} className="p-8 text-center text-gray-400">
+              Nessun equipment trovato
+            </td>
+          </tr>
+        ) : equipment.map(eq => (
+          <tr key={eq.id} className="border-t hover:bg-gray-50">
+            <td className="p-3">
+              <div className="font-mono font-bold text-blue-600">{eq.tag}</div>
+              {eq.main_equipment && (
+                <div className="text-xs text-gray-400">
+                  └ {eq.main_equipment.tag}
+                </div>
+              )}
+            </td>
+            <td className="p-3">
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs">
+                {eq.equipment_type?.icon || '🔧'} {eq.equipment_type?.type_name || eq.equipment_type_code || '-'}
+              </span>
+            </td>
+            <td className="p-3 max-w-[200px] truncate text-gray-600" title={eq.description}>
+              {eq.description || '-'}
+            </td>
+            <td className="p-3 text-center">
+              {eq.is_main_equipment ? (
+                <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">⭐ Main</span>
+              ) : (
+                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium">🔗 Sub</span>
+              )}
+            </td>
+            <td className="p-3 text-center text-gray-600">
+              {eq.weight_kg ? `${eq.weight_kg.toLocaleString()} kg` : '-'}
+            </td>
+            <td className="p-3 text-center">
+              {eq.installation_date ? (
+                <span className="text-green-600 font-medium">✅ {eq.installation_date}</span>
+              ) : (
+                <span className="text-gray-400">⏳ Pending</span>
+              )}
+            </td>
+            <td className="p-3 text-center">
+              <button onClick={() => onEdit(eq)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(eq.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+// Equipment Hierarchy View
+const EquipmentHierarchy = ({ equipment, onEdit, onDelete }) => (
+  <div className="p-4 space-y-4">
+    {equipment.length === 0 ? (
+      <p className="text-center text-gray-400 py-8">Nessun equipment trovato</p>
+    ) : equipment.map(main => (
+      <div key={main.id} className="border rounded-lg overflow-hidden">
+        {/* Main Equipment */}
+        <div className="flex items-center justify-between p-4 bg-purple-50 border-b">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">{main.equipment_type?.icon || '🏭'}</span>
+            <div>
+              <div className="font-bold text-purple-900">{main.tag}</div>
+              <div className="text-sm text-purple-700">{main.description}</div>
+            </div>
+            <span className="px-2 py-1 bg-purple-200 text-purple-800 rounded text-xs font-medium">
+              {main.equipment_type?.type_name || 'Equipment'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {main.installation_date ? (
+              <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">✅ Installato</span>
+            ) : (
+              <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">⏳ Pending</span>
+            )}
+            <button onClick={() => onEdit(main)} className="p-1.5 hover:bg-purple-200 rounded text-purple-600">✏️</button>
+            <button onClick={() => onDelete(main.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600">🗑️</button>
+          </div>
+        </div>
+        
+        {/* Sub Equipment */}
+        {main.subEquipment && main.subEquipment.length > 0 && (
+          <div className="bg-white">
+            {main.subEquipment.map(sub => (
+              <div key={sub.id} className="flex items-center justify-between p-3 pl-12 border-b last:border-b-0 hover:bg-gray-50">
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-400">└</span>
+                  <span className="text-lg">{sub.equipment_type?.icon || '🔧'}</span>
+                  <div>
+                    <div className="font-medium text-gray-800">{sub.tag}</div>
+                    <div className="text-xs text-gray-500">{sub.description}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {sub.installation_date ? (
+                    <span className="text-green-600 text-xs">✅</span>
+                  ) : (
+                    <span className="text-gray-400 text-xs">⏳</span>
+                  )}
+                  <button onClick={() => onEdit(sub)} className="p-1 hover:bg-blue-100 rounded text-blue-600 text-sm">✏️</button>
+                  <button onClick={() => onDelete(sub.id)} className="p-1 hover:bg-red-100 rounded text-red-600 text-sm">🗑️</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {(!main.subEquipment || main.subEquipment.length === 0) && (
+          <div className="p-3 pl-12 text-gray-400 text-sm italic">
+            Nessun sub-equipment
+          </div>
+        )}
+      </div>
+    ))}
+  </div>
+);
+
+// Add Equipment Modal
+const AddEquipmentModal = ({ equipmentTypes, mainEquipmentList, onSave, onClose }) => {
+  const [formData, setFormData] = useState({
+    tag: '',
+    description: '',
+    equipment_type_id: '',
+    weight_kg: '',
+    dimensions: '',
+    is_main_equipment: true,
+    main_equipment_id: '',
+    area: '',
+    zone: '',
+    elevation: '',
+    planned_installation_date: ''
+  });
+
+  const handleSubmit = () => {
+    if (!formData.tag) {
+      alert('Il Tag è obbligatorio');
+      return;
+    }
+    
+    const data = {
+      ...formData,
+      weight_kg: formData.weight_kg ? parseFloat(formData.weight_kg) : null,
+      equipment_type_id: formData.equipment_type_id || null,
+      main_equipment_id: formData.is_main_equipment ? null : (formData.main_equipment_id || null),
+      planned_installation_date: formData.planned_installation_date || null
+    };
+    
+    onSave(data);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b sticky top-0 bg-white">
+          <h2 className="text-lg font-bold text-gray-800">🏭 Nuovo Equipment</h2>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tag *</label>
+            <input
+              type="text"
+              value={formData.tag}
+              onChange={e => setFormData({...formData, tag: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="es. C-101"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+            <input
+              type="text"
+              value={formData.description}
+              onChange={e => setFormData({...formData, description: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="es. Main Process Compressor"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+            <select
+              value={formData.equipment_type_id}
+              onChange={e => setFormData({...formData, equipment_type_id: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">-- Seleziona tipo --</option>
+              {equipmentTypes.map(type => (
+                <option key={type.id} value={type.id}>
+                  {type.icon} {type.type_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.weight_kg}
+                onChange={e => setFormData({...formData, weight_kg: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dimensioni</label>
+              <input
+                type="text"
+                value={formData.dimensions}
+                onChange={e => setFormData({...formData, dimensions: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="es. 2.0m x 1.5m x 3.0m"
+              />
+            </div>
+          </div>
+          
+          <div className="border-t pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.is_main_equipment}
+                onChange={e => setFormData({...formData, is_main_equipment: e.target.checked, main_equipment_id: ''})}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-gray-700">È un Main Equipment</span>
+            </label>
+          </div>
+          
+          {!formData.is_main_equipment && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Main Equipment (Parent)</label>
+              <select
+                value={formData.main_equipment_id}
+                onChange={e => setFormData({...formData, main_equipment_id: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">-- Seleziona Main Equipment --</option>
+                {mainEquipmentList.map(eq => (
+                  <option key={eq.id} value={eq.id}>
+                    {eq.tag} - {eq.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+              <input
+                type="text"
+                value={formData.area}
+                onChange={e => setFormData({...formData, area: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Zona</label>
+              <input
+                type="text"
+                value={formData.zone}
+                onChange={e => setFormData({...formData, zone: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Elevazione</label>
+              <input
+                type="text"
+                value={formData.elevation}
+                onChange={e => setFormData({...formData, elevation: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="es. +5.0m"
+              />
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Data Installazione Pianificata</label>
+            <input
+              type="date"
+              value={formData.planned_installation_date}
+              onChange={e => setFormData({...formData, planned_installation_date: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
+          <button onClick={handleSubmit} className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">✓ Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Edit Equipment Modal
+const EditEquipmentModal = ({ item, equipmentTypes, mainEquipmentList, onSave, onClose }) => {
+  const [formData, setFormData] = useState({
+    tag: item.tag || '',
+    description: item.description || '',
+    equipment_type_id: item.equipment_type_id || '',
+    weight_kg: item.weight_kg || '',
+    dimensions: item.dimensions || '',
+    is_main_equipment: item.is_main_equipment,
+    main_equipment_id: item.main_equipment_id || '',
+    area: item.area || '',
+    zone: item.zone || '',
+    elevation: item.elevation || '',
+    planned_installation_date: item.planned_installation_date || '',
+    installation_date: item.installation_date || '',
+    installation_notes: item.installation_notes || ''
+  });
+
+  const handleSave = () => {
+    const updates = {
+      ...formData,
+      weight_kg: formData.weight_kg ? parseFloat(formData.weight_kg) : null,
+      equipment_type_id: formData.equipment_type_id || null,
+      main_equipment_id: formData.is_main_equipment ? null : (formData.main_equipment_id || null),
+      planned_installation_date: formData.planned_installation_date || null,
+      installation_date: formData.installation_date || null
+    };
+    onSave(updates);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b sticky top-0 bg-white">
+          <h2 className="text-lg font-bold text-gray-800">✏️ Modifica: {item.tag}</h2>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tag</label>
+            <input
+              type="text"
+              value={formData.tag}
+              onChange={e => setFormData({...formData, tag: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+            <input
+              type="text"
+              value={formData.description}
+              onChange={e => setFormData({...formData, description: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+            <select
+              value={formData.equipment_type_id}
+              onChange={e => setFormData({...formData, equipment_type_id: e.target.value})}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">-- Seleziona --</option>
+              {equipmentTypes.map(type => (
+                <option key={type.id} value={type.id}>{type.icon} {type.type_name}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label>
+              <input
+                type="number"
+                value={formData.weight_kg}
+                onChange={e => setFormData({...formData, weight_kg: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Dimensioni</label>
+              <input
+                type="text"
+                value={formData.dimensions}
+                onChange={e => setFormData({...formData, dimensions: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+          </div>
+          
+          <div className="border-t pt-4">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={formData.is_main_equipment}
+                onChange={e => setFormData({...formData, is_main_equipment: e.target.checked, main_equipment_id: ''})}
+                className="w-4 h-4"
+              />
+              <span className="text-sm text-gray-700">È un Main Equipment</span>
+            </label>
+          </div>
+          
+          {!formData.is_main_equipment && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Main Equipment (Parent)</label>
+              <select
+                value={formData.main_equipment_id}
+                onChange={e => setFormData({...formData, main_equipment_id: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">-- Nessuno --</option>
+                {mainEquipmentList.map(eq => (
+                  <option key={eq.id} value={eq.id}>{eq.tag} - {eq.description}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          
+          <div className="border-t pt-4 mt-4">
+            <h3 className="font-medium text-gray-800 mb-3">📅 Installazione</h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Pianificata</label>
+                <input
+                  type="date"
+                  value={formData.planned_installation_date}
+                  onChange={e => setFormData({...formData, planned_installation_date: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Effettiva</label>
+                <input
+                  type="date"
+                  value={formData.installation_date}
+                  onChange={e => setFormData({...formData, installation_date: e.target.value})}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+            </div>
+            <div className="mt-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Note Installazione</label>
+              <textarea
+                value={formData.installation_notes}
+                onChange={e => setFormData({...formData, installation_notes: e.target.value})}
+                className="w-full px-3 py-2 border rounded-lg"
+                rows={2}
+                placeholder="es. Installato con gru da 50t..."
+              />
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Import Modal
+const ImportModal = ({ importFile, importPreview, onFileSelect, onImport, onClose, importing }) => (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="p-6 border-b">
+        <h2 className="text-xl font-bold text-gray-800">📥 Importa Equipment da Excel</h2>
+      </div>
+      <div className="p-6 space-y-4">
+        <div className={`flex items-center gap-4 p-4 border-2 border-dashed rounded-lg transition-colors cursor-pointer ${importFile ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400'}`}>
+          <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">📄</div>
+          <div className="flex-1">
+            <p className="font-medium text-gray-700">File Excel</p>
+            <p className="text-xs text-gray-400">{importFile ? importFile.name : 'Clicca per selezionare'}</p>
+          </div>
+          <label className="cursor-pointer">
+            {importFile ? <span className="text-green-600 text-xl">✓</span> : <span className="text-gray-300 text-xl">📎</span>}
+            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => e.target.files[0] && onFileSelect(e.target.files[0])} />
+          </label>
+        </div>
+        
+        {importPreview.length > 0 && (
+          <div className="border rounded-lg overflow-hidden">
+            <div className="bg-gray-100 p-2 text-sm font-medium text-gray-600">
+              Preview (primi 10 record)
+            </div>
+            <div className="overflow-x-auto max-h-[200px]">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {Object.keys(importPreview[0]).slice(0, 5).map(key => (
+                      <th key={key} className="p-2 text-left">{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.map((row, idx) => (
+                    <tr key={idx} className="border-t">
+                      {Object.values(row).slice(0, 5).map((val, i) => (
+                        <td key={i} className="p-2">{String(val || '-')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+          <p className="font-medium text-blue-800 mb-1">📋 Colonne supportate:</p>
+          <p className="text-blue-700 text-xs">
+            Equipment_ID, Tag, Description, Type, Weight_kg, Dimensions, Is_Main, Main_Equipment_Tag, Area, Zone, Elevation, Planned_Date, Installation_Date, Week_Plan
+          </p>
+        </div>
+      </div>
+      <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
+        <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
+        <button onClick={onImport} disabled={!importFile || importing} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          {importing ? 'Importazione...' : '📥 Importa'}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+// Types Management Modal
+const TypesModal = ({ types, projectId, onAddType, onClose, onRefresh }) => {
+  const [newType, setNewType] = useState({ type_code: '', type_name: '', icon: '🔧' });
+  const [adding, setAdding] = useState(false);
+
+  const handleAdd = async () => {
+    if (!newType.type_code || !newType.type_name) {
+      alert('Codice e Nome sono obbligatori');
+      return;
+    }
+    setAdding(true);
+    await onAddType(newType);
+    setNewType({ type_code: '', type_name: '', icon: '🔧' });
+    setAdding(false);
+    onRefresh();
+  };
+
+  const systemTypes = types.filter(t => t.project_id === null);
+  const customTypes = types.filter(t => t.project_id !== null);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-bold text-gray-800">⚙️ Gestione Tipi Equipment</h2>
+        </div>
+        <div className="p-6 space-y-4">
+          {/* Add new type */}
+          <div className="border rounded-lg p-4 bg-gray-50">
+            <h3 className="font-medium text-gray-700 mb-3">➕ Aggiungi Nuovo Tipo</h3>
+            <div className="grid grid-cols-4 gap-2">
+              <input
+                type="text"
+                value={newType.icon}
+                onChange={e => setNewType({...newType, icon: e.target.value})}
+                className="px-2 py-2 border rounded text-center text-xl"
+                placeholder="🔧"
+                maxLength={2}
+              />
+              <input
+                type="text"
+                value={newType.type_code}
+                onChange={e => setNewType({...newType, type_code: e.target.value.toUpperCase().replace(/\s/g, '_')})}
+                className="col-span-1 px-3 py-2 border rounded text-sm"
+                placeholder="CODICE"
+              />
+              <input
+                type="text"
+                value={newType.type_name}
+                onChange={e => setNewType({...newType, type_name: e.target.value})}
+                className="col-span-2 px-3 py-2 border rounded text-sm"
+                placeholder="Nome tipo"
+              />
+            </div>
+            <button
+              onClick={handleAdd}
+              disabled={adding}
+              className="mt-2 w-full px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+            >
+              {adding ? 'Aggiunta...' : '➕ Aggiungi'}
+            </button>
+          </div>
+          
+          {/* Custom types */}
+          {customTypes.length > 0 && (
+            <div>
+              <h3 className="font-medium text-gray-700 mb-2">📁 Tipi Personalizzati</h3>
+              <div className="space-y-1">
+                {customTypes.map(type => (
+                  <div key={type.id} className="flex items-center justify-between p-2 bg-amber-50 rounded border border-amber-200">
+                    <span>{type.icon} {type.type_name}</span>
+                    <span className="text-xs text-gray-400 font-mono">{type.type_code}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* System types */}
+          <div>
+            <h3 className="font-medium text-gray-700 mb-2">🔒 Tipi di Sistema (non modificabili)</h3>
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {systemTypes.map(type => (
+                <div key={type.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                  <span>{type.icon} {type.type_name}</span>
+                  <span className="text-xs text-gray-400 font-mono">{type.type_code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end p-4 border-t bg-gray-50">
+          <button onClick={onClose} className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">Chiudi</button>
+        </div>
+      </div>
+    </div>
+  );
+};
