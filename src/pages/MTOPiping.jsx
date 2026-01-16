@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import * as XLSX from 'xlsx';
 
 // ============================================================================
-// MTO PAGE - Material Take Off
+// MTO PIPING - Material Take Off Piping
 // Gestione Spools, Supports, Flanges, Welds con Import Excel E Inserimento Manuale
 // ============================================================================
 
@@ -466,7 +466,7 @@ export default function MTOPiping() {
             existingData: existing,
             newData: newItem,
             changes: changes,
-            details: changes.map(c => `${c.field}: ${c.old} â†’ ${c.new}`).join(', ')
+            details: changes.map(c => `${c.field}: ${c.old} → ${c.new}`).join(', ')
           });
         }
       }
@@ -753,11 +753,11 @@ export default function MTOPiping() {
   }
 
   const tabs = [
-    { id: 'spools', label: 'ðŸ“¦ Spools', count: spools.length },
-    { id: 'supports', label: 'ðŸ”© Supports', count: supports.length },
-    { id: 'flanges', label: 'âš™ï¸ Flanges', count: flanges.length },
-    { id: 'welds', label: 'ðŸ”¥ Welds', count: welds.length },
-    { id: 'summary', label: 'ðŸ“Š Riepilogo', count: null }
+    { id: 'spools', label: '📦 Spools', count: spools.length },
+    { id: 'supports', label: '🔩 Supports', count: supports.length },
+    { id: 'flanges', label: '⚙️ Flanges', count: flanges.length },
+    { id: 'welds', label: '🔥 Welds', count: welds.length },
+    { id: 'summary', label: '📊 Riepilogo', count: null }
   ];
 
   const openAddModal = (type) => {
@@ -772,23 +772,23 @@ export default function MTOPiping() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
-              ðŸ“‹ MTO - Material Take Off
+              📋 MTO - Material Take Off
             </h1>
-            <p className="text-gray-500 mt-1">{activeProject?.name} â€¢ Database materiali e tracking</p>
+            <p className="text-gray-500 mt-1">{activeProject?.name} • Database materiali e tracking</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
-              ðŸ“¥ Importa Excel
+              📥 Importa Excel
             </button>
             <div className="relative group">
               <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium">
-                ðŸ“¤ Esporta Template â–¼
+                📤 Esporta Template ▼
               </button>
               <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg hidden group-hover:block z-10">
-                <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">ðŸ“¦ Spools</button>
-                <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">ðŸ”© Supports</button>
-                <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">âš™ï¸ Flanges</button>
-                <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">ðŸ”¥ Welds</button>
+                <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
+                <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
+                <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
+                <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
               </div>
             </div>
           </div>
@@ -796,11 +796,11 @@ export default function MTOPiping() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-          <StatCard icon="ðŸ“" bg="bg-blue-50" border="border-blue-200" value={stats.isometrics} label="Isometrici" />
-          <StatCard icon="ðŸ“¦" bg="bg-purple-50" border="border-purple-200" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} eretti`} />
-          <StatCard icon="ðŸ”©" bg="bg-gray-50" border="border-gray-200" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} assemblati`} />
-          <StatCard icon="âš™ï¸" bg="bg-amber-50" border="border-amber-200" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} assemblate`} />
-          <StatCard icon="ðŸ”¥" bg="bg-orange-50" border="border-orange-200" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} completate`} />
+          <StatCard icon="🔍" bg="bg-blue-50" border="border-blue-200" value={stats.isometrics} label="Isometrici" />
+          <StatCard icon="📦" bg="bg-purple-50" border="border-purple-200" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} eretti`} />
+          <StatCard icon="🔩" bg="bg-gray-50" border="border-gray-200" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} assemblati`} />
+          <StatCard icon="⚙️" bg="bg-amber-50" border="border-amber-200" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} assemblate`} />
+          <StatCard icon="🔥" bg="bg-orange-50" border="border-orange-200" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} completate`} />
         </div>
       </div>
 
@@ -825,7 +825,7 @@ export default function MTOPiping() {
         {activeTab !== 'summary' && (
           <div className="p-4 border-b bg-gray-50 flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px]">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">ðŸ”</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
               <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Cerca..." className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
             <select value={filterIso} onChange={(e) => setFilterIso(e.target.value)} className="px-3 py-2 border rounded-lg">
@@ -847,7 +847,7 @@ export default function MTOPiping() {
               onClick={() => openAddModal(activeTab === 'spools' ? 'spool' : activeTab === 'supports' ? 'support' : activeTab === 'flanges' ? 'flange' : 'weld')}
               className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 flex items-center gap-2 text-sm font-medium"
             >
-              âž• Aggiungi
+              ➕ Aggiungi
             </button>
           </div>
         )}
@@ -914,7 +914,7 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
         <tr>
           <th className="text-left p-3 font-medium">Spool</th>
           <th className="text-left p-3 font-medium">ISO</th>
-          <th className="text-center p-3 font-medium">Ã˜</th>
+          <th className="text-center p-3 font-medium">Ø</th>
           <th className="text-center p-3 font-medium">Peso</th>
           <th className="text-center p-3 font-medium">Stato</th>
           <th className="text-center p-3 font-medium">Shipment</th>
@@ -938,14 +938,14 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
             <td className="p-3 text-center">{spool.diameter_inch}"</td>
             <td className="p-3 text-center">{spool.weight_kg?.toFixed(1)} kg</td>
             <td className="p-3 text-center"><SpoolStatusBadge status={spool.site_status} /></td>
-            <td className="p-3 text-center text-xs">{spool.shipment_date ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{spool.ir_number ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{spool.laydown_arrival ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{spool.to_site ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{spool.erected ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
+            <td className="p-3 text-center text-xs">{spool.shipment_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.laydown_arrival ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.to_site ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{spool.erected ? <span className="text-green-600">✓</span> : '—'}</td>
             <td className="p-3 text-center">
-              <button onClick={() => onEdit(spool)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">âœï¸</button>
-              <button onClick={() => onDelete(spool.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">ðŸ—‘ï¸</button>
+              <button onClick={() => onEdit(spool)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(spool.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -981,12 +981,12 @@ const SupportsTable = ({ supports, onEdit, onDelete }) => (
             <td className="p-3 text-xs text-gray-600">{sup.iso_number}</td>
             <td className="p-3 text-center text-xs text-blue-600 font-mono">{sup.full_spool_no?.split('-').pop()}</td>
             <td className="p-3 text-center">{sup.weight_kg?.toFixed(2)} kg</td>
-            <td className="p-3 text-center text-xs">{sup.ir_number ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{sup.delivered_to_site ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{sup.assembly_date ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
+            <td className="p-3 text-center text-xs">{sup.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
             <td className="p-3 text-center">
-              <button onClick={() => onEdit(sup)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">âœï¸</button>
-              <button onClick={() => onDelete(sup.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">ðŸ—‘ï¸</button>
+              <button onClick={() => onEdit(sup)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(sup.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1005,7 +1005,7 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
           <th className="text-left p-3 font-medium">ISO</th>
           <th className="text-center p-3 font-medium">Type</th>
           <th className="text-center p-3 font-medium">Parts</th>
-          <th className="text-center p-3 font-medium">Ã˜ / Rating</th>
+          <th className="text-center p-3 font-medium">Ø / Rating</th>
           <th className="text-center p-3 font-medium">Gasket</th>
           <th className="text-center p-3 font-medium">Bolts</th>
           <th className="text-center p-3 font-medium">Delivered</th>
@@ -1028,12 +1028,12 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
             </td>
             <td className="p-3 text-center text-xs">{fl.diameter_inch}" / {fl.pressure_rating}</td>
             <td className="p-3 text-center text-xs font-mono">{fl.gasket_code}</td>
-            <td className="p-3 text-center text-xs"><span className="font-mono">{fl.bolt_code}</span> <span className="text-gray-400">Ã—{fl.bolt_qty}</span></td>
-            <td className="p-3 text-center text-xs">{fl.delivered_to_site ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{fl.assembly_date ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
+            <td className="p-3 text-center text-xs"><span className="font-mono">{fl.bolt_code}</span> <span className="text-gray-400">×{fl.bolt_qty}</span></td>
+            <td className="p-3 text-center text-xs">{fl.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{fl.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
             <td className="p-3 text-center">
-              <button onClick={() => onEdit(fl)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">âœï¸</button>
-              <button onClick={() => onDelete(fl.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">ðŸ—‘ï¸</button>
+              <button onClick={() => onEdit(fl)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(fl.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1052,7 +1052,7 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
           <th className="text-left p-3 font-medium">ISO</th>
           <th className="text-center p-3 font-medium">Spool 1 â†” Spool 2</th>
           <th className="text-center p-3 font-medium">Type</th>
-          <th className="text-center p-3 font-medium">Ã˜</th>
+          <th className="text-center p-3 font-medium">Ø</th>
           <th className="text-center p-3 font-medium">Thick</th>
           <th className="text-center p-3 font-medium">Dissimilar</th>
           <th className="text-center p-3 font-medium">Fitup</th>
@@ -1076,13 +1076,13 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
             <td className="p-3 text-center text-xs">{w.diameter_inch}"</td>
             <td className="p-3 text-center text-xs">{w.thickness_mm}mm</td>
             <td className="p-3 text-center">
-              {w.is_dissimilar ? <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium">âš ï¸ SI</span> : 'â€”'}
+              {w.is_dissimilar ? <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium">⚠️ SI</span> : '—'}
             </td>
-            <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
-            <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">âœ“</span> : 'â€”'}</td>
+            <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✓</span> : '—'}</td>
             <td className="p-3 text-center">
-              <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">âœï¸</button>
-              <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">ðŸ—‘ï¸</button>
+              <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+              <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
             </td>
           </tr>
         ))}
@@ -1095,7 +1095,7 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
 const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInventory }) => (
   <div className="space-y-6">
     <div className="bg-gray-50 rounded-xl p-5 border">
-      <h4 className="font-semibold text-gray-700 mb-4">ðŸ”© Riepilogo Supports per Mark</h4>
+      <h4 className="font-semibold text-gray-700 mb-4">🔩 Riepilogo Supports per Mark</h4>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-white">
@@ -1104,7 +1104,7 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
               <th className="text-center p-3 font-medium border bg-blue-50">Qty Necessaria</th>
               <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
               <th className="text-center p-3 font-medium border bg-amber-50">Qty Consegnate</th>
-              <th className="text-center p-3 font-medium border">DisponibilitÃ </th>
+              <th className="text-center p-3 font-medium border">Disponibilità</th>
             </tr>
           </thead>
           <tbody>
@@ -1124,7 +1124,7 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
                   <td className="p-3 border text-center text-amber-700">{item.qty_delivered}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? 'âœ“ OK' : `âš ï¸ -${remaining - available}`}
+                      {isOk ? '✓ OK' : `⚠️ -${remaining - available}`}
                     </span>
                   </td>
                 </tr>
@@ -1136,7 +1136,7 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
     </div>
 
     <div className="bg-amber-50 rounded-xl p-5 border border-amber-200">
-      <h4 className="font-semibold text-gray-700 mb-4">âš™ï¸ Riepilogo Materiali Flange</h4>
+      <h4 className="font-semibold text-gray-700 mb-4">⚙️ Riepilogo Materiali Flange</h4>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-white">
@@ -1146,7 +1146,7 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
               <th className="text-center p-3 font-medium border bg-blue-50">Qty Necessaria</th>
               <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
               <th className="text-center p-3 font-medium border bg-amber-50">Qty Consegnate</th>
-              <th className="text-center p-3 font-medium border">DisponibilitÃ </th>
+              <th className="text-center p-3 font-medium border">Disponibilità</th>
             </tr>
           </thead>
           <tbody>
@@ -1168,7 +1168,7 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
                   <td className="p-3 border text-center text-amber-700">{item.qty_delivered || 0}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? 'âœ“ OK' : `âš ï¸ -${remaining - available}`}
+                      {isOk ? '✓ OK' : `⚠️ -${remaining - available}`}
                     </span>
                   </td>
                 </tr>
@@ -1184,17 +1184,17 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
 // Import Modal
 const ImportModal = ({ importFiles, onFileSelect, onAnalyze, onClose, importing }) => {
   const fileTypes = [
-    { key: 'spools', label: 'Spools', icon: 'ðŸ“¦' },
-    { key: 'supports', label: 'Supports', icon: 'ðŸ”©' },
-    { key: 'flanges', label: 'Flanged Joints', icon: 'âš™ï¸' },
-    { key: 'welds', label: 'Welds', icon: 'ðŸ”¥' }
+    { key: 'spools', label: 'Spools', icon: '📦' },
+    { key: 'supports', label: 'Supports', icon: '🔩' },
+    { key: 'flanges', label: 'Flanged Joints', icon: '⚙️' },
+    { key: 'welds', label: 'Welds', icon: '🔥' }
   ];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
         <div className="p-6 border-b">
-          <h2 className="text-xl font-bold text-gray-800">ðŸ“¥ Importa Dati Excel</h2>
+          <h2 className="text-xl font-bold text-gray-800">📥 Importa Dati Excel</h2>
           <p className="text-sm text-gray-500 mt-1">Seleziona i file da importare</p>
         </div>
         <div className="p-6 space-y-4">
@@ -1206,7 +1206,7 @@ const ImportModal = ({ importFiles, onFileSelect, onAnalyze, onClose, importing 
                 <p className="text-xs text-gray-400">{importFiles[key] ? importFiles[key].name : 'Clicca per selezionare'}</p>
               </div>
               <label className="cursor-pointer">
-                {importFiles[key] ? <span className="text-green-600 text-xl">âœ“</span> : <span className="text-gray-300 text-xl">ðŸ“Ž</span>}
+                {importFiles[key] ? <span className="text-green-600 text-xl">✓</span> : <span className="text-gray-300 text-xl">🔎</span>}
                 <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => e.target.files[0] && onFileSelect(key, e.target.files[0])} />
               </label>
             </div>
@@ -1215,7 +1215,7 @@ const ImportModal = ({ importFiles, onFileSelect, onAnalyze, onClose, importing 
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
           <button onClick={onAnalyze} disabled={Object.keys(importFiles).length === 0 || importing} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
-            {importing ? 'Analisi...' : 'Analizza File â†’'}
+            {importing ? 'Analisi...' : 'Analizza File →'}
           </button>
         </div>
       </div>
@@ -1228,12 +1228,12 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
       <div className="p-6 border-b">
-        <h2 className="text-xl font-bold text-gray-800">ðŸ” Differenze Rilevate ({diffs.length})</h2>
+        <h2 className="text-xl font-bold text-gray-800">🔍 Differenze Rilevate ({diffs.length})</h2>
         <p className="text-sm text-gray-500 mt-1">Seleziona le modifiche da applicare</p>
       </div>
       <div className="flex-1 overflow-y-auto p-6">
         {diffs.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">Nessuna differenza. I dati sono giÃ  aggiornati.</p>
+          <p className="text-center text-gray-500 py-8">Nessuna differenza. I dati sono già aggiornati.</p>
         ) : (
           <div className="space-y-3">
             {diffs.map((diff, idx) => (
@@ -1242,7 +1242,7 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${diff.type === 'new' ? 'bg-green-100 text-green-700' : diff.type === 'modified' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                      {diff.type === 'new' ? 'âž• NUOVO' : diff.type === 'modified' ? 'âœï¸ MODIFICATO' : 'ðŸ—‘ï¸ RIMOSSO'}
+                      {diff.type === 'new' ? '➕ NUOVO' : diff.type === 'modified' ? '✏️ MODIFICATO' : '🗑️ RIMOSSO'}
                     </span>
                     <span className="text-sm font-medium text-gray-700 capitalize">{diff.entity}</span>
                     <span className="font-mono text-sm text-blue-600">{diff.key}</span>
@@ -1255,11 +1255,11 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
         )}
       </div>
       <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-        <button onClick={() => { const all = {}; diffs.forEach((_, idx) => all[idx] = true); setSelectedDiffs(all); }} className="text-sm text-blue-600 hover:text-blue-800">âœ“ Seleziona Tutti</button>
+        <button onClick={() => { const all = {}; diffs.forEach((_, idx) => all[idx] = true); setSelectedDiffs(all); }} className="text-sm text-blue-600 hover:text-blue-800">✓ Seleziona Tutti</button>
         <div className="flex gap-3">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
           <button onClick={onApply} disabled={Object.values(selectedDiffs).filter(Boolean).length === 0 || importing} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
-            {importing ? 'Applicazione...' : `âœ“ Applica (${Object.values(selectedDiffs).filter(Boolean).length})`}
+            {importing ? 'Applicazione...' : `✓ Applica (${Object.values(selectedDiffs).filter(Boolean).length})`}
           </button>
         </div>
       </div>
@@ -1296,7 +1296,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
     onSave(formData);
   };
 
-  const titles = { spool: 'ðŸ“¦ Nuovo Spool', support: 'ðŸ”© Nuovo Support', flange: 'âš™ï¸ Nuova Flange', weld: 'ðŸ”¥ Nuova Weld' };
+  const titles = { spool: '📦 Nuovo Spool', support: '🔩 Nuovo Support', flange: '⚙️ Nuova Flange', weld: '🔥 Nuova Weld' };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1384,7 +1384,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                     <option value="">--</option><option value="BW">BW</option><option value="SW">SW</option><option value="FW">FW</option>
                   </select>
                 </div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Ã˜ (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Ø (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Thick (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
               <div><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.is_dissimilar || false} onChange={e => setFormData({...formData, is_dissimilar: e.target.checked})} className="w-4 h-4" /><span className="text-sm text-gray-700">Saldatura Dissimile</span></label></div>
@@ -1393,7 +1393,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSubmit} className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">âœ“ Salva</button>
+          <button onClick={handleSubmit} className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">✓ Salva</button>
         </div>
       </div>
     </div>
@@ -1427,7 +1427,7 @@ const EditModal = ({ item, type, onSave, onClose }) => {
     onSave(updates);
   };
 
-  const titles = { spool: `ðŸ“¦ Modifica: ${item.spool_no}`, support: `ðŸ”© Modifica: ${item.support_tag_no}`, flange: `âš™ï¸ Modifica: ${item.flange_tag}`, weld: `ðŸ”¥ Modifica: ${item.weld_no}` };
+  const titles = { spool: `📦 Modifica: ${item.spool_no}`, support: `🔩 Modifica: ${item.support_tag_no}`, flange: `⚙️ Modifica: ${item.flange_tag}`, weld: `🔥 Modifica: ${item.weld_no}` };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1472,7 +1472,7 @@ const EditModal = ({ item, type, onSave, onClose }) => {
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">âœ“ Salva</button>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
         </div>
       </div>
     </div>
