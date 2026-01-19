@@ -981,9 +981,20 @@ export default function Squads() {
                   </div>
                   
                   <div className="flex items-center gap-4">
+                    {/* Contatore Membri (include Foreman) */}
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-800">{members.length}</div>
+                      <div className="text-2xl font-bold text-gray-800">
+                        {members.length + (squad.foreman ? 1 : 0)}
+                      </div>
                       <div className="text-xs text-gray-500">Membri</div>
+                    </div>
+                    
+                    {/* Contatore Equipment */}
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">
+                        {(squadEquipment[squad.id] || []).length}
+                      </div>
+                      <div className="text-xs text-gray-500">Mezzi</div>
                     </div>
                     
                     <div className="flex gap-2" onClick={e => e.stopPropagation()}>
