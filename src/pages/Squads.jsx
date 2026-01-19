@@ -1,785 +1,350 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
-import { 
-  Users, Plus, Search, Filter, X, Check, Edit, Trash2,
-  ChevronDown, ChevronRight, UserPlus, UserMinus, Star,
-  Building2, Hash, User, AlertTriangle, CheckCircle2,
+import {
+  UsersRound, Plus, Search, X, Check, Edit, Trash2,
+  User, Users, AlertTriangle, ChevronDown, ChevronUp,
   Truck, Package, Wrench, Settings
 } from 'lucide-react'
 
 // ============================================================================
-// CONFIGURAZIONE EQUIPMENT
+// CONFIGURAZIONE
 // ============================================================================
 
-const EQUIPMENT_CATEGORIES = {
-  vehicle: { label: 'Mezzo', icon: Truck, color: 'bg-blue-100 text-blue-800' },
-  equipment: { label: 'Equipment', icon: Package, color: 'bg-green-100 text-green-800' },
-  tool: { label: 'Attrezzo', icon: Wrench, color: 'bg-orange-100 text-orange-800' }
-}
-
-// ============================================================================
-// CONFIGURAZIONE RUOLI
-// ============================================================================
-
-// Ruoli diretti (campo) - possono essere assegnati a squadre
-const DIRECT_ROLES = ['superintendent', 'supervisor', 'foreman', 'sub_foreman', 'operator', 'helper', 'storekeeper']
-
-// Ruoli indiretti (staff) - non assegnabili a squadre
-const INDIRECT_ROLES = ['pm', 'site_manager', 'cm', 'pem', 'engineer', 'planner']
-
-// Ruoli che possono guidare squadre
-const FOREMAN_ROLES = ['foreman', 'sub_foreman']
-const SUPERVISOR_ROLES = ['supervisor', 'superintendent']
-
-// Configurazione colori ruoli
-const ROLE_CONFIG = {
-  pm: { label: 'Project Manager', color: 'bg-blue-100 text-blue-800' },
-  site_manager: { label: 'Site Manager', color: 'bg-indigo-100 text-indigo-800' },
-  cm: { label: 'Construction Manager', color: 'bg-cyan-100 text-cyan-800' },
-  pem: { label: 'Project Eng. Manager', color: 'bg-teal-100 text-teal-800' },
-  engineer: { label: 'Engineer', color: 'bg-emerald-100 text-emerald-800' },
-  planner: { label: 'Planner', color: 'bg-orange-100 text-orange-800' },
-  superintendent: { label: 'Superintendent', color: 'bg-purple-100 text-purple-800' },
-  supervisor: { label: 'Supervisor', color: 'bg-green-100 text-green-800' },
-  sub_supervisor: { label: 'Sub Supervisor', color: 'bg-lime-100 text-lime-800' },
-  foreman: { label: 'Foreman', color: 'bg-yellow-100 text-yellow-800' },
-  sub_foreman: { label: 'Sub Foreman', color: 'bg-amber-100 text-amber-800' },
-  operator: { label: 'Operatore', color: 'bg-gray-100 text-gray-800' },
-  helper: { label: 'Aiutante', color: 'bg-slate-100 text-slate-700' },
-  storekeeper: { label: 'Magazziniere', color: 'bg-stone-100 text-stone-800' },
-}
-
-// ============================================================================
-// COMPONENTE BADGE RUOLO
-// ============================================================================
-function RoleBadge({ role, size = 'normal' }) {
-  const config = ROLE_CONFIG[role] || { label: role, color: 'bg-gray-100 text-gray-800' }
-  const sizeClass = size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs'
-  
-  return (
-    <span className={`${config.color} ${sizeClass} rounded-full font-medium whitespace-nowrap`}>
-      {config.label}
-    </span>
-  )
-}
-
-// ============================================================================
-// COMPONENTE MODAL LISTA PERSONALE (per Assegnati e Da Assegnare)
-// ============================================================================
-function PersonnelListModal({ personnel, title, isOpen, onClose, type }) {
-  if (!isOpen) return null
-  
-  const bgColor = type === 'assigned' ? 'bg-green-600' : 'bg-amber-500'
-  
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-        {/* Header */}
-        <div className={`${bgColor} px-4 py-3 rounded-t-xl flex items-center justify-between`}>
-          <span className="font-semibold text-white text-lg">
-            {title} ({personnel.length})
-          </span>
-          <button 
-            onClick={onClose} 
-            className="p-1.5 hover:bg-white/20 rounded-lg transition-colors"
-          >
-            <X size={20} className="text-white" />
-          </button>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {personnel.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">Nessun personale</p>
-          ) : (
-            <div className="space-y-2">
-              {personnel.map(p => (
-                <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg">
-                  <span className="font-mono text-sm text-gray-600 w-10 text-center">{p.id_number || '—'}</span>
-                  <span className="font-mono text-xs bg-gray-200 px-2 py-1 rounded">{p.badge_number || '—'}</span>
-                  <div className="flex-1">
-                    <span className="font-medium text-gray-800">{p.last_name} {p.first_name}</span>
-                  </div>
-                  <RoleBadge role={p.position} size="small" />
-                  <span className="text-sm text-gray-500 flex items-center gap-1">
-                    {p.company?.is_main && <Star size={12} className="text-yellow-500 fill-yellow-500" />}
-                    <span className="max-w-32 truncate">{p.company?.company_name}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        {/* Footer */}
-        <div className="border-t px-4 py-3 bg-gray-50 rounded-b-xl">
-          <button
-            onClick={onClose}
-            className="w-full btn-secondary"
-          >
-            Chiudi
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ============================================================================
-// COMPONENTE SEARCHABLE SELECT (Combo ricerca + dropdown)
-// ============================================================================
-function SearchableSelect({ 
-  value, 
-  onChange, 
-  options, 
-  placeholder, 
-  label,
-  required,
-  companyFilter,
-  onCompanyFilterChange,
-  companies,
-  showCompanyFilter
-}) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const wrapperRef = useRef(null)
-  
-  // Chiudi dropdown quando clicco fuori
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-  
-  // Filtra opzioni
-  const filteredOptions = options.filter(opt => {
-    const matchesSearch = searchTerm === '' || 
-      opt.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (opt.badge && opt.badge.toLowerCase().includes(searchTerm.toLowerCase()))
-    const matchesCompany = !companyFilter || opt.company_id === companyFilter
-    return matchesSearch && matchesCompany
-  })
-  
-  // Trova opzione selezionata
-  const selectedOption = options.find(opt => opt.value === value)
-  
-  return (
-    <div ref={wrapperRef} className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label} {required && <span className="text-red-500">*</span>}
-      </label>
-      
-      {/* Filtro azienda */}
-      {showCompanyFilter && companies && (
-        <div className="mb-2">
-          <select
-            value={companyFilter || ''}
-            onChange={(e) => onCompanyFilterChange(e.target.value)}
-            className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-gray-50"
-          >
-            <option value="">Tutte le aziende</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.is_main && '★ '}{c.company_name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      
-      {/* Input con ricerca */}
-      <div 
-        className="relative cursor-pointer"
-        onClick={() => setIsOpen(true)}
-      >
-        <input
-          type="text"
-          value={isOpen ? searchTerm : (selectedOption?.label || '')}
-          onChange={(e) => {
-            setSearchTerm(e.target.value)
-            setIsOpen(true)
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder={placeholder}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary pr-10"
-        />
-        <ChevronDown 
-          size={18} 
-          className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
-        />
-      </div>
-      
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {/* Opzione vuota */}
-          <div
-            onClick={() => {
-              onChange('')
-              setIsOpen(false)
-              setSearchTerm('')
-            }}
-            className="px-3 py-2 hover:bg-gray-100 cursor-pointer text-gray-500 border-b"
-          >
-            {placeholder}
-          </div>
-          
-          {filteredOptions.length === 0 ? (
-            <div className="px-3 py-4 text-center text-gray-500 text-sm">
-              Nessun risultato
-            </div>
-          ) : (
-            filteredOptions.map(opt => (
-              <div
-                key={opt.value}
-                onClick={() => {
-                  onChange(opt.value)
-                  setIsOpen(false)
-                  setSearchTerm('')
-                }}
-                className={`px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2 ${
-                  value === opt.value ? 'bg-primary/10' : ''
-                }`}
-              >
-                {opt.badge && (
-                  <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{opt.badge}</span>
-                )}
-                <span className="flex-1">{opt.label}</span>
-                <RoleBadge role={opt.role} size="small" />
-                {opt.company?.is_main && (
-                  <Star size={12} className="text-yellow-500 fill-yellow-500" />
-                )}
-                {opt.assigned && (
-                  <span className="text-xs text-amber-600">(assegnato)</span>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
+const SQUAD_TYPES = {
+  piping: { label: 'Piping', color: 'bg-blue-100 text-blue-800' },
+  welding: { label: 'Saldatura', color: 'bg-orange-100 text-orange-800' },
+  supports: { label: 'Supporti', color: 'bg-green-100 text-green-800' },
+  mechanical: { label: 'Meccanica', color: 'bg-purple-100 text-purple-800' },
+  electrical: { label: 'Elettrica', color: 'bg-yellow-100 text-yellow-800' },
+  instrumentation: { label: 'Strumentazione', color: 'bg-cyan-100 text-cyan-800' }
 }
 
 // ============================================================================
 // COMPONENTE PRINCIPALE
 // ============================================================================
+
 export default function Squads() {
   const { t } = useTranslation()
   const { activeProject } = useProject()
   
-  // State principale
+  // Data state
   const [squads, setSquads] = useState([])
+  const [members, setMembers] = useState({}) // { squadId: [members] }
+  const [equipment, setEquipment] = useState({}) // { squadId: [equipment] }
   const [personnel, setPersonnel] = useState([])
-  const [companies, setCompanies] = useState([])
-  const [squadMembers, setSquadMembers] = useState({}) // { squadId: [members] }
-  const [equipmentList, setEquipmentList] = useState([]) // Tutti gli equipment
-  const [squadEquipment, setSquadEquipment] = useState({}) // { squadId: [equipment] }
+  const [availableEquipment, setAvailableEquipment] = useState([])
   const [loading, setLoading] = useState(true)
   
-  // UI State
-  const [expandedSquad, setExpandedSquad] = useState(null)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showAddMemberModal, setShowAddMemberModal] = useState(null) // squad id
-  const [showAddEquipmentModal, setShowAddEquipmentModal] = useState(null) // squad id
+  // UI state
+  const [showModal, setShowModal] = useState(false)
   const [editingSquad, setEditingSquad] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
-  const [activeTab, setActiveTab] = useState('personnel') // 'personnel' | 'equipment'
+  const [expandedSquad, setExpandedSquad] = useState(null)
+  const [showAssignMemberModal, setShowAssignMemberModal] = useState(null)
+  const [showAssignEquipmentModal, setShowAssignEquipmentModal] = useState(null)
   
-  // Popup state (click-based)
-  const [popupData, setPopupData] = useState(null) // { type: 'assigned'|'unassigned', role?: string, personnel: [], title: string }
-  const [equipmentPopupData, setEquipmentPopupData] = useState(null)
+  // Filter
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterType, setFilterType] = useState('')
   
-  // Form state per nuova squadra
+  // Form state
   const [formData, setFormData] = useState({
     name: '',
-    supervisorId: '',
-    foremanId: '',
+    squadType: 'piping',
     notes: ''
   })
-  
-  // Filtri per form squadra
-  const [supervisorCompanyFilter, setSupervisorCompanyFilter] = useState('')
-  const [foremanCompanyFilter, setForemanCompanyFilter] = useState('')
-  
-  // Filtri per aggiunta membri
-  const [memberSearch, setMemberSearch] = useState('')
-  const [memberRoleFilter, setMemberRoleFilter] = useState('')
-  const [memberCompanyFilter, setMemberCompanyFilter] = useState('')
-  const [selectedMembers, setSelectedMembers] = useState([])
-  
-  // Filtri per aggiunta equipment
-  const [equipmentSearch, setEquipmentSearch] = useState('')
-  const [equipmentCategoryFilter, setEquipmentCategoryFilter] = useState('')
-  const [selectedEquipment, setSelectedEquipment] = useState([])
 
   // ============================================================================
-  // CARICAMENTO DATI
+  // DATA LOADING
   // ============================================================================
+
   useEffect(() => {
-    if (activeProject) {
-      loadData()
-    }
+    if (activeProject) loadData()
   }, [activeProject])
 
   const loadData = async () => {
     try {
       setLoading(true)
       
-      // Carica companies
-      const { data: companiesData } = await supabase
-        .from('companies')
-        .select('*')
-        .eq('project_id', activeProject.id)
-        .eq('status', 'active')
-      setCompanies(companiesData || [])
-      
-      // Carica tutto il personale
-      const { data: personnelData } = await supabase
-        .from('personnel')
-        .select(`*, company:companies(id, company_name, is_main)`)
-        .eq('project_id', activeProject.id)
-        .eq('status', 'active')
-        .order('last_name')
-      setPersonnel(personnelData || [])
-      
-      // Carica tutti gli equipment
-      const { data: equipmentData } = await supabase
-        .from('equipment')
-        .select(`*, owner_company:companies(id, company_name, is_main)`)
-        .eq('project_id', activeProject.id)
-        .neq('status', 'inactive')
-        .order('type')
-      setEquipmentList(equipmentData || [])
-      
-      // Carica squadre
+      // Squads
       const { data: squadsData } = await supabase
         .from('squads')
-        .select(`
-          *,
-          supervisor:personnel!squads_supervisor_id_fkey(id, first_name, last_name, position),
-          foreman:personnel!squads_foreman_id_fkey(id, first_name, last_name, position)
-        `)
+        .select('*')
         .eq('project_id', activeProject.id)
         .eq('status', 'active')
         .order('squad_number')
       setSquads(squadsData || [])
       
-      // Carica membri per ogni squadra
+      // Squad members
+      const { data: membersData } = await supabase
+        .from('squad_members')
+        .select(`
+          *,
+          personnel:personnel_id(id, first_name, last_name, badge, role)
+        `)
+        .eq('status', 'active')
+      
       const membersMap = {}
+      ;(membersData || []).forEach(m => {
+        if (!membersMap[m.squad_id]) membersMap[m.squad_id] = []
+        membersMap[m.squad_id].push(m)
+      })
+      setMembers(membersMap)
+      
+      // Equipment assignments (ESCLUDI status='inactive')
+      const { data: equipmentAssignments } = await supabase
+        .from('equipment_assignments')
+        .select(`
+          *,
+          equipment:equipment_id(id, asset_code, type, category, description, status)
+        `)
+        .eq('status', 'active')
+      
       const equipmentMap = {}
-      for (const squad of (squadsData || [])) {
-        // Membri
-        const { data: members } = await supabase
-          .from('squad_members')
-          .select(`
-            *,
-            personnel:personnel(id, first_name, last_name, position, badge_number, company_id,
-              company:companies(id, company_name, is_main))
-          `)
-          .eq('squad_id', squad.id)
-          .eq('status', 'active')
-        membersMap[squad.id] = members || []
-        
-        // Equipment assegnati alla squadra
-        const { data: eqAssignments } = await supabase
-          .from('equipment_assignments')
-          .select(`
-            *,
-            equipment:equipment(id, category, type, description, plate_number, serial_number, ownership,
-              owner_company:companies(id, company_name, is_main))
-          `)
-          .eq('squad_id', squad.id)
-          .eq('status', 'active')
-        equipmentMap[squad.id] = eqAssignments || []
-      }
-      setSquadMembers(membersMap)
-      setSquadEquipment(equipmentMap)
+      ;(equipmentAssignments || []).forEach(ea => {
+        // IMPORTANTE: Escludi equipment con status='inactive'
+        if (ea.equipment && ea.equipment.status !== 'inactive') {
+          if (!equipmentMap[ea.squad_id]) equipmentMap[ea.squad_id] = []
+          equipmentMap[ea.squad_id].push(ea)
+        }
+      })
+      setEquipment(equipmentMap)
+      
+      // Available personnel (not in any squad)
+      const { data: personnelData } = await supabase
+        .from('personnel')
+        .select('*')
+        .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+      setPersonnel(personnelData || [])
+      
+      // Available equipment (not assigned, status='active')
+      const { data: allEquipment } = await supabase
+        .from('equipment')
+        .select('*')
+        .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+      
+      const assignedEquipmentIds = new Set(
+        (equipmentAssignments || [])
+          .filter(ea => ea.status === 'active')
+          .map(ea => ea.equipment_id)
+      )
+      
+      const available = (allEquipment || []).filter(e => !assignedEquipmentIds.has(e.id))
+      setAvailableEquipment(available)
       
     } catch (err) {
-      console.error('Error loading data:', err)
+      console.error('Error loading squads:', err)
     } finally {
       setLoading(false)
     }
   }
 
   // ============================================================================
-  // CALCOLI DASHBOARD
+  // STATS
   // ============================================================================
-  
-  // Personale diretto totale
-  const directPersonnel = personnel.filter(p => DIRECT_ROLES.includes(p.position))
-  
-  // Set di ID già assegnati a squadre (membri + foreman)
-  const assignedMemberIds = new Set()
-  Object.values(squadMembers).forEach(members => {
-    members.forEach(m => assignedMemberIds.add(m.personnel_id))
-  })
-  // Aggiungi anche foreman delle squadre
-  squads.forEach(s => {
-    if (s.foreman_id) assignedMemberIds.add(s.foreman_id)
-  })
-  
-  // Supervisori/Superintendent assegnati (contati UNA SOLA VOLTA)
-  const assignedSupervisorIds = new Set()
-  squads.forEach(s => {
-    if (s.supervisor_id) assignedSupervisorIds.add(s.supervisor_id)
-  })
-  
-  // Combina tutti gli assegnati (membri + foreman + supervisori unici)
-  const assignedIds = new Set([...assignedMemberIds, ...assignedSupervisorIds])
-  
-  // Personale assegnato vs da assegnare
-  const assignedDirect = directPersonnel.filter(p => assignedIds.has(p.id))
-  const unassignedDirect = directPersonnel.filter(p => !assignedIds.has(p.id))
-  
-  // Statistiche per ruolo (Supervisori contati una sola volta)
-  const roleStats = DIRECT_ROLES.map(role => {
-    const totalInRole = directPersonnel.filter(p => p.position === role)
-    const total = totalInRole.length
-    
-    let assigned
-    let assignedList
-    if (SUPERVISOR_ROLES.includes(role)) {
-      // Per supervisori, conta solo quelli nel set unico
-      assignedList = totalInRole.filter(p => assignedSupervisorIds.has(p.id))
-      assigned = assignedList.length
-    } else {
-      // Per altri ruoli, conta normalmente
-      assignedList = totalInRole.filter(p => assignedMemberIds.has(p.id))
-      assigned = assignedList.length
-    }
-    
-    const percentage = total > 0 ? Math.round((assigned / total) * 100) : 0
-    
-    return {
-      role,
-      label: ROLE_CONFIG[role]?.label || role,
-      total,
-      assigned,
-      unassigned: total - assigned,
-      percentage,
-      assignedList,
-      unassignedList: totalInRole.filter(p => 
-        SUPERVISOR_ROLES.includes(role) 
-          ? !assignedSupervisorIds.has(p.id)
-          : !assignedMemberIds.has(p.id)
-      )
-    }
-  }).filter(r => r.total > 0)
+
+  const stats = useMemo(() => ({
+    total: squads.length,
+    totalMembers: Object.values(members).flat().length,
+    totalEquipment: Object.values(equipment).flat().length,
+    avgSize: squads.length > 0 
+      ? Math.round(Object.values(members).flat().length / squads.length * 10) / 10 
+      : 0
+  }), [squads, members, equipment])
 
   // ============================================================================
-  // GESTIONE SQUADRE
+  // FILTER
   // ============================================================================
-  
-  const getNextSquadNumber = () => {
-    if (squads.length === 0) return 1
-    return Math.max(...squads.map(s => s.squad_number)) + 1
-  }
-  
+
+  const filteredSquads = useMemo(() => {
+    return squads.filter(s => {
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase()
+        if (!s.name?.toLowerCase().includes(search) &&
+            !s.squad_number?.toString().includes(search)) return false
+      }
+      if (filterType && s.squad_type !== filterType) return false
+      return true
+    })
+  }, [squads, searchTerm, filterType])
+
+  // ============================================================================
+  // FORM HANDLERS
+  // ============================================================================
+
   const resetForm = () => {
-    setFormData({ name: '', supervisorId: '', foremanId: '', notes: '' })
-    setSupervisorCompanyFilter('')
-    setForemanCompanyFilter('')
+    setFormData({ name: '', squadType: 'piping', notes: '' })
   }
-  
-  const handleCreateSquad = async () => {
-    if (!formData.foremanId) {
-      alert('Seleziona un Foreman per la squadra')
-      return
-    }
-    
+
+  const openAddModal = () => {
+    setEditingSquad(null)
+    resetForm()
+    setShowModal(true)
+  }
+
+  const openEditModal = (squad) => {
+    setFormData({
+      name: squad.name || '',
+      squadType: squad.squad_type || 'piping',
+      notes: squad.notes || ''
+    })
+    setEditingSquad(squad)
+    setShowModal(true)
+  }
+
+  // ============================================================================
+  // CRUD
+  // ============================================================================
+
+  const handleSave = async () => {
     try {
-      const squadNumber = getNextSquadNumber()
+      const dataToSave = {
+        project_id: activeProject.id,
+        name: formData.name.trim() || null,
+        squad_type: formData.squadType,
+        notes: formData.notes.trim() || null
+      }
       
-      const { data: newSquad, error } = await supabase
-        .from('squads')
-        .insert([{
-          project_id: activeProject.id,
-          squad_number: squadNumber,
-          name: formData.name.trim() || `Squadra ${squadNumber}`,
-          supervisor_id: formData.supervisorId || null,
-          foreman_id: formData.foremanId,
-          notes: formData.notes.trim() || null,
-          status: 'active'
-        }])
-        .select()
-        .single()
+      if (editingSquad) {
+        const { error } = await supabase
+          .from('squads')
+          .update(dataToSave)
+          .eq('id', editingSquad.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('squads')
+          .insert([dataToSave])
+        if (error) throw error
+      }
       
-      if (error) throw error
-      
-      setShowCreateModal(false)
+      setShowModal(false)
       resetForm()
       loadData()
     } catch (err) {
-      console.error('Error creating squad:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const handleUpdateSquad = async () => {
-    if (!editingSquad) return
-    
+
+  const handleDelete = async (squad) => {
     try {
-      const { error } = await supabase
-        .from('squads')
-        .update({
-          name: formData.name.trim() || `Squadra ${editingSquad.squad_number}`,
-          supervisor_id: formData.supervisorId || null,
-          foreman_id: formData.foremanId || editingSquad.foreman_id,
-          notes: formData.notes.trim() || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingSquad.id)
-      
-      if (error) throw error
-      
-      setEditingSquad(null)
-      resetForm()
-      loadData()
-    } catch (err) {
-      console.error('Error updating squad:', err)
-      alert('Errore: ' + err.message)
-    }
-  }
-  
-  const handleDeleteSquad = async (squad) => {
-    try {
-      // Prima rimuovi i membri
+      // Rimuovi membri
       await supabase
         .from('squad_members')
-        .delete()
+        .update({ status: 'inactive' })
         .eq('squad_id', squad.id)
       
-      // Poi elimina la squadra
+      // Rimuovi assegnazioni equipment
+      await supabase
+        .from('equipment_assignments')
+        .update({ status: 'inactive' })
+        .eq('squad_id', squad.id)
+      
+      // Soft delete squad
       const { error } = await supabase
         .from('squads')
-        .delete()
+        .update({ status: 'inactive' })
         .eq('id', squad.id)
-      
       if (error) throw error
       
       setShowDeleteConfirm(null)
       loadData()
     } catch (err) {
-      console.error('Error deleting squad:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const openEditModal = (squad) => {
-    setFormData({
-      name: squad.name || '',
-      supervisorId: squad.supervisor_id || '',
-      foremanId: squad.foreman_id || '',
-      notes: squad.notes || ''
-    })
-    setSupervisorCompanyFilter('')
-    setForemanCompanyFilter('')
-    setEditingSquad(squad)
-  }
 
   // ============================================================================
-  // GESTIONE MEMBRI
+  // MEMBER MANAGEMENT
   // ============================================================================
-  
-  // Personale disponibile per aggiunta (diretti non ancora assegnati)
-  const availableForAssignment = personnel.filter(p => 
-    DIRECT_ROLES.includes(p.position) && 
-    !assignedMemberIds.has(p.id) &&
-    !SUPERVISOR_ROLES.includes(p.position) // Supervisori gestiti separatamente
-  )
-  
-  // Filtro membri disponibili
-  const filteredAvailable = availableForAssignment.filter(p => {
-    const searchLower = memberSearch.toLowerCase()
-    const matchesSearch = 
-      p.first_name?.toLowerCase().includes(searchLower) ||
-      p.last_name?.toLowerCase().includes(searchLower) ||
-      p.badge_number?.toLowerCase().includes(searchLower)
-    const matchesRole = !memberRoleFilter || p.position === memberRoleFilter
-    const matchesCompany = !memberCompanyFilter || p.company_id === memberCompanyFilter
-    return matchesSearch && matchesRole && matchesCompany
-  })
-  
-  const handleAddMembers = async () => {
-    if (!showAddMemberModal || selectedMembers.length === 0) return
-    
+
+  const handleAddMember = async (squadId, personnelId) => {
     try {
-      const inserts = selectedMembers.map(personnelId => ({
-        squad_id: showAddMemberModal,
+      await supabase.from('squad_members').insert([{
+        squad_id: squadId,
         personnel_id: personnelId,
         status: 'active'
-      }))
-      
-      const { error } = await supabase
-        .from('squad_members')
-        .insert(inserts)
-      
-      if (error) throw error
-      
-      setShowAddMemberModal(null)
-      setSelectedMembers([])
-      setMemberSearch('')
-      setMemberRoleFilter('')
-      setMemberCompanyFilter('')
+      }])
+      setShowAssignMemberModal(null)
       loadData()
     } catch (err) {
-      console.error('Error adding members:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const handleRemoveMember = async (squadId, memberId) => {
+
+  const handleRemoveMember = async (memberId) => {
     try {
-      const { error } = await supabase
+      await supabase
         .from('squad_members')
-        .update({ status: 'removed', removed_at: new Date().toISOString() })
+        .update({ status: 'inactive' })
         .eq('id', memberId)
-      
-      if (error) throw error
-      
       loadData()
     } catch (err) {
-      console.error('Error removing member:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const toggleMemberSelection = (personnelId) => {
-    setSelectedMembers(prev => 
-      prev.includes(personnelId) 
-        ? prev.filter(id => id !== personnelId)
-        : [...prev, personnelId]
-    )
-  }
 
   // ============================================================================
-  // GESTIONE EQUIPMENT
+  // EQUIPMENT MANAGEMENT
   // ============================================================================
-  
-  // Equipment già assegnati (a qualsiasi squadra)
-  const assignedEquipmentIds = new Set()
-  Object.values(squadEquipment).forEach(eqList => {
-    eqList.forEach(eq => assignedEquipmentIds.add(eq.equipment_id))
-  })
-  
-  // Equipment disponibili (non assegnati)
-  const availableEquipment = equipmentList.filter(eq => !assignedEquipmentIds.has(eq.id))
-  
-  // Stats equipment
-  const equipmentAssigned = equipmentList.filter(eq => assignedEquipmentIds.has(eq.id))
-  const equipmentUnassigned = equipmentList.filter(eq => !assignedEquipmentIds.has(eq.id))
-  
-  const handleAddEquipment = async () => {
-    if (selectedEquipment.length === 0) {
-      alert('Seleziona almeno un equipment')
-      return
-    }
-    
+
+  const handleAssignEquipment = async (squadId, equipmentId) => {
     try {
-      const assignments = selectedEquipment.map(eqId => ({
-        equipment_id: eqId,
-        squad_id: showAddEquipmentModal,
+      await supabase.from('equipment_assignments').insert([{
+        equipment_id: equipmentId,
+        squad_id: squadId,
         status: 'active'
-      }))
-      
-      const { error } = await supabase
-        .from('equipment_assignments')
-        .insert(assignments)
-      
-      if (error) throw error
-      
-      setShowAddEquipmentModal(null)
-      setSelectedEquipment([])
-      setEquipmentSearch('')
-      setEquipmentCategoryFilter('')
+      }])
+      setShowAssignEquipmentModal(null)
       loadData()
     } catch (err) {
-      console.error('Error adding equipment:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const handleRemoveEquipment = async (squadId, assignmentId) => {
+
+  const handleRemoveEquipment = async (assignmentId) => {
     try {
-      const { error } = await supabase
+      await supabase
         .from('equipment_assignments')
-        .update({ status: 'removed', removed_at: new Date().toISOString() })
+        .update({ status: 'inactive' })
         .eq('id', assignmentId)
-      
-      if (error) throw error
-      
       loadData()
     } catch (err) {
-      console.error('Error removing equipment:', err)
       alert('Errore: ' + err.message)
     }
   }
-  
-  const toggleEquipmentSelection = (equipmentId) => {
-    setSelectedEquipment(prev => 
-      prev.includes(equipmentId) 
-        ? prev.filter(id => id !== equipmentId)
-        : [...prev, equipmentId]
-    )
-  }
-  
-  // Filtra equipment per modal
-  const filteredAvailableEquipment = availableEquipment.filter(eq => {
-    const matchesSearch = equipmentSearch === '' ||
-      eq.type?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      eq.description?.toLowerCase().includes(equipmentSearch.toLowerCase()) ||
-      eq.plate_number?.toLowerCase().includes(equipmentSearch.toLowerCase())
-    const matchesCategory = !equipmentCategoryFilter || eq.category === equipmentCategoryFilter
-    return matchesSearch && matchesCategory
-  })
 
   // ============================================================================
-  // OPZIONI PER SEARCHABLE SELECT
+  // HELPERS
   // ============================================================================
-  
-  // Opzioni supervisori
-  const supervisorOptions = personnel
-    .filter(p => SUPERVISOR_ROLES.includes(p.position))
-    .map(p => ({
-      value: p.id,
-      label: `${p.last_name} ${p.first_name}`,
-      badge: p.badge_number,
-      role: p.position,
-      company_id: p.company_id,
-      company: p.company,
-      assigned: assignedSupervisorIds.has(p.id) && p.id !== editingSquad?.supervisor_id
-    }))
-  
-  // Opzioni foreman
-  const foremanOptions = personnel
-    .filter(p => FOREMAN_ROLES.includes(p.position))
-    .filter(p => !assignedMemberIds.has(p.id) || p.id === editingSquad?.foreman_id)
-    .map(p => ({
-      value: p.id,
-      label: `${p.last_name} ${p.first_name}`,
-      badge: p.badge_number,
-      role: p.position,
-      company_id: p.company_id,
-      company: p.company,
-      assigned: assignedMemberIds.has(p.id)
-    }))
+
+  const getAvailablePersonnel = (squadId) => {
+    const squadMemberIds = new Set((members[squadId] || []).map(m => m.personnel_id))
+    const allSquadMemberIds = new Set(Object.values(members).flat().map(m => m.personnel_id))
+    return personnel.filter(p => !allSquadMemberIds.has(p.id))
+  }
+
+  const getEquipmentIcon = (category) => {
+    switch (category) {
+      case 'vehicle': return Truck
+      case 'equipment': return Package
+      case 'tool': return Wrench
+      default: return Package
+    }
+  }
 
   // ============================================================================
   // RENDER
   // ============================================================================
-  
+
   if (!activeProject) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <Users size={64} className="text-gray-300 mb-4" />
+        <UsersRound size={64} className="text-gray-300 mb-4" />
         <p className="text-gray-500">Seleziona un progetto</p>
       </div>
     )
@@ -793,386 +358,242 @@ export default function Squads() {
     )
   }
 
-  // Ruoli disponibili per filtro (solo quelli con personale non assegnato)
-  const availableRolesForFilter = [...new Set(availableForAssignment.map(p => p.position))]
-
   return (
-    <div className="space-y-6">
-      {/* ============ HEADER ============ */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="space-y-4 md:space-y-6 pb-20">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Users className="text-primary" />
-            Squadre
+          <h1 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <UsersRound className="text-primary" size={24} />
+            {t('squad.title')}
           </h1>
-          <p className="text-gray-500 mt-1">
-            {activeProject.name} • {squads.length} squadre attive
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{activeProject.name}</p>
         </div>
-        
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="btn-primary flex items-center gap-2"
-        >
+        <button onClick={openAddModal} className="btn-primary flex items-center justify-center gap-2 w-full sm:w-auto py-3 sm:py-2">
           <Plus size={20} />
-          Nuova Squadra
+          {t('squad.newSquad')}
         </button>
       </div>
 
-      {/* ============ DASHBOARD PERSONALE DIRETTO ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">
-          Personale Diretto
-        </h2>
-        
-        {/* Riepilogo totale */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-gray-50 rounded-lg p-4 text-center">
-            <div className="text-3xl font-bold text-gray-800">{directPersonnel.length}</div>
-            <div className="text-sm text-gray-500">Totale</div>
+      {/* STATS */}
+      <div className="bg-white rounded-xl border p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-blue-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-blue-700">{stats.total}</div>
+            <div className="text-xs text-blue-600">Squadre</div>
           </div>
-          
-          {/* Assegnati - Click per vedere lista */}
-          <div 
-            className="bg-green-50 rounded-lg p-4 text-center cursor-pointer hover:bg-green-100 transition-colors"
-            onClick={() => setPopupData({
-              type: 'assigned',
-              personnel: assignedDirect,
-              title: 'Personale Assegnato'
-            })}
-          >
-            <div className="text-3xl font-bold text-green-600">{assignedDirect.length}</div>
-            <div className="text-sm text-gray-500">Assegnati</div>
+          <div className="bg-green-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-green-700">{stats.totalMembers}</div>
+            <div className="text-xs text-green-600">Membri Totali</div>
           </div>
-          
-          {/* Da Assegnare - Click per vedere lista */}
-          <div 
-            className="bg-amber-50 rounded-lg p-4 text-center cursor-pointer hover:bg-amber-100 transition-colors"
-            onClick={() => setPopupData({
-              type: 'unassigned',
-              personnel: unassignedDirect,
-              title: 'Personale Da Assegnare'
-            })}
-          >
-            <div className="text-3xl font-bold text-amber-600">{unassignedDirect.length}</div>
-            <div className="text-sm text-gray-500">Da Assegnare</div>
+          <div className="bg-purple-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-purple-700">{stats.totalEquipment}</div>
+            <div className="text-xs text-purple-600">Mezzi Assegnati</div>
           </div>
-        </div>
-        
-        {/* Dettaglio per ruolo */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-2 px-3 font-medium text-gray-600">Ruolo</th>
-                <th className="text-center py-2 px-3 font-medium text-gray-600">Totale</th>
-                <th className="text-center py-2 px-3 font-medium text-gray-600">Assegnati</th>
-                <th className="text-center py-2 px-3 font-medium text-gray-600">Da Assegnare</th>
-                <th className="text-left py-2 px-3 font-medium text-gray-600">Progresso</th>
-              </tr>
-            </thead>
-            <tbody>
-              {roleStats.map(stat => (
-                <tr key={stat.role} className="border-b border-gray-100">
-                  <td className="py-2 px-3">
-                    <RoleBadge role={stat.role} />
-                  </td>
-                  <td className="py-2 px-3 text-center font-medium">{stat.total}</td>
-                  
-                  {/* Assegnati - Click */}
-                  <td className="py-2 px-3 text-center">
-                    <span 
-                      className={`text-green-600 ${stat.assigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                      onClick={() => stat.assigned > 0 && setPopupData({
-                        type: 'assigned',
-                        personnel: stat.assignedList,
-                        title: `${ROLE_CONFIG[stat.role]?.label || stat.role} Assegnati`
-                      })}
-                    >
-                      {stat.assigned}
-                    </span>
-                  </td>
-                  
-                  {/* Da Assegnare - Click */}
-                  <td className="py-2 px-3 text-center">
-                    <span 
-                      className={`text-amber-600 ${stat.unassigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                      onClick={() => stat.unassigned > 0 && setPopupData({
-                        type: 'unassigned',
-                        personnel: stat.unassignedList,
-                        title: `${ROLE_CONFIG[stat.role]?.label || stat.role} Da Assegnare`
-                      })}
-                    >
-                      {stat.unassigned}
-                    </span>
-                  </td>
-                  
-                  {/* Progresso con percentuale */}
-                  <td className="py-2 px-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className="bg-green-500 h-2 rounded-full transition-all"
-                          style={{ width: `${stat.percentage}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-medium text-gray-600 w-10 text-right">{stat.percentage}%</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="bg-amber-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-amber-700">{stats.avgSize}</div>
+            <div className="text-xs text-amber-600">Media Membri</div>
+          </div>
         </div>
       </div>
 
-      {/* ============ LISTA SQUADRE ============ */}
-      <div className="space-y-4">
-        {squads.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-            <Users size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500 mb-4">Nessuna squadra creata</p>
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary"
-            >
-              Crea la prima squadra
-            </button>
+      {/* FILTERS */}
+      <div className="bg-white rounded-xl border p-3">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Cerca squadra..."
+              className="w-full pl-10 pr-4 py-3 border rounded-lg text-sm"
+            />
+          </div>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="px-3 py-3 border rounded-lg text-sm min-w-[150px]"
+          >
+            <option value="">Tutti i tipi</option>
+            {Object.entries(SQUAD_TYPES).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* SQUADS LIST */}
+      <div className="space-y-3">
+        {filteredSquads.length === 0 ? (
+          <div className="bg-white rounded-xl border p-8 text-center">
+            <UsersRound size={48} className="mx-auto text-gray-300 mb-4" />
+            <p className="text-gray-500 mb-4">
+              {squads.length === 0 ? t('squad.noSquads') : 'Nessun risultato'}
+            </p>
+            {squads.length === 0 && (
+              <button onClick={openAddModal} className="btn-primary">
+                <Plus size={18} className="mr-2" />
+                {t('squad.newSquad')}
+              </button>
+            )}
           </div>
         ) : (
-          squads.map(squad => {
-            const members = squadMembers[squad.id] || []
+          filteredSquads.map(squad => {
+            const squadMembers = members[squad.id] || []
+            const squadEquipment = equipment[squad.id] || []
             const isExpanded = expandedSquad === squad.id
+            const typeConfig = SQUAD_TYPES[squad.squad_type] || { label: squad.squad_type, color: 'bg-gray-100 text-gray-800' }
             
             return (
-              <div key={squad.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                {/* Header squadra */}
+              <div key={squad.id} className="bg-white rounded-xl border overflow-hidden">
+                {/* Squad Header */}
                 <div 
-                  className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
+                  className="p-4 cursor-pointer hover:bg-gray-50"
                   onClick={() => setExpandedSquad(isExpanded ? null : squad.id)}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-lg text-gray-800">
+                          {squad.name || `Squadra ${squad.squad_number}`}
+                        </span>
+                        <span className={`${typeConfig.color} px-2 py-0.5 rounded-full text-xs font-medium`}>
+                          {typeConfig.label}
+                        </span>
+                      </div>
+                      {/* CONTATORE MEMBRI E MEZZI */}
+                      <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
+                        <span className="flex items-center gap-1">
+                          <Users size={14} />
+                          {squadMembers.length} Membr{squadMembers.length === 1 ? 'o' : 'i'}
+                        </span>
+                        <span className="text-gray-300">|</span>
+                        <span className="flex items-center gap-1">
+                          <Truck size={14} />
+                          {squadEquipment.length} Mezz{squadEquipment.length === 1 ? 'o' : 'i'}
+                        </span>
+                      </div>
+                    </div>
+                    
                     <div className="flex items-center gap-2">
-                      {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
-                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                        <span className="text-primary font-bold">{squad.squad_number}</span>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <h3 className="font-semibold text-gray-800">
-                        {squad.name || `Squadra ${squad.squad_number}`}
-                      </h3>
-                      <div className="flex items-center gap-4 text-sm text-gray-500">
-                        {squad.supervisor && (
-                          <span className="flex items-center gap-1">
-                            <Star size={12} className="text-yellow-500" />
-                            Sup: {squad.supervisor.first_name} {squad.supervisor.last_name}
-                          </span>
-                        )}
-                        {squad.foreman && (
-                          <span className="flex items-center gap-1">
-                            <User size={12} />
-                            Foreman: {squad.foreman.first_name} {squad.foreman.last_name}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-gray-800">{members.length}</div>
-                      <div className="text-xs text-gray-500">Membri</div>
-                    </div>
-                    
-                    <div className="flex gap-2" onClick={e => e.stopPropagation()}>
                       <button
-                        onClick={() => setShowAddMemberModal(squad.id)}
-                        className="p-2 hover:bg-green-100 rounded-lg text-green-600"
-                        title="Aggiungi membri"
-                      >
-                        <UserPlus size={18} />
-                      </button>
-                      <button
-                        onClick={() => setShowAddEquipmentModal(squad.id)}
+                        onClick={(e) => { e.stopPropagation(); openEditModal(squad) }}
                         className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
-                        title="Aggiungi equipment"
-                      >
-                        <Truck size={18} />
-                      </button>
-                      <button
-                        onClick={() => openEditModal(squad)}
-                        className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
-                        title="Modifica"
                       >
                         <Edit size={18} />
                       </button>
                       <button
-                        onClick={() => setShowDeleteConfirm(squad)}
+                        onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(squad) }}
                         className="p-2 hover:bg-red-100 rounded-lg text-red-600"
-                        title="Elimina"
                       >
                         <Trash2 size={18} />
                       </button>
+                      {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                     </div>
                   </div>
                 </div>
                 
-                {/* Contenuto squadra espanso con TAB */}
+                {/* Expanded Content */}
                 {isExpanded && (
-                  <div className="border-t border-gray-200 bg-gray-50">
-                    {/* Tab Headers */}
-                    <div className="flex border-b border-gray-200">
-                      <button
-                        onClick={() => setActiveTab('personnel')}
-                        className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                          activeTab === 'personnel' 
-                            ? 'text-primary border-b-2 border-primary bg-white' 
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        <Users size={16} />
-                        Personale ({members.length})
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('equipment')}
-                        className={`flex-1 px-4 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                          activeTab === 'equipment' 
-                            ? 'text-primary border-b-2 border-primary bg-white' 
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        <Truck size={16} />
-                        Mezzi/Equipment ({(squadEquipment[squad.id] || []).length})
-                      </button>
+                  <div className="border-t">
+                    {/* Members Section */}
+                    <div className="p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-700 flex items-center gap-2">
+                          <Users size={16} />
+                          Membri ({squadMembers.length})
+                        </h4>
+                        <button
+                          onClick={() => setShowAssignMemberModal(squad.id)}
+                          className="text-sm px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 flex items-center gap-1"
+                        >
+                          <Plus size={14} />
+                          Aggiungi
+                        </button>
+                      </div>
+                      
+                      {squadMembers.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-4">Nessun membro</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {squadMembers.map(m => (
+                            <div key={m.id} className="flex items-center justify-between bg-white rounded-lg p-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                  <User size={16} className="text-blue-600" />
+                                </div>
+                                <div>
+                                  <div className="font-medium text-sm">
+                                    {m.personnel?.first_name} {m.personnel?.last_name}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {m.personnel?.badge && `#${m.personnel.badge} • `}
+                                    {m.personnel?.role}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleRemoveMember(m.id)}
+                                className="p-1.5 hover:bg-red-100 rounded text-red-600"
+                              >
+                                <X size={16} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
-                    {/* Tab Content: Personale */}
-                    {activeTab === 'personnel' && (
-                      <div className="p-4">
-                        {members.length === 0 ? (
-                          <p className="text-gray-500 text-center py-4">
-                            Nessun membro assegnato. 
-                            <button 
-                              onClick={() => setShowAddMemberModal(squad.id)}
-                              className="text-primary hover:underline ml-2"
-                            >
-                              Aggiungi membri
-                            </button>
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {members.map(member => (
-                              <div 
-                                key={member.id}
-                                className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200"
-                              >
+                    {/* Equipment Section */}
+                    <div className="p-4 border-t">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-medium text-gray-700 flex items-center gap-2">
+                          <Truck size={16} />
+                          Mezzi Assegnati ({squadEquipment.length})
+                        </h4>
+                        <button
+                          onClick={() => setShowAssignEquipmentModal(squad.id)}
+                          className="text-sm px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 flex items-center gap-1"
+                        >
+                          <Plus size={14} />
+                          Assegna
+                        </button>
+                      </div>
+                      
+                      {squadEquipment.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-4">Nessun mezzo assegnato</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {squadEquipment.map(ea => {
+                            const Icon = getEquipmentIcon(ea.equipment?.category)
+                            return (
+                              <div key={ea.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
                                 <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm font-medium">
-                                    {member.personnel?.first_name?.charAt(0)}{member.personnel?.last_name?.charAt(0)}
+                                  <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                                    <Icon size={16} className="text-purple-600" />
                                   </div>
                                   <div>
-                                    <div className="font-medium text-sm">
-                                      {member.personnel?.last_name} {member.personnel?.first_name}
+                                    <div className="font-medium text-sm font-mono">
+                                      {ea.equipment?.asset_code}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <RoleBadge role={member.personnel?.position} size="small" />
-                                      {member.personnel?.company?.is_main && (
-                                        <Star size={10} className="text-yellow-500 fill-yellow-500" />
-                                      )}
+                                    <div className="text-xs text-gray-500">
+                                      {ea.equipment?.type} {ea.equipment?.description && `- ${ea.equipment.description}`}
                                     </div>
                                   </div>
                                 </div>
                                 <button
-                                  onClick={() => handleRemoveMember(squad.id, member.id)}
-                                  className="p-1.5 hover:bg-red-100 rounded text-red-500"
-                                  title="Rimuovi"
+                                  onClick={() => handleRemoveEquipment(ea.id)}
+                                  className="p-1.5 hover:bg-red-100 rounded text-red-600"
                                 >
-                                  <UserMinus size={16} />
+                                  <X size={16} />
                                 </button>
                               </div>
-                            ))}
-                          </div>
-                        )}
-                        
-                        {/* Bottone aggiungi membri */}
-                        <div className="mt-4 text-center">
-                          <button
-                            onClick={() => setShowAddMemberModal(squad.id)}
-                            className="btn-secondary text-sm"
-                          >
-                            <UserPlus size={16} className="mr-2" />
-                            Aggiungi membri
-                          </button>
+                            )
+                          })}
                         </div>
-                      </div>
-                    )}
-                    
-                    {/* Tab Content: Equipment */}
-                    {activeTab === 'equipment' && (
-                      <div className="p-4">
-                        {(squadEquipment[squad.id] || []).length === 0 ? (
-                          <p className="text-gray-500 text-center py-4">
-                            Nessun mezzo/equipment assegnato. 
-                            <button 
-                              onClick={() => setShowAddEquipmentModal(squad.id)}
-                              className="text-primary hover:underline ml-2"
-                            >
-                              Aggiungi equipment
-                            </button>
-                          </p>
-                        ) : (
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {(squadEquipment[squad.id] || []).map(assignment => {
-                              const eq = assignment.equipment
-                              const catConfig = EQUIPMENT_CATEGORIES[eq?.category] || { label: eq?.category, color: 'bg-gray-100 text-gray-800', icon: Package }
-                              const CatIcon = catConfig.icon
-                              return (
-                                <div 
-                                  key={assignment.id}
-                                  className="flex items-center justify-between bg-white rounded-lg p-3 border border-gray-200"
-                                >
-                                  <div className="flex items-center gap-3">
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${catConfig.color}`}>
-                                      <CatIcon size={16} />
-                                    </div>
-                                    <div>
-                                      <div className="font-medium text-sm">
-                                        {eq?.type}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-xs text-gray-500">
-                                          {eq?.description || eq?.plate_number || eq?.serial_number || '—'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <button
-                                    onClick={() => handleRemoveEquipment(squad.id, assignment.id)}
-                                    className="p-1.5 hover:bg-red-100 rounded text-red-500"
-                                    title="Rimuovi"
-                                  >
-                                    <X size={16} />
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                        
-                        {/* Bottone aggiungi equipment */}
-                        <div className="mt-4 text-center">
-                          <button
-                            onClick={() => setShowAddEquipmentModal(squad.id)}
-                            className="btn-secondary text-sm"
-                          >
-                            <Truck size={16} className="mr-2" />
-                            Aggiungi equipment
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1181,257 +602,181 @@ export default function Squads() {
         )}
       </div>
 
-      {/* ============ MODAL CREA/MODIFICA SQUADRA ============ */}
-      {(showCreateModal || editingSquad) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
-              <h2 className="text-xl font-bold text-gray-800">
-                {editingSquad ? `Modifica Squadra ${editingSquad.squad_number}` : 'Nuova Squadra'}
+      {/* MODAL NUOVA/MODIFICA SQUADRA */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-md rounded-t-xl">
+            <div className="border-b p-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">
+                {editingSquad ? t('squad.editSquad') : t('squad.newSquad')}
               </h2>
-              <button 
-                onClick={() => { setShowCreateModal(false); setEditingSquad(null); resetForm(); }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
+              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X size={20} />
               </button>
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Nome */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome Squadra
+                  {t('squad.squadName')}
                 </label>
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder={`Squadra ${editingSquad?.squad_number || getNextSquadNumber()}`}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-3 border rounded-lg"
+                  placeholder="Es: Squadra Piping A"
                 />
               </div>
               
-              {/* Supervisore con SearchableSelect */}
-              <SearchableSelect
-                value={formData.supervisorId}
-                onChange={(val) => setFormData({...formData, supervisorId: val})}
-                options={supervisorOptions}
-                placeholder="-- Seleziona Supervisore --"
-                label="Supervisore Responsabile"
-                companyFilter={supervisorCompanyFilter}
-                onCompanyFilterChange={setSupervisorCompanyFilter}
-                companies={companies}
-                showCompanyFilter={true}
-              />
-              
-              {/* Foreman con SearchableSelect */}
-              <SearchableSelect
-                value={formData.foremanId}
-                onChange={(val) => setFormData({...formData, foremanId: val})}
-                options={foremanOptions}
-                placeholder="-- Seleziona Foreman --"
-                label="Foreman Caposquadra"
-                required={true}
-                companyFilter={foremanCompanyFilter}
-                onCompanyFilterChange={setForemanCompanyFilter}
-                companies={companies}
-                showCompanyFilter={true}
-              />
-              
-              {/* Note */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Note
+                  {t('squad.squadType')}
                 </label>
+                <select
+                  value={formData.squadType}
+                  onChange={(e) => setFormData({ ...formData, squadType: e.target.value })}
+                  className="w-full px-3 py-3 border rounded-lg"
+                >
+                  {Object.entries(SQUAD_TYPES).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
                 <textarea
                   value={formData.notes}
-                  onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  rows={3}
-                  placeholder="Note opzionali..."
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg"
                 />
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
+            <div className="border-t p-4 flex gap-2">
               <button
-                onClick={() => { setShowCreateModal(false); setEditingSquad(null); resetForm(); }}
-                className="btn-secondary"
+                onClick={() => setShowModal(false)}
+                className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium"
               >
-                Annulla
+                {t('common.cancel')}
               </button>
               <button
-                onClick={editingSquad ? handleUpdateSquad : handleCreateSquad}
-                className="btn-primary"
+                onClick={handleSave}
+                className="flex-1 px-4 py-3 bg-primary text-white rounded-lg font-medium flex items-center justify-center gap-2"
               >
-                {editingSquad ? 'Salva Modifiche' : 'Crea Squadra'}
+                <Check size={18} />
+                {t('common.save')}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============ MODAL AGGIUNGI MEMBRI ============ */}
-      {showAddMemberModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-800">
-                Aggiungi Membri - {squads.find(s => s.id === showAddMemberModal)?.name || 'Squadra'}
-              </h2>
-              <button 
-                onClick={() => { 
-                  setShowAddMemberModal(null)
-                  setSelectedMembers([])
-                  setMemberSearch('')
-                  setMemberRoleFilter('')
-                  setMemberCompanyFilter('')
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
+      {/* MODAL ASSEGNA MEMBRO */}
+      {showAssignMemberModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-md max-h-[70vh] flex flex-col rounded-t-xl">
+            <div className="border-b p-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">Aggiungi Membro</h2>
+              <button onClick={() => setShowAssignMemberModal(null)} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X size={20} />
               </button>
             </div>
             
-            {/* Filtri */}
-            <div className="p-4 border-b bg-gray-50 space-y-3">
-              <div className="flex gap-3">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                  <input
-                    type="text"
-                    value={memberSearch}
-                    onChange={(e) => setMemberSearch(e.target.value)}
-                    className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                    placeholder="Cerca nome, cognome, badge..."
-                  />
-                </div>
-              </div>
-              
-              <div className="flex gap-3">
-                <select
-                  value={memberRoleFilter}
-                  onChange={(e) => setMemberRoleFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Tutti i ruoli</option>
-                  {availableRolesForFilter.map(role => (
-                    <option key={role} value={role}>{ROLE_CONFIG[role]?.label || role}</option>
-                  ))}
-                </select>
-                
-                <select
-                  value={memberCompanyFilter}
-                  onChange={(e) => setMemberCompanyFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Tutte le aziende</option>
-                  {companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.company_name}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {selectedMembers.length > 0 && (
-                <div className="flex items-center justify-between bg-primary/10 rounded-lg px-3 py-2">
-                  <span className="text-sm font-medium text-primary">
-                    {selectedMembers.length} selezionati
-                  </span>
-                  <button
-                    onClick={() => setSelectedMembers([])}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Deseleziona tutti
-                  </button>
-                </div>
-              )}
-            </div>
-            
-            {/* Lista personale disponibile */}
             <div className="flex-1 overflow-y-auto p-4">
-              {filteredAvailable.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">
-                  Nessun personale disponibile con i filtri selezionati
-                </p>
+              {getAvailablePersonnel(showAssignMemberModal).length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nessun personale disponibile</p>
               ) : (
                 <div className="space-y-2">
-                  {filteredAvailable.map(person => (
-                    <div 
-                      key={person.id}
-                      onClick={() => toggleMemberSelection(person.id)}
-                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                        selectedMembers.includes(person.id)
-                          ? 'border-primary bg-primary/5'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                      }`}
+                  {getAvailablePersonnel(showAssignMemberModal).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleAddMember(showAssignMemberModal, p.id)}
+                      className="w-full flex items-center gap-3 p-3 bg-gray-50 hover:bg-blue-50 rounded-lg text-left"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${
-                          selectedMembers.includes(person.id)
-                            ? 'bg-primary border-primary'
-                            : 'border-gray-300'
-                        }`}>
-                          {selectedMembers.includes(person.id) && (
-                            <Check size={14} className="text-white" />
-                          )}
-                        </div>
-                        
-                        <div>
-                          <div className="font-medium">
-                            <span className="text-gray-500 font-mono text-sm mr-2">{person.badge_number}</span>
-                            {person.last_name} {person.first_name}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <RoleBadge role={person.position} size="small" />
-                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                              {person.company?.is_main && <Star size={10} className="text-yellow-500 fill-yellow-500" />}
-                              {person.company?.company_name}
-                            </span>
-                          </div>
-                        </div>
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <User size={20} className="text-blue-600" />
                       </div>
-                    </div>
+                      <div>
+                        <div className="font-medium">{p.first_name} {p.last_name}</div>
+                        <div className="text-xs text-gray-500">{p.badge && `#${p.badge} • `}{p.role}</div>
+                      </div>
+                    </button>
                   ))}
                 </div>
               )}
             </div>
             
-            {/* Footer */}
-            <div className="flex justify-between items-center p-4 border-t bg-gray-50">
-              <span className="text-sm text-gray-500">
-                {filteredAvailable.length} disponibili
-              </span>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { 
-                    setShowAddMemberModal(null)
-                    setSelectedMembers([])
-                  }}
-                  className="btn-secondary"
-                >
-                  Annulla
-                </button>
-                <button
-                  onClick={handleAddMembers}
-                  disabled={selectedMembers.length === 0}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <UserPlus size={18} className="mr-2" />
-                  Aggiungi {selectedMembers.length > 0 ? `(${selectedMembers.length})` : ''}
-                </button>
-              </div>
+            <div className="border-t p-4">
+              <button
+                onClick={() => setShowAssignMemberModal(null)}
+                className="w-full py-3 bg-gray-200 rounded-lg font-medium"
+              >
+                Chiudi
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============ MODAL CONFERMA ELIMINAZIONE ============ */}
+      {/* MODAL ASSEGNA MEZZO */}
+      {showAssignEquipmentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-md max-h-[70vh] flex flex-col rounded-t-xl">
+            <div className="border-b p-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-800">Assegna Mezzo</h2>
+              <button onClick={() => setShowAssignEquipmentModal(null)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4">
+              {availableEquipment.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nessun mezzo disponibile</p>
+              ) : (
+                <div className="space-y-2">
+                  {availableEquipment.map(e => {
+                    const Icon = getEquipmentIcon(e.category)
+                    return (
+                      <button
+                        key={e.id}
+                        onClick={() => handleAssignEquipment(showAssignEquipmentModal, e.id)}
+                        className="w-full flex items-center gap-3 p-3 bg-gray-50 hover:bg-purple-50 rounded-lg text-left"
+                      >
+                        <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                          <Icon size={20} className="text-purple-600" />
+                        </div>
+                        <div>
+                          <div className="font-medium font-mono">{e.asset_code}</div>
+                          <div className="text-xs text-gray-500">{e.type} {e.description && `- ${e.description}`}</div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            
+            <div className="border-t p-4">
+              <button
+                onClick={() => setShowAssignEquipmentModal(null)}
+                className="w-full py-3 bg-gray-200 rounded-lg font-medium"
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFERMA ELIMINAZIONE */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <AlertTriangle className="text-red-600" size={24} />
               </div>
               <div>
@@ -1441,146 +786,23 @@ export default function Squads() {
                 </p>
               </div>
             </div>
-            
-            <p className="text-gray-600 mb-6">
-              Sei sicuro di voler eliminare questa squadra? 
-              I membri verranno rimossi e torneranno disponibili per l'assegnazione.
+            <p className="text-gray-600 mb-4">
+              Sei sicuro? I membri e i mezzi verranno scollegati dalla squadra.
             </p>
-            
-            <div className="flex justify-end gap-3">
+            <div className="flex gap-2">
               <button
                 onClick={() => setShowDeleteConfirm(null)}
-                className="btn-secondary"
+                className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium"
               >
                 Annulla
               </button>
               <button
-                onClick={() => handleDeleteSquad(showDeleteConfirm)}
-                className="btn-primary bg-red-600 hover:bg-red-700"
+                onClick={() => handleDelete(showDeleteConfirm)}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-medium flex items-center justify-center gap-2"
               >
+                <Trash2 size={18} />
                 Elimina
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============ POPUP LISTA PERSONALE ============ */}
-      <PersonnelListModal
-        personnel={popupData?.personnel || []}
-        title={popupData?.title || ''}
-        isOpen={popupData !== null}
-        onClose={() => setPopupData(null)}
-        type={popupData?.type || 'unassigned'}
-      />
-
-      {/* ============ MODAL AGGIUNGI EQUIPMENT ============ */}
-      {showAddEquipmentModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <Truck className="text-primary" />
-                Aggiungi Equipment alla Squadra
-              </h2>
-              <button 
-                onClick={() => { setShowAddEquipmentModal(null); setSelectedEquipment([]); }} 
-                className="p-2 hover:bg-gray-100 rounded-lg"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            {/* Filtri */}
-            <div className="p-4 border-b bg-gray-50 flex gap-3">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  type="text"
-                  value={equipmentSearch}
-                  onChange={(e) => setEquipmentSearch(e.target.value)}
-                  placeholder="Cerca..."
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm"
-                />
-              </div>
-              <select
-                value={equipmentCategoryFilter}
-                onChange={(e) => setEquipmentCategoryFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-              >
-                <option value="">Tutte le categorie</option>
-                {Object.entries(EQUIPMENT_CATEGORIES).map(([key, config]) => (
-                  <option key={key} value={key}>{config.label}</option>
-                ))}
-              </select>
-            </div>
-            
-            {/* Lista Equipment */}
-            <div className="flex-1 overflow-y-auto p-4">
-              {filteredAvailableEquipment.length === 0 ? (
-                <p className="text-center text-gray-500 py-8">Nessun equipment disponibile</p>
-              ) : (
-                <div className="space-y-2">
-                  {filteredAvailableEquipment.map(eq => {
-                    const isSelected = selectedEquipment.includes(eq.id)
-                    const catConfig = EQUIPMENT_CATEGORIES[eq.category] || { label: eq.category, color: 'bg-gray-100 text-gray-800' }
-                    return (
-                      <div
-                        key={eq.id}
-                        onClick={() => toggleEquipmentSelection(eq.id)}
-                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
-                          isSelected 
-                            ? 'bg-primary/10 border-2 border-primary' 
-                            : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
-                        }`}
-                      >
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                          isSelected ? 'bg-primary border-primary' : 'border-gray-300'
-                        }`}>
-                          {isSelected && <Check size={14} className="text-white" />}
-                        </div>
-                        
-                        <span className={`${catConfig.color} px-2 py-0.5 text-xs rounded-full font-medium`}>
-                          {catConfig.label}
-                        </span>
-                        
-                        <div className="flex-1">
-                          <span className="font-medium text-gray-800">{eq.type}</span>
-                          {eq.description && (
-                            <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>
-                          )}
-                        </div>
-                        
-                        <span className="text-xs text-gray-500 font-mono">
-                          {eq.plate_number || eq.serial_number || '—'}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-            
-            {/* Footer */}
-            <div className="border-t p-4 bg-gray-50 flex justify-between items-center">
-              <span className="text-sm text-gray-600">
-                {selectedEquipment.length} selezionati
-              </span>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setShowAddEquipmentModal(null); setSelectedEquipment([]); }}
-                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-                >
-                  Annulla
-                </button>
-                <button
-                  onClick={handleAddEquipment}
-                  disabled={selectedEquipment.length === 0}
-                  className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50"
-                >
-                  Aggiungi ({selectedEquipment.length})
-                </button>
-              </div>
             </div>
           </div>
         </div>

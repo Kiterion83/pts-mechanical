@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
 import { 
-  Truck, Plus, Search, Filter, X, Check, Edit, Trash2,
-  ChevronDown, ChevronRight, Building2, Calendar, DollarSign,
-  AlertTriangle, Wrench, Hammer, Settings, Star, Info, Hash,
-  Package, PlusCircle, Users
+  Truck, Plus, Search, X, Check, Edit, Trash2,
+  Building2, Calendar, DollarSign, AlertTriangle, Wrench, 
+  Settings, Star, Hash, Package, PlusCircle, Users, 
+  Clock, CalendarClock, Download, History,
+  Bell, CheckCircle, XCircle, RotateCcw, ChevronDown, ChevronUp
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 
 // ============================================================================
 // CONFIGURAZIONE CATEGORIE
@@ -38,181 +40,106 @@ const CATEGORIES = {
 }
 
 // ============================================================================
-// TIPI PREDEFINITI (BUILT-IN) - ESPANSI
+// TIPI PREDEFINITI
 // ============================================================================
 
 const DEFAULT_EQUIPMENT_TYPES = {
-  // ===================== VEHICLES (Mezzi) =====================
-  // Gru
-  crane_mobile: { label: 'Gru Mobile', labelEn: 'Mobile Crane', category: 'vehicle' },
-  crane_tower: { label: 'Gru a Torre', labelEn: 'Tower Crane', category: 'vehicle' },
-  crane_crawler: { label: 'Gru Cingolata', labelEn: 'Crawler Crane', category: 'vehicle' },
-  crane_truck: { label: 'Autogrù', labelEn: 'Truck Crane', category: 'vehicle' },
-  crane_telescopic: { label: 'Gru Telescopica', labelEn: 'Telescopic Crane', category: 'vehicle' },
+  // VEHICLES (Mezzi)
+  crane_mobile: { label: 'Gru Mobile', category: 'vehicle' },
+  crane_tower: { label: 'Gru a Torre', category: 'vehicle' },
+  crane_crawler: { label: 'Gru Cingolata', category: 'vehicle' },
+  crane_truck: { label: 'Autogrù', category: 'vehicle' },
+  truck: { label: 'Camion', category: 'vehicle' },
+  truck_flatbed: { label: 'Camion Pianale', category: 'vehicle' },
+  truck_dump: { label: 'Camion Ribaltabile', category: 'vehicle' },
+  lorry: { label: 'Autocarro', category: 'vehicle' },
+  van: { label: 'Furgone', category: 'vehicle' },
+  pickup: { label: 'Pickup', category: 'vehicle' },
+  trailer: { label: 'Rimorchio', category: 'vehicle' },
+  lowboy: { label: 'Carrellone', category: 'vehicle' },
+  excavator: { label: 'Escavatore', category: 'vehicle' },
+  excavator_mini: { label: 'Mini Escavatore', category: 'vehicle' },
+  wheel_loader: { label: 'Pala Gommata', category: 'vehicle' },
+  backhoe_loader: { label: 'Terna', category: 'vehicle' },
+  bulldozer: { label: 'Bulldozer', category: 'vehicle' },
+  skid_steer: { label: 'Skid Steer', category: 'vehicle' },
+  forklift: { label: 'Muletto', category: 'vehicle' },
+  forklift_telehandler: { label: 'Telehandler', category: 'vehicle' },
+  aerial_platform: { label: 'Piattaforma Aerea', category: 'vehicle' },
+  boom_lift: { label: 'Piattaforma Articolata', category: 'vehicle' },
+  scissor_lift: { label: 'Piattaforma a Forbice', category: 'vehicle' },
+  concrete_pump: { label: 'Pompa Calcestruzzo', category: 'vehicle' },
   
-  // Camion e Trasporto
-  truck: { label: 'Camion', labelEn: 'Truck', category: 'vehicle' },
-  truck_flatbed: { label: 'Camion Pianale', labelEn: 'Flatbed Truck', category: 'vehicle' },
-  truck_dump: { label: 'Camion Ribaltabile', labelEn: 'Dump Truck', category: 'vehicle' },
-  truck_tanker: { label: 'Camion Cisterna', labelEn: 'Tanker Truck', category: 'vehicle' },
-  truck_concrete_mixer: { label: 'Autobetoniera', labelEn: 'Concrete Mixer Truck', category: 'vehicle' },
-  truck_crane: { label: 'Camion Gru', labelEn: 'Crane Truck', category: 'vehicle' },
-  lorry: { label: 'Autocarro', labelEn: 'Lorry', category: 'vehicle' },
-  van: { label: 'Furgone', labelEn: 'Van', category: 'vehicle' },
-  pickup: { label: 'Pickup', labelEn: 'Pickup', category: 'vehicle' },
-  trailer: { label: 'Rimorchio', labelEn: 'Trailer', category: 'vehicle' },
-  semi_trailer: { label: 'Semirimorchio', labelEn: 'Semi-trailer', category: 'vehicle' },
-  lowboy: { label: 'Carrellone', labelEn: 'Lowboy Trailer', category: 'vehicle' },
+  // EQUIPMENT
+  generator: { label: 'Generatore', category: 'equipment' },
+  generator_large: { label: 'Gruppo Elettrogeno', category: 'equipment' },
+  light_tower: { label: 'Torre Faro', category: 'equipment' },
+  air_compressor: { label: 'Compressore Aria', category: 'equipment' },
+  welding_machine: { label: 'Saldatrice', category: 'equipment' },
+  welding_machine_mig: { label: 'Saldatrice MIG/MAG', category: 'equipment' },
+  welding_machine_tig: { label: 'Saldatrice TIG', category: 'equipment' },
+  plasma_cutter: { label: 'Taglio Plasma', category: 'equipment' },
+  pump_water: { label: 'Pompa Acqua', category: 'equipment' },
+  pump_hydraulic: { label: 'Centralina Idraulica', category: 'equipment' },
+  concrete_mixer: { label: 'Betoniera', category: 'equipment' },
+  scaffolding: { label: 'Ponteggio', category: 'equipment' },
+  container_office: { label: 'Container Ufficio', category: 'equipment' },
+  container_storage: { label: 'Container Magazzino', category: 'equipment' },
+  chain_hoist: { label: 'Paranco a Catena', category: 'equipment' },
+  hydraulic_jack: { label: 'Martinetto Idraulico', category: 'equipment' },
   
-  // Movimento Terra
-  excavator: { label: 'Escavatore', labelEn: 'Excavator', category: 'vehicle' },
-  excavator_mini: { label: 'Mini Escavatore', labelEn: 'Mini Excavator', category: 'vehicle' },
-  wheel_loader: { label: 'Pala Gommata', labelEn: 'Wheel Loader', category: 'vehicle' },
-  backhoe_loader: { label: 'Terna', labelEn: 'Backhoe Loader', category: 'vehicle' },
-  bulldozer: { label: 'Bulldozer', labelEn: 'Bulldozer', category: 'vehicle' },
-  skid_steer: { label: 'Skid Steer (Bobcat)', labelEn: 'Skid Steer Loader', category: 'vehicle' },
-  grader: { label: 'Grader (Livellatrice)', labelEn: 'Motor Grader', category: 'vehicle' },
-  roller_compactor: { label: 'Rullo Compattatore', labelEn: 'Roller Compactor', category: 'vehicle' },
-  dumper: { label: 'Dumper', labelEn: 'Dumper', category: 'vehicle' },
-  
-  // Carrelli e Sollevamento
-  forklift: { label: 'Muletto', labelEn: 'Forklift', category: 'vehicle' },
-  forklift_telehandler: { label: 'Telehandler', labelEn: 'Telehandler', category: 'vehicle' },
-  forklift_reach: { label: 'Carrello Retrattile', labelEn: 'Reach Truck', category: 'vehicle' },
-  pallet_truck: { label: 'Transpallet', labelEn: 'Pallet Truck', category: 'vehicle' },
-  
-  // Piattaforme Aeree
-  aerial_platform: { label: 'Piattaforma Aerea', labelEn: 'Aerial Platform', category: 'vehicle' },
-  boom_lift: { label: 'Piattaforma Articolata', labelEn: 'Boom Lift', category: 'vehicle' },
-  scissor_lift: { label: 'Piattaforma a Forbice', labelEn: 'Scissor Lift', category: 'vehicle' },
-  cherry_picker: { label: 'Cestello', labelEn: 'Cherry Picker', category: 'vehicle' },
-  spider_lift: { label: 'Piattaforma Ragno', labelEn: 'Spider Lift', category: 'vehicle' },
-  
-  // Veicoli Speciali
-  concrete_pump: { label: 'Pompa Calcestruzzo', labelEn: 'Concrete Pump', category: 'vehicle' },
-  vacuum_truck: { label: 'Autospurgo', labelEn: 'Vacuum Truck', category: 'vehicle' },
-  water_truck: { label: 'Autobotte', labelEn: 'Water Truck', category: 'vehicle' },
-  
-  // ===================== EQUIPMENT =====================
-  // Generatori e Energia
-  generator: { label: 'Generatore', labelEn: 'Generator', category: 'equipment' },
-  generator_large: { label: 'Gruppo Elettrogeno', labelEn: 'Power Generator', category: 'equipment' },
-  light_tower: { label: 'Torre Faro', labelEn: 'Light Tower', category: 'equipment' },
-  transformer: { label: 'Trasformatore', labelEn: 'Transformer', category: 'equipment' },
-  distribution_board: { label: 'Quadro Elettrico', labelEn: 'Distribution Board', category: 'equipment' },
-  
-  // Compressori e Aria
-  air_compressor: { label: 'Compressore Aria', labelEn: 'Air Compressor', category: 'equipment' },
-  air_compressor_portable: { label: 'Compressore Portatile', labelEn: 'Portable Compressor', category: 'equipment' },
-  air_dryer: { label: 'Essiccatore Aria', labelEn: 'Air Dryer', category: 'equipment' },
-  
-  // Saldatura
-  welding_machine: { label: 'Saldatrice', labelEn: 'Welding Machine', category: 'equipment' },
-  welding_machine_mig: { label: 'Saldatrice MIG/MAG', labelEn: 'MIG/MAG Welder', category: 'equipment' },
-  welding_machine_tig: { label: 'Saldatrice TIG', labelEn: 'TIG Welder', category: 'equipment' },
-  welding_machine_stick: { label: 'Saldatrice Elettrodo', labelEn: 'Stick Welder', category: 'equipment' },
-  welding_machine_orbital: { label: 'Saldatrice Orbitale', labelEn: 'Orbital Welder', category: 'equipment' },
-  plasma_cutter: { label: 'Taglio Plasma', labelEn: 'Plasma Cutter', category: 'equipment' },
-  
-  // Pompe
-  pump_water: { label: 'Pompa Acqua', labelEn: 'Water Pump', category: 'equipment' },
-  pump_submersible: { label: 'Pompa Sommergibile', labelEn: 'Submersible Pump', category: 'equipment' },
-  pump_mud: { label: 'Pompa Fango', labelEn: 'Mud Pump', category: 'equipment' },
-  pump_hydraulic: { label: 'Centralina Idraulica', labelEn: 'Hydraulic Power Unit', category: 'equipment' },
-  
-  // Piping
-  pipe_coupler: { label: 'Accoppiatore Tubi', labelEn: 'Pipe Coupler', category: 'equipment' },
-  pipe_bender: { label: 'Curvatubi', labelEn: 'Pipe Bender', category: 'equipment' },
-  pipe_threading: { label: 'Filettatrice', labelEn: 'Pipe Threading Machine', category: 'equipment' },
-  hydro_test_pump: { label: 'Pompa Collaudo', labelEn: 'Hydro Test Pump', category: 'equipment' },
-  
-  // Betonaggio
-  concrete_mixer: { label: 'Betoniera', labelEn: 'Concrete Mixer', category: 'equipment' },
-  concrete_vibrator: { label: 'Vibratore Calcestruzzo', labelEn: 'Concrete Vibrator', category: 'equipment' },
-  power_trowel: { label: 'Elicottero (Frattazzo)', labelEn: 'Power Trowel', category: 'equipment' },
-  
-  // Compattazione
-  plate_compactor: { label: 'Piastra Vibrante', labelEn: 'Plate Compactor', category: 'equipment' },
-  rammer: { label: 'Costipatore', labelEn: 'Rammer', category: 'equipment' },
-  
-  // Strutture
-  scaffolding: { label: 'Ponteggio', labelEn: 'Scaffolding', category: 'equipment' },
-  container_office: { label: 'Container Ufficio', labelEn: 'Office Container', category: 'equipment' },
-  container_storage: { label: 'Container Magazzino', labelEn: 'Storage Container', category: 'equipment' },
-  container_sanitary: { label: 'Container Servizi', labelEn: 'Sanitary Container', category: 'equipment' },
-  
-  // Sollevamento
-  chain_hoist: { label: 'Paranco a Catena', labelEn: 'Chain Hoist', category: 'equipment' },
-  lever_hoist: { label: 'Tirfor', labelEn: 'Lever Hoist', category: 'equipment' },
-  winch: { label: 'Verricello', labelEn: 'Winch', category: 'equipment' },
-  hydraulic_jack: { label: 'Martinetto Idraulico', labelEn: 'Hydraulic Jack', category: 'equipment' },
-  
-  // ===================== TOOLS (Attrezzi) =====================
-  // Taglio e Molatura
-  grinder_angle: { label: 'Smerigliatrice Angolare', labelEn: 'Angle Grinder', category: 'tool' },
-  grinder_straight: { label: 'Smerigliatrice Dritta', labelEn: 'Straight Grinder', category: 'tool' },
-  cut_off_saw: { label: 'Troncatrice', labelEn: 'Cut-off Saw', category: 'tool' },
-  circular_saw: { label: 'Sega Circolare', labelEn: 'Circular Saw', category: 'tool' },
-  reciprocating_saw: { label: 'Sega a Gattuccio', labelEn: 'Reciprocating Saw', category: 'tool' },
-  band_saw: { label: 'Segatrice a Nastro', labelEn: 'Band Saw', category: 'tool' },
-  pipe_cutter: { label: 'Tagliatubi', labelEn: 'Pipe Cutter', category: 'tool' },
-  
-  // Foratura
-  drill_hammer: { label: 'Trapano a Percussione', labelEn: 'Hammer Drill', category: 'tool' },
-  drill_magnetic: { label: 'Trapano Magnetico', labelEn: 'Magnetic Drill', category: 'tool' },
-  drill_core: { label: 'Carotatrice', labelEn: 'Core Drill', category: 'tool' },
-  
-  // Avvitatura e Serraggio
-  screwdriver_impact: { label: 'Avvitatore a Impulsi', labelEn: 'Impact Driver', category: 'tool' },
-  wrench_impact: { label: 'Avvitatore a Massa', labelEn: 'Impact Wrench', category: 'tool' },
-  wrench_torque: { label: 'Chiave Dinamometrica', labelEn: 'Torque Wrench', category: 'tool' },
-  wrench_hydraulic: { label: 'Chiave Idraulica', labelEn: 'Hydraulic Torque Wrench', category: 'tool' },
-  bolt_tensioner: { label: 'Tensionatore Bulloni', labelEn: 'Bolt Tensioner', category: 'tool' },
-  
-  // Preparazione Tubi
-  beveling_machine: { label: 'Smussatrice', labelEn: 'Beveling Machine', category: 'tool' },
-  pipe_facing: { label: 'Intestatrice', labelEn: 'Pipe Facing Machine', category: 'tool' },
-  flange_facer: { label: 'Tornitrice Flange', labelEn: 'Flange Facer', category: 'tool' },
-  
-  // Saldatura Manuali
-  torch_oxy: { label: 'Cannello Ossiacetilenico', labelEn: 'Oxy-fuel Torch', category: 'tool' },
-  
-  // Demolizione
-  demolition_hammer: { label: 'Martello Demolitore', labelEn: 'Demolition Hammer', category: 'tool' },
-  jackhammer: { label: 'Martello Pneumatico', labelEn: 'Jackhammer', category: 'tool' },
-  
-  // Misurazione
-  laser_level: { label: 'Livella Laser', labelEn: 'Laser Level', category: 'tool' },
-  total_station: { label: 'Stazione Totale', labelEn: 'Total Station', category: 'tool' },
-  
-  // Altro
-  heat_gun: { label: 'Pistola Termica', labelEn: 'Heat Gun', category: 'tool' },
-  rivet_gun: { label: 'Rivettatrice', labelEn: 'Rivet Gun', category: 'tool' },
-  crimping_tool: { label: 'Pressatrice', labelEn: 'Crimping Tool', category: 'tool' }
+  // TOOLS (Attrezzi)
+  grinder_angle: { label: 'Smerigliatrice', category: 'tool' },
+  cut_off_saw: { label: 'Troncatrice', category: 'tool' },
+  circular_saw: { label: 'Sega Circolare', category: 'tool' },
+  drill_hammer: { label: 'Trapano a Percussione', category: 'tool' },
+  drill_magnetic: { label: 'Trapano Magnetico', category: 'tool' },
+  screwdriver_impact: { label: 'Avvitatore a Impulsi', category: 'tool' },
+  wrench_torque: { label: 'Chiave Dinamometrica', category: 'tool' },
+  wrench_hydraulic: { label: 'Chiave Idraulica', category: 'tool' },
+  beveling_machine: { label: 'Smussatrice', category: 'tool' },
+  demolition_hammer: { label: 'Martello Demolitore', category: 'tool' },
+  laser_level: { label: 'Livella Laser', category: 'tool' },
+  heat_gun: { label: 'Pistola Termica', category: 'tool' }
 }
 
 const RATE_TYPES = {
-  hourly: { label: 'Orario', labelEn: 'Hourly' },
-  daily: { label: 'Giornaliero', labelEn: 'Daily' },
-  weekly: { label: 'Settimanale', labelEn: 'Weekly' },
-  monthly: { label: 'Mensile', labelEn: 'Monthly' },
-  lump_sum: { label: 'Forfettario', labelEn: 'Lump Sum' }
+  hourly: { label: 'Orario' },
+  daily: { label: 'Giornaliero' },
+  weekly: { label: 'Settimanale' },
+  monthly: { label: 'Mensile' },
+  lump_sum: { label: 'Forfettario' }
 }
 
 const OWNERSHIP_TYPES = {
-  owned: { label: 'Proprietà', labelEn: 'Owned', color: 'bg-emerald-100 text-emerald-800' },
-  rented: { label: 'Noleggio', labelEn: 'Rented', color: 'bg-amber-100 text-amber-800' }
+  owned: { label: 'Proprietà', color: 'bg-emerald-100 text-emerald-800' },
+  rented: { label: 'Noleggio', color: 'bg-amber-100 text-amber-800' }
+}
+
+const MAINTENANCE_TYPES = [
+  { value: 'tagliando', label: 'Tagliando' },
+  { value: 'revisione', label: 'Revisione' },
+  { value: 'riparazione', label: 'Riparazione' },
+  { value: 'certificazione', label: 'Certificazione' },
+  { value: 'ispezione', label: 'Ispezione' },
+  { value: 'altro', label: 'Altro' }
+]
+
+const STATUS_CONFIG = {
+  active: { label: 'Disponibile', color: 'bg-green-100 text-green-800', icon: CheckCircle },
+  maintenance_scheduled: { label: 'Manutenzione Prevista', color: 'bg-amber-100 text-amber-800', icon: CalendarClock },
+  out_of_site: { label: 'Fuori Cantiere', color: 'bg-red-100 text-red-800', icon: XCircle },
+  inactive: { label: 'Disattivato', color: 'bg-gray-100 text-gray-800', icon: XCircle }
 }
 
 // ============================================================================
-// COMPONENTI HELPER
+// HELPER COMPONENTS
 // ============================================================================
 
 function CategoryBadge({ category, size = 'normal' }) {
   const config = CATEGORIES[category] || { label: category, color: 'bg-gray-100 text-gray-800', icon: Package }
   const sizeClass = size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs'
   const Icon = config.icon
-  
   return (
     <span className={`${config.color} ${sizeClass} rounded-full font-medium whitespace-nowrap inline-flex items-center gap-1`}>
       <Icon size={size === 'small' ? 10 : 12} />
@@ -223,95 +150,50 @@ function CategoryBadge({ category, size = 'normal' }) {
 
 function OwnershipBadge({ ownership }) {
   const config = OWNERSHIP_TYPES[ownership] || { label: ownership, color: 'bg-gray-100 text-gray-800' }
+  return <span className={`${config.color} px-2 py-0.5 text-xs rounded-full font-medium`}>{config.label}</span>
+}
+
+function StatusBadge({ status }) {
+  const config = STATUS_CONFIG[status] || STATUS_CONFIG.active
+  const Icon = config.icon
   return (
-    <span className={`${config.color} px-2 py-0.5 text-xs rounded-full font-medium`}>
+    <span className={`${config.color} px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1`}>
+      <Icon size={12} />
       {config.label}
     </span>
   )
 }
 
-// Popup lista equipment
-function EquipmentListPopup({ equipment, equipmentTypes, title, isVisible, onClose, type }) {
-  if (!isVisible) return null
-  
-  const bgColor = type === 'assigned' ? 'bg-green-600' : type === 'unassigned' ? 'bg-amber-500' : 'bg-primary'
-  
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-        <div className={`${bgColor} px-4 py-3 rounded-t-xl flex items-center justify-between`}>
-          <span className="font-semibold text-white text-lg">
-            {title} ({equipment.length})
-          </span>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg">
-            <X size={20} className="text-white" />
-          </button>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4">
-          {equipment.length === 0 ? (
-            <p className="text-center text-gray-500 py-8">Nessun elemento</p>
-          ) : (
-            <div className="space-y-2">
-              {equipment.map(eq => (
-                <div key={eq.id} className="flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg">
-                  <span className="font-mono text-sm text-primary font-bold w-20">{eq.asset_code || '—'}</span>
-                  <CategoryBadge category={eq.category} size="small" />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium text-gray-800">
-                      {equipmentTypes[eq.type]?.label || eq.type}
-                    </span>
-                    {eq.description && (
-                      <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>
-                    )}
-                  </div>
-                  <OwnershipBadge ownership={eq.ownership} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div className="border-t px-4 py-3 bg-gray-50 rounded-b-xl">
-          <button onClick={onClose} className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
-            Chiudi
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ============================================================================
-// COMPONENTE PRINCIPALE
+// MAIN COMPONENT
 // ============================================================================
 
 export default function Mezzi() {
   const { t } = useTranslation()
   const { activeProject } = useProject()
   
-  // State principale
+  // Data state
   const [equipment, setEquipment] = useState([])
   const [companies, setCompanies] = useState([])
-  const [assignments, setAssignments] = useState({}) // { equipmentId: squadInfo }
-  const [customTypes, setCustomTypes] = useState([]) // Tipi personalizzati dal DB
+  const [squads, setSquads] = useState([])
+  const [assignments, setAssignments] = useState({})
+  const [maintenances, setMaintenances] = useState({})
+  const [customTypes, setCustomTypes] = useState([])
   const [loading, setLoading] = useState(true)
   
   // UI State
   const [showModal, setShowModal] = useState(false)
   const [editingEquipment, setEditingEquipment] = useState(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
-  const [expandedDetail, setExpandedDetail] = useState(null)
   const [showNewTypeModal, setShowNewTypeModal] = useState(false)
+  const [showMaintenanceHistory, setShowMaintenanceHistory] = useState(null)
+  const [showReturnModal, setShowReturnModal] = useState(null)
   
-  // Filtri
+  // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterOwnership, setFilterOwnership] = useState('')
-  const [filterCompany, setFilterCompany] = useState('')
-  
-  // Popup dashboard
-  const [popupData, setPopupData] = useState(null)
+  const [filterStatus, setFilterStatus] = useState('')
   
   // Form state
   const [formData, setFormData] = useState({
@@ -325,14 +207,10 @@ export default function Mezzi() {
     notes: ''
   })
   
-  // Form nuovo tipo
-  const [newTypeForm, setNewTypeForm] = useState({
-    labelIt: '',
-    labelEn: '',
-    category: 'vehicle'
-  })
+  // Nuovo tipo form
+  const [newTypeForm, setNewTypeForm] = useState({ labelIt: '', category: 'vehicle' })
   
-  // Rate form state
+  // Rates form
   const [rates, setRates] = useState([])
   const [newRate, setNewRate] = useState({
     rateType: 'daily',
@@ -340,39 +218,49 @@ export default function Mezzi() {
     validFrom: new Date().toISOString().split('T')[0],
     validTo: '',
     appliesWeekdays: true,
-    appliesWeekends: true,
+    appliesWeekends: true
+  })
+  
+  // Maintenance form
+  const [maintenanceList, setMaintenanceList] = useState([])
+  const [newMaintenance, setNewMaintenance] = useState({
+    description: '',
+    maintenanceType: 'tagliando',
+    scheduledDate: '',
+    durationDays: 1
+  })
+  
+  // Return modal
+  const [returnData, setReturnData] = useState({
+    reassignToSquad: false,
+    squadId: '',
     notes: ''
   })
 
   // ============================================================================
-  // MERGE TIPI (default + custom)
+  // MERGED TYPES
   // ============================================================================
   
-  const EQUIPMENT_TYPES = {
+  const EQUIPMENT_TYPES = useMemo(() => ({
     ...DEFAULT_EQUIPMENT_TYPES,
     ...Object.fromEntries(
-      customTypes.map(ct => [
-        ct.type_key,
-        { label: ct.label_it, labelEn: ct.label_en || ct.label_it, category: ct.category, isCustom: true }
-      ])
+      customTypes.map(ct => [ct.type_key, { label: ct.label_it, category: ct.category, isCustom: true }])
     )
-  }
+  }), [customTypes])
 
   // ============================================================================
-  // CARICAMENTO DATI
+  // DATA LOADING
   // ============================================================================
   
   useEffect(() => {
-    if (activeProject) {
-      loadData()
-    }
+    if (activeProject) loadData()
   }, [activeProject])
 
   const loadData = async () => {
     try {
       setLoading(true)
       
-      // Carica companies
+      // Companies
       const { data: companiesData } = await supabase
         .from('companies')
         .select('*')
@@ -381,43 +269,57 @@ export default function Mezzi() {
         .order('is_main', { ascending: false })
       setCompanies(companiesData || [])
       
-      // Carica tipi personalizzati
+      // Squads
+      const { data: squadsData } = await supabase
+        .from('squads')
+        .select('id, name, squad_number')
+        .eq('project_id', activeProject.id)
+        .eq('status', 'active')
+        .order('squad_number')
+      setSquads(squadsData || [])
+      
+      // Custom types
       const { data: typesData } = await supabase
         .from('equipment_types')
         .select('*')
         .eq('project_id', activeProject.id)
         .eq('is_active', true)
-        .order('label_it')
       setCustomTypes(typesData || [])
       
-      // Carica equipment con tariffe
+      // Equipment (escludi solo inactive)
       const { data: equipmentData } = await supabase
         .from('equipment')
-        .select(`
-          *,
-          owner_company:companies(id, company_name, is_main),
-          equipment_rates(*)
-        `)
+        .select(`*, owner_company:companies(id, company_name, is_main), equipment_rates(*)`)
         .eq('project_id', activeProject.id)
         .neq('status', 'inactive')
         .order('asset_code')
       setEquipment(equipmentData || [])
       
-      // Carica assegnazioni attive
+      // Assignments
       const { data: assignmentsData } = await supabase
         .from('equipment_assignments')
-        .select(`
-          *,
-          squad:squads(id, name, squad_number)
-        `)
+        .select(`*, squad:squads(id, name, squad_number)`)
         .eq('status', 'active')
-      
-      // Mappa assegnazioni per equipment_id
       const assignMap = {}
-      ;(assignmentsData || []).forEach(a => {
-        assignMap[a.equipment_id] = a.squad
-      })
+      ;(assignmentsData || []).forEach(a => { assignMap[a.equipment_id] = a.squad })
       setAssignments(assignMap)
+      
+      // Maintenances
+      const equipIds = (equipmentData || []).map(e => e.id)
+      if (equipIds.length > 0) {
+        const { data: maintData } = await supabase
+          .from('equipment_maintenance')
+          .select('*')
+          .in('equipment_id', equipIds)
+          .order('scheduled_date', { ascending: false })
+        
+        const maintMap = {}
+        ;(maintData || []).forEach(m => {
+          if (!maintMap[m.equipment_id]) maintMap[m.equipment_id] = []
+          maintMap[m.equipment_id].push(m)
+        })
+        setMaintenances(maintMap)
+      }
       
     } catch (err) {
       console.error('Error loading data:', err)
@@ -427,30 +329,43 @@ export default function Mezzi() {
   }
 
   // ============================================================================
+  // STATS & KPI
+  // ============================================================================
+  
+  const stats = useMemo(() => {
+    const maintenanceDueEquipment = equipment.filter(e => {
+      const maints = maintenances[e.id] || []
+      return maints.some(m => {
+        if (m.status !== 'scheduled' && m.status !== 'notified') return false
+        const daysUntil = Math.ceil((new Date(m.scheduled_date) - new Date()) / (1000 * 60 * 60 * 24))
+        return daysUntil <= 7 && daysUntil >= 0
+      })
+    })
+    
+    return {
+      total: equipment.length,
+      available: equipment.filter(e => e.status === 'active' && !assignments[e.id]).length,
+      assigned: equipment.filter(e => e.status === 'active' && assignments[e.id]).length,
+      maintenanceDue: maintenanceDueEquipment.length,
+      outOfSite: equipment.filter(e => e.status === 'out_of_site').length,
+      owned: equipment.filter(e => e.ownership === 'owned').length,
+      rented: equipment.filter(e => e.ownership === 'rented').length
+    }
+  }, [equipment, maintenances, assignments])
+
+  // ============================================================================
   // FORM HANDLERS
   // ============================================================================
 
   const resetForm = () => {
     setFormData({
-      category: 'vehicle',
-      type: '',
-      description: '',
-      ownership: 'owned',
-      ownerCompanyId: '',
-      serialNumber: '',
-      plateNumber: '',
-      notes: ''
+      category: 'vehicle', type: '', description: '', ownership: 'owned',
+      ownerCompanyId: '', serialNumber: '', plateNumber: '', notes: ''
     })
     setRates([])
-    setNewRate({
-      rateType: 'daily',
-      amount: '',
-      validFrom: new Date().toISOString().split('T')[0],
-      validTo: '',
-      appliesWeekdays: true,
-      appliesWeekends: true,
-      notes: ''
-    })
+    setMaintenanceList([])
+    setNewRate({ rateType: 'daily', amount: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', appliesWeekdays: true, appliesWeekends: true })
+    setNewMaintenance({ description: '', maintenanceType: 'tagliando', scheduledDate: '', durationDays: 1 })
   }
 
   const openAddModal = () => {
@@ -459,7 +374,7 @@ export default function Mezzi() {
     setShowModal(true)
   }
 
-  const openEditModal = async (eq) => {
+  const openEditModal = (eq) => {
     setFormData({
       category: eq.category || 'vehicle',
       type: eq.type || '',
@@ -471,25 +386,26 @@ export default function Mezzi() {
       notes: eq.notes || ''
     })
     
-    // Carica tariffe esistenti
-    const formRates = (eq.equipment_rates || []).map(r => ({
-      id: r.id,
-      rateType: r.rate_type,
-      amount: r.amount,
-      validFrom: r.valid_from,
-      validTo: r.valid_to || '',
-      appliesWeekdays: r.applies_weekdays,
-      appliesWeekends: r.applies_weekends,
-      notes: r.notes || ''
-    }))
-    setRates(formRates)
+    // Rates
+    setRates((eq.equipment_rates || []).map(r => ({
+      id: r.id, rateType: r.rate_type, amount: r.amount,
+      validFrom: r.valid_from, validTo: r.valid_to || '',
+      appliesWeekdays: r.applies_weekdays, appliesWeekends: r.applies_weekends
+    })))
+    
+    // Manutenzioni programmate (solo scheduled/notified)
+    const eqMaints = (maintenances[eq.id] || []).filter(m => m.status === 'scheduled' || m.status === 'notified')
+    setMaintenanceList(eqMaints.map(m => ({
+      id: m.id, description: m.description, maintenanceType: m.maintenance_type,
+      scheduledDate: m.scheduled_date, durationDays: m.duration_days
+    })))
     
     setEditingEquipment(eq)
     setShowModal(true)
   }
 
   // ============================================================================
-  // GESTIONE TARIFFE
+  // RATES HANDLERS
   // ============================================================================
 
   const addRate = () => {
@@ -497,30 +413,29 @@ export default function Mezzi() {
       alert('Inserisci un importo valido')
       return
     }
-    
-    setRates([...rates, { 
-      id: `new_${Date.now()}`,
-      ...newRate,
-      amount: parseFloat(newRate.amount)
-    }])
-    
-    setNewRate({
-      rateType: 'daily',
-      amount: '',
-      validFrom: new Date().toISOString().split('T')[0],
-      validTo: '',
-      appliesWeekdays: true,
-      appliesWeekends: true,
-      notes: ''
-    })
+    setRates([...rates, { id: `new_${Date.now()}`, ...newRate, amount: parseFloat(newRate.amount) }])
+    setNewRate({ rateType: 'daily', amount: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', appliesWeekdays: true, appliesWeekends: true })
   }
 
-  const removeRate = (rateId) => {
-    setRates(rates.filter(r => r.id !== rateId))
-  }
+  const removeRate = (rateId) => setRates(rates.filter(r => r.id !== rateId))
 
   // ============================================================================
-  // SALVATAGGIO
+  // MAINTENANCE HANDLERS
+  // ============================================================================
+
+  const addMaintenance = () => {
+    if (!newMaintenance.description || !newMaintenance.scheduledDate) {
+      alert('Inserisci descrizione e data')
+      return
+    }
+    setMaintenanceList([...maintenanceList, { id: `new_${Date.now()}`, ...newMaintenance }])
+    setNewMaintenance({ description: '', maintenanceType: 'tagliando', scheduledDate: '', durationDays: 1 })
+  }
+
+  const removeMaintenance = (id) => setMaintenanceList(maintenanceList.filter(m => m.id !== id))
+
+  // ============================================================================
+  // SAVE HANDLER
   // ============================================================================
 
   const handleSave = async () => {
@@ -528,7 +443,6 @@ export default function Mezzi() {
       alert('Seleziona un tipo')
       return
     }
-    
     if (formData.ownership === 'rented' && !formData.ownerCompanyId) {
       alert('Seleziona l\'azienda di noleggio')
       return
@@ -543,9 +457,7 @@ export default function Mezzi() {
         type: formData.type,
         description: formData.description.trim() || null,
         ownership: formData.ownership,
-        owner_company_id: formData.ownership === 'owned' 
-          ? mainCompany?.id 
-          : formData.ownerCompanyId || null,
+        owner_company_id: formData.ownership === 'owned' ? mainCompany?.id : formData.ownerCompanyId || null,
         serial_number: formData.serialNumber.trim() || null,
         plate_number: formData.plateNumber.trim() || null,
         notes: formData.notes.trim() || null
@@ -554,33 +466,28 @@ export default function Mezzi() {
       let equipmentId
       
       if (editingEquipment) {
-        // Update - NON modificare asset_code
-        const { error } = await supabase
-          .from('equipment')
-          .update(equipmentDataToSave)
-          .eq('id', editingEquipment.id)
-        
+        const { error } = await supabase.from('equipment').update(equipmentDataToSave).eq('id', editingEquipment.id)
         if (error) throw error
         equipmentId = editingEquipment.id
         
-        // Elimina vecchie tariffe
-        await supabase
-          .from('equipment_rates')
+        // Delete old rates
+        await supabase.from('equipment_rates').delete().eq('equipment_id', equipmentId)
+        
+        // Delete removed maintenances
+        const existingMaintIds = maintenanceList.filter(m => !String(m.id).startsWith('new_')).map(m => m.id)
+        await supabase.from('equipment_maintenance')
           .delete()
           .eq('equipment_id', equipmentId)
-      } else {
-        // Insert - asset_code generato automaticamente dal trigger
-        const { data, error } = await supabase
-          .from('equipment')
-          .insert([equipmentDataToSave])
-          .select()
-          .single()
+          .in('status', ['scheduled', 'notified'])
+          .not('id', 'in', `(${existingMaintIds.length > 0 ? existingMaintIds.join(',') : "''"})`)
         
+      } else {
+        const { data, error } = await supabase.from('equipment').insert([equipmentDataToSave]).select().single()
         if (error) throw error
         equipmentId = data.id
       }
       
-      // Inserisci tariffe
+      // Insert rates
       if (rates.length > 0) {
         const ratesData = rates.map(r => ({
           equipment_id: equipmentId,
@@ -589,15 +496,29 @@ export default function Mezzi() {
           valid_from: r.validFrom,
           valid_to: r.validTo || null,
           applies_weekdays: r.appliesWeekdays,
-          applies_weekends: r.appliesWeekends,
-          notes: r.notes || null
+          applies_weekends: r.appliesWeekends
         }))
-        
-        const { error: ratesError } = await supabase
-          .from('equipment_rates')
-          .insert(ratesData)
-        
-        if (ratesError) throw ratesError
+        await supabase.from('equipment_rates').insert(ratesData)
+      }
+      
+      // Insert/Update maintenances
+      for (const m of maintenanceList) {
+        if (String(m.id).startsWith('new_')) {
+          await supabase.from('equipment_maintenance').insert({
+            equipment_id: equipmentId,
+            description: m.description,
+            maintenance_type: m.maintenanceType,
+            scheduled_date: m.scheduledDate,
+            duration_days: m.durationDays
+          })
+        } else {
+          await supabase.from('equipment_maintenance').update({
+            description: m.description,
+            maintenance_type: m.maintenanceType,
+            scheduled_date: m.scheduledDate,
+            duration_days: m.durationDays
+          }).eq('id', m.id)
+        }
       }
       
       setShowModal(false)
@@ -610,16 +531,16 @@ export default function Mezzi() {
   }
 
   // ============================================================================
-  // ELIMINAZIONE
+  // DELETE HANDLER
   // ============================================================================
   
   const handleDelete = async (eq) => {
     try {
-      const { error } = await supabase
-        .from('equipment')
-        .update({ status: 'inactive' })
-        .eq('id', eq.id)
+      // Remove assignments
+      await supabase.from('equipment_assignments').update({ status: 'inactive' }).eq('equipment_id', eq.id)
       
+      // Soft delete
+      const { error } = await supabase.from('equipment').update({ status: 'inactive' }).eq('id', eq.id)
       if (error) throw error
       
       setShowDeleteConfirm(null)
@@ -631,115 +552,134 @@ export default function Mezzi() {
   }
 
   // ============================================================================
-  // GESTIONE NUOVO TIPO
+  // RETURN FROM MAINTENANCE
   // ============================================================================
-  
-  const handleSaveNewType = async () => {
-    if (!newTypeForm.labelIt.trim()) {
-      alert('Inserisci il nome italiano')
-      return
-    }
-    
-    // Genera type_key dal nome italiano
-    const typeKey = newTypeForm.labelIt
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_]/g, '')
-    
-    // Verifica se esiste già
-    if (EQUIPMENT_TYPES[typeKey] || DEFAULT_EQUIPMENT_TYPES[typeKey]) {
-      alert('Questo tipo esiste già!')
-      return
-    }
+
+  const handleReturn = async () => {
+    const eq = showReturnModal
+    if (!eq) return
     
     try {
-      const { error } = await supabase
-        .from('equipment_types')
-        .insert([{
-          project_id: activeProject.id,
-          type_key: typeKey,
-          label_it: newTypeForm.labelIt.trim(),
-          label_en: newTypeForm.labelEn.trim() || null,
-          category: newTypeForm.category
-        }])
+      // Find in-progress maintenance
+      const maintInProgress = (maintenances[eq.id] || []).find(m => m.status === 'in_progress')
       
-      if (error) throw error
+      if (maintInProgress) {
+        // Complete maintenance
+        await supabase.from('equipment_maintenance').update({
+          status: 'completed',
+          actual_end_date: new Date().toISOString().split('T')[0],
+          completion_notes: returnData.notes,
+          completed_at: new Date().toISOString()
+        }).eq('id', maintInProgress.id)
+      }
       
-      // Chiudi modal e ricarica
-      setShowNewTypeModal(false)
-      setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
+      // Set equipment available
+      await supabase.from('equipment').update({ 
+        status: 'active',
+        last_squad_id: null
+      }).eq('id', eq.id)
       
-      // Ricarica tipi
+      // Reassign if requested
+      if (returnData.reassignToSquad && returnData.squadId) {
+        await supabase.from('equipment_assignments').insert({
+          equipment_id: eq.id,
+          squad_id: returnData.squadId,
+          status: 'active',
+          notes: 'Riassegnato dopo manutenzione'
+        })
+      }
+      
+      setShowReturnModal(null)
+      setReturnData({ reassignToSquad: false, squadId: '', notes: '' })
       loadData()
-      
-      // Seleziona il nuovo tipo nel form
-      setTimeout(() => {
-        setFormData(prev => ({ ...prev, type: typeKey }))
-      }, 500)
-      
     } catch (err) {
-      console.error('Error saving type:', err)
+      console.error('Error returning equipment:', err)
       alert('Errore: ' + err.message)
     }
   }
 
   // ============================================================================
-  // TIPI FILTRATI PER CATEGORIA
+  // NEW TYPE HANDLER
   // ============================================================================
   
-  const typesForCategory = Object.entries(EQUIPMENT_TYPES)
-    .filter(([_, config]) => config.category === formData.category)
-    .sort((a, b) => a[1].label.localeCompare(b[1].label))
+  const handleSaveNewType = async () => {
+    if (!newTypeForm.labelIt.trim()) {
+      alert('Inserisci il nome')
+      return
+    }
+    const typeKey = newTypeForm.labelIt.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+    if (EQUIPMENT_TYPES[typeKey]) {
+      alert('Questo tipo esiste già!')
+      return
+    }
+    try {
+      await supabase.from('equipment_types').insert([{
+        project_id: activeProject.id,
+        type_key: typeKey,
+        label_it: newTypeForm.labelIt.trim(),
+        category: newTypeForm.category
+      }])
+      setShowNewTypeModal(false)
+      setNewTypeForm({ labelIt: '', category: formData.category })
+      loadData()
+      setTimeout(() => setFormData(prev => ({ ...prev, type: typeKey })), 500)
+    } catch (err) {
+      alert('Errore: ' + err.message)
+    }
+  }
 
   // ============================================================================
-  // FILTRI E STATISTICHE
+  // EXPORT MAINTENANCE HISTORY
+  // ============================================================================
+
+  const exportMaintenanceHistory = (eq) => {
+    const data = (maintenances[eq.id] || []).map(m => ({
+      'Codice Asset': eq.asset_code,
+      'Tipo': EQUIPMENT_TYPES[eq.type]?.label || eq.type,
+      'Descrizione Manutenzione': m.description,
+      'Tipo Manutenzione': MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label || m.maintenance_type,
+      'Data Programmata': m.scheduled_date,
+      'Durata (giorni)': m.duration_days,
+      'Stato': m.status === 'completed' ? 'Completata' : m.status === 'in_progress' ? 'In Corso' : m.status === 'cancelled' ? 'Annullata' : 'Programmata',
+      'Data Fine Effettiva': m.actual_end_date || '',
+      'Note Completamento': m.completion_notes || ''
+    }))
+    
+    const ws = XLSX.utils.json_to_sheet(data)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Storico Manutenzioni')
+    XLSX.writeFile(wb, `Manutenzioni_${eq.asset_code}.xlsx`)
+  }
+
+  // ============================================================================
+  // FILTERS
   // ============================================================================
   
-  const filteredEquipment = equipment.filter(eq => {
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase()
-      const typeLabel = EQUIPMENT_TYPES[eq.type]?.label || eq.type
-      if (
-        !eq.asset_code?.toLowerCase().includes(search) &&
-        !typeLabel.toLowerCase().includes(search) &&
-        !eq.description?.toLowerCase().includes(search) &&
-        !eq.plate_number?.toLowerCase().includes(search) &&
-        !eq.serial_number?.toLowerCase().includes(search)
-      ) return false
-    }
-    if (filterCategory && eq.category !== filterCategory) return false
-    if (filterOwnership && eq.ownership !== filterOwnership) return false
-    if (filterCompany && eq.owner_company_id !== filterCompany) return false
-    return true
-  })
+  const filteredEquipment = useMemo(() => {
+    return equipment.filter(eq => {
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase()
+        const typeLabel = EQUIPMENT_TYPES[eq.type]?.label || eq.type
+        if (!eq.asset_code?.toLowerCase().includes(search) &&
+            !typeLabel.toLowerCase().includes(search) &&
+            !eq.description?.toLowerCase().includes(search) &&
+            !eq.plate_number?.toLowerCase().includes(search)) return false
+      }
+      if (filterCategory && eq.category !== filterCategory) return false
+      if (filterOwnership && eq.ownership !== filterOwnership) return false
+      if (filterStatus && eq.status !== filterStatus) return false
+      return true
+    })
+  }, [equipment, searchTerm, filterCategory, filterOwnership, filterStatus, EQUIPMENT_TYPES])
 
-  // Statistiche per categoria
-  const categoryStats = Object.entries(CATEGORIES).map(([key, config]) => {
-    const items = equipment.filter(eq => eq.category === key)
-    const assignedItems = items.filter(eq => assignments[eq.id])
-    const unassignedItems = items.filter(eq => !assignments[eq.id])
-    return {
-      category: key,
-      label: config.label,
-      icon: config.icon,
-      color: config.color,
-      total: items.length,
-      assigned: assignedItems.length,
-      unassigned: unassignedItems.length,
-      percentage: items.length > 0 ? Math.round((assignedItems.length / items.length) * 100) : 0,
-      assignedItems,
-      unassignedItems
-    }
-  })
-
-  // Totali
-  const totalEquipment = equipment.length
-  const totalAssigned = equipment.filter(eq => assignments[eq.id]).length
-  const totalUnassigned = totalEquipment - totalAssigned
+  const typesForCategory = useMemo(() => {
+    return Object.entries(EQUIPMENT_TYPES)
+      .filter(([_, config]) => config.category === formData.category)
+      .sort((a, b) => a[1].label.localeCompare(b[1].label))
+  }, [EQUIPMENT_TYPES, formData.category])
 
   // ============================================================================
-  // RENDER
+  // RENDER - NO PROJECT
   // ============================================================================
   
   if (!activeProject) {
@@ -751,6 +691,10 @@ export default function Mezzi() {
     )
   }
 
+  // ============================================================================
+  // RENDER - LOADING
+  // ============================================================================
+  
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -759,303 +703,205 @@ export default function Mezzi() {
     )
   }
 
+  // ============================================================================
+  // MAIN RENDER
+  // ============================================================================
+
   return (
-    <div className="space-y-6">
-      {/* ============ HEADER ============ */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+    <div className="space-y-4 md:space-y-6 pb-20">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Truck className="text-primary" />
+          <h1 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <Truck className="text-primary" size={24} />
             Mezzi / Asset
           </h1>
-          <p className="text-gray-500 mt-1">
-            {activeProject.name} • {equipment.length} asset totali
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{activeProject.name}</p>
         </div>
-        
-        <button onClick={openAddModal} className="btn-primary flex items-center gap-2">
+        <button onClick={openAddModal} className="btn-primary flex items-center justify-center gap-2 w-full sm:w-auto py-3 sm:py-2">
           <Plus size={20} />
           Nuovo Asset
         </button>
       </div>
 
-      {/* ============ DASHBOARD ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-          <Settings size={20} />
+      {/* KPI DASHBOARD */}
+      <div className="bg-white rounded-xl border p-4">
+        <h2 className="text-sm font-semibold text-gray-600 mb-3 flex items-center gap-2">
+          <Settings size={16} />
           Riepilogo
         </h2>
         
-        {/* Totali */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-blue-50 rounded-lg p-4 text-center">
-            <div className="text-3xl font-bold text-blue-700">{totalEquipment}</div>
-            <div className="text-sm text-blue-600">Totale Asset</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
+          <div className="bg-blue-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-blue-700">{stats.total}</div>
+            <div className="text-xs text-blue-600">Totale</div>
           </div>
-          <div 
-            className="bg-green-50 rounded-lg p-4 text-center cursor-pointer hover:bg-green-100 transition-colors"
-            onClick={() => setPopupData({
-              type: 'assigned',
-              equipment: equipment.filter(eq => assignments[eq.id]),
-              title: 'Asset Assegnati'
-            })}
-          >
-            <div className="text-3xl font-bold text-green-700">{totalAssigned}</div>
-            <div className="text-sm text-green-600">Assegnati</div>
+          <div className="bg-green-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-green-700">{stats.available}</div>
+            <div className="text-xs text-green-600">Disponibili</div>
           </div>
-          <div 
-            className="bg-amber-50 rounded-lg p-4 text-center cursor-pointer hover:bg-amber-100 transition-colors"
-            onClick={() => setPopupData({
-              type: 'unassigned',
-              equipment: equipment.filter(eq => !assignments[eq.id]),
-              title: 'Asset Disponibili'
-            })}
-          >
-            <div className="text-3xl font-bold text-amber-700">{totalUnassigned}</div>
-            <div className="text-sm text-amber-600">Disponibili</div>
+          <div className="bg-purple-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-purple-700">{stats.assigned}</div>
+            <div className="text-xs text-purple-600">Assegnati</div>
           </div>
-        </div>
-        
-        {/* Per categoria */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {categoryStats.map(stat => {
-            const Icon = stat.icon
-            return (
-              <div key={stat.category} className="bg-gray-50 rounded-lg p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${stat.color}`}>
-                    <Icon size={20} />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-800">{stat.label}</h3>
-                    <p className="text-sm text-gray-500">{stat.total} totali</p>
-                  </div>
-                </div>
-                
-                <div className="flex gap-4 text-sm">
-                  <span 
-                    className={`text-green-600 ${stat.assigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                    onClick={() => stat.assigned > 0 && setPopupData({
-                      type: 'assigned',
-                      equipment: stat.assignedItems,
-                      title: `${stat.label} - Assegnati`
-                    })}
-                  >
-                    {stat.assigned} assegnati
-                  </span>
-                  <span 
-                    className={`text-amber-600 ${stat.unassigned > 0 ? 'cursor-pointer hover:underline' : ''}`}
-                    onClick={() => stat.unassigned > 0 && setPopupData({
-                      type: 'unassigned',
-                      equipment: stat.unassignedItems,
-                      title: `${stat.label} - Disponibili`
-                    })}
-                  >
-                    {stat.unassigned} disponibili
-                  </span>
-                </div>
-                
-                <div className="mt-2 flex items-center gap-2">
-                  <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-green-500 h-2 rounded-full transition-all"
-                      style={{ width: `${stat.percentage}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-600 w-8 text-right">{stat.percentage}%</span>
-                </div>
-              </div>
-            )
-          })}
+          <div className={`rounded-lg p-3 text-center ${stats.maintenanceDue > 0 ? 'bg-amber-100 ring-2 ring-amber-400' : 'bg-amber-50'}`}>
+            <div className={`text-xl sm:text-2xl font-bold flex items-center justify-center gap-1 ${stats.maintenanceDue > 0 ? 'text-amber-700' : 'text-amber-600'}`}>
+              {stats.maintenanceDue > 0 && <Bell size={16} className="animate-bounce" />}
+              {stats.maintenanceDue}
+            </div>
+            <div className="text-xs text-amber-600">Manutenzione</div>
+          </div>
+          <div className={`rounded-lg p-3 text-center ${stats.outOfSite > 0 ? 'bg-red-100' : 'bg-red-50'}`}>
+            <div className={`text-xl sm:text-2xl font-bold ${stats.outOfSite > 0 ? 'text-red-700' : 'text-red-400'}`}>
+              {stats.outOfSite}
+            </div>
+            <div className="text-xs text-red-600">Fuori Cantiere</div>
+          </div>
+          <div className="bg-emerald-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-emerald-700">{stats.owned}</div>
+            <div className="text-xs text-emerald-600">Proprietà</div>
+          </div>
+          <div className="bg-orange-50 rounded-lg p-3 text-center">
+            <div className="text-xl sm:text-2xl font-bold text-orange-700">{stats.rented}</div>
+            <div className="text-xs text-orange-600">Noleggio</div>
+          </div>
         </div>
       </div>
 
-      {/* ============ FILTRI ============ */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-wrap gap-3">
-          <div className="flex-1 min-w-[200px] relative">
+      {/* FILTERS */}
+      <div className="bg-white rounded-xl border p-3">
+        <div className="flex flex-col gap-2">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cerca per codice, tipo, descrizione, targa..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+              placeholder="Cerca per codice, tipo, targa..."
+              className="w-full pl-10 pr-4 py-3 border rounded-lg text-sm"
             />
           </div>
-          
-          <select
-            value={filterCategory}
-            onChange={(e) => setFilterCategory(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="">Tutte le categorie</option>
-            {Object.entries(CATEGORIES).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
-            ))}
-          </select>
-          
-          <select
-            value={filterOwnership}
-            onChange={(e) => setFilterOwnership(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="">Proprietà/Noleggio</option>
-            {Object.entries(OWNERSHIP_TYPES).map(([key, config]) => (
-              <option key={key} value={key}>{config.label}</option>
-            ))}
-          </select>
-          
-          <select
-            value={filterCompany}
-            onChange={(e) => setFilterCompany(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="">Tutte le aziende</option>
-            {companies.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.company_name} {c.is_main ? '⭐' : ''}
-              </option>
-            ))}
-          </select>
+          <div className="grid grid-cols-3 gap-2">
+            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
+              <option value="">Categoria</option>
+              {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
+              <option value="">Stato</option>
+              <option value="active">Disponibile</option>
+              <option value="maintenance_scheduled">Manutenzione</option>
+              <option value="out_of_site">Fuori Cantiere</option>
+            </select>
+            <select value={filterOwnership} onChange={(e) => setFilterOwnership(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
+              <option value="">Proprietà</option>
+              {Object.entries(OWNERSHIP_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
-      {/* ============ LISTA EQUIPMENT ============ */}
-      <div className="bg-white rounded-xl border border-gray-200">
+      {/* EQUIPMENT LIST */}
+      <div className="bg-white rounded-xl border">
         {filteredEquipment.length === 0 ? (
-          <div className="p-12 text-center">
+          <div className="p-8 text-center">
             <Truck size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500 mb-4">
-              {equipment.length === 0 
-                ? 'Nessun asset registrato' 
-                : 'Nessun risultato per i filtri selezionati'}
-            </p>
+            <p className="text-gray-500 mb-4">{equipment.length === 0 ? 'Nessun asset registrato' : 'Nessun risultato'}</p>
             {equipment.length === 0 && (
-              <button onClick={openAddModal} className="btn-primary">
-                <Plus size={18} className="mr-2" />
-                Aggiungi il primo asset
-              </button>
+              <button onClick={openAddModal} className="btn-primary"><Plus size={18} className="mr-2" />Aggiungi</button>
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Codice</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Categoria</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Tipo</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Descrizione</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Targa/Serial</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Proprietà</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Squadra</th>
-                  <th className="text-left px-4 py-3 text-sm font-semibold text-gray-600">Tariffe</th>
-                  <th className="text-center px-4 py-3 text-sm font-semibold text-gray-600">Azioni</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredEquipment.map(eq => {
-                  const typeConfig = EQUIPMENT_TYPES[eq.type] || { label: eq.type }
-                  const squad = assignments[eq.id]
-                  const hasRates = eq.equipment_rates && eq.equipment_rates.length > 0
-                  
-                  return (
-                    <tr key={eq.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <span className="font-mono font-bold text-primary">{eq.asset_code}</span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <CategoryBadge category={eq.category} size="small" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-medium text-gray-800">{typeConfig.label}</span>
-                        {typeConfig.isCustom && <Star size={10} className="inline ml-1 text-yellow-500" />}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-sm max-w-[200px] truncate">
-                        {eq.description || '—'}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-sm text-gray-600">
-                        {eq.plate_number || eq.serial_number || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-1">
+          <div className="divide-y">
+            {filteredEquipment.map(eq => {
+              const typeConfig = EQUIPMENT_TYPES[eq.type] || { label: eq.type }
+              const squad = assignments[eq.id]
+              const eqMaints = maintenances[eq.id] || []
+              const nextMaint = eqMaints.find(m => m.status === 'scheduled' || m.status === 'notified')
+              const daysUntilMaint = nextMaint ? Math.ceil((new Date(nextMaint.scheduled_date) - new Date()) / (1000 * 60 * 60 * 24)) : null
+              
+              return (
+                <div key={eq.id} className="p-3 md:p-4 hover:bg-gray-50">
+                  <div className="flex flex-col gap-3">
+                    {/* Main info row */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-bold text-primary text-sm">{eq.asset_code}</span>
+                          <CategoryBadge category={eq.category} size="small" />
+                          <StatusBadge status={eq.status} />
+                        </div>
+                        <div className="mt-1">
+                          <span className="font-medium text-gray-800">{typeConfig.label}</span>
+                          {eq.description && <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
+                          {eq.plate_number && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{eq.plate_number}</span>}
                           <OwnershipBadge ownership={eq.ownership} />
-                          <span className="text-xs text-gray-500 truncate max-w-[120px]">
-                            {eq.owner_company?.company_name}
-                            {eq.owner_company?.is_main && <Star size={8} className="inline ml-1 text-yellow-500" />}
-                          </span>
+                          {squad && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+                              <Users size={10} />
+                              {squad.name || `Sq. ${squad.squad_number}`}
+                            </span>
+                          )}
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {squad ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                            <Users size={12} />
-                            {squad.name || `Squadra ${squad.squad_number}`}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-sm">Non assegnato</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {hasRates ? (
-                          <div className="text-xs text-gray-600">
-                            {eq.equipment_rates.slice(0, 2).map((r, i) => (
-                              <div key={i}>
-                                {RATE_TYPES[r.rate_type]?.label}: €{parseFloat(r.amount).toFixed(2)}
-                              </div>
-                            ))}
-                            {eq.equipment_rates.length > 2 && (
-                              <span className="text-gray-400">+{eq.equipment_rates.length - 2} altre</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">Nessuna</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
+                      </div>
+                      
+                      {/* Actions - Vertical on mobile */}
+                      <div className="flex flex-col sm:flex-row gap-1">
+                        {eq.status === 'out_of_site' && (
                           <button
-                            onClick={() => openEditModal(eq)}
-                            className="p-2 hover:bg-blue-100 rounded-lg text-blue-600"
-                            title="Modifica"
+                            onClick={() => {
+                              setReturnData({ reassignToSquad: !!eq.last_squad_id, squadId: eq.last_squad_id || '', notes: '' })
+                              setShowReturnModal(eq)
+                            }}
+                            className="p-2.5 bg-green-100 hover:bg-green-200 rounded-lg text-green-700"
+                            title="Riporta disponibile"
                           >
-                            <Edit size={16} />
+                            <RotateCcw size={18} />
                           </button>
-                          <button
-                            onClick={() => setShowDeleteConfirm(eq)}
-                            className="p-2 hover:bg-red-100 rounded-lg text-red-600"
-                            title="Elimina"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                        )}
+                        <button
+                          onClick={() => setShowMaintenanceHistory(eq)}
+                          className="p-2.5 hover:bg-gray-100 rounded-lg text-gray-600"
+                          title="Storico manutenzioni"
+                        >
+                          <History size={18} />
+                        </button>
+                        <button onClick={() => openEditModal(eq)} className="p-2.5 hover:bg-blue-100 rounded-lg text-blue-600" title="Modifica">
+                          <Edit size={18} />
+                        </button>
+                        <button onClick={() => setShowDeleteConfirm(eq)} className="p-2.5 hover:bg-red-100 rounded-lg text-red-600" title="Elimina">
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Maintenance alert */}
+                    {nextMaint && daysUntilMaint !== null && daysUntilMaint <= 7 && (
+                      <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${
+                        daysUntilMaint <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        <CalendarClock size={14} />
+                        <span className="font-medium">
+                          {daysUntilMaint <= 0 ? 'Manutenzione oggi!' : `Manutenzione tra ${daysUntilMaint} giorn${daysUntilMaint === 1 ? 'o' : 'i'}`}
+                        </span>
+                        <span className="text-gray-600">- {nextMaint.description}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
 
-      {/* ============ POPUP LISTA ============ */}
-      <EquipmentListPopup
-        equipment={popupData?.equipment || []}
-        equipmentTypes={EQUIPMENT_TYPES}
-        title={popupData?.title || ''}
-        isVisible={popupData !== null}
-        onClose={() => setPopupData(null)}
-        type={popupData?.type}
-      />
-
       {/* ============ MODAL NUOVO/MODIFICA ============ */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
-              <h2 className="text-xl font-bold text-gray-800">
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-xl">
+            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between z-10">
+              <h2 className="text-lg font-bold text-gray-800">
                 {editingEquipment ? 'Modifica Asset' : 'Nuovo Asset'}
               </h2>
               <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
@@ -1064,425 +910,443 @@ export default function Mezzi() {
             </div>
             
             <div className="p-4 space-y-4">
-              {/* Asset Code (solo visualizzazione per edit) */}
-              {editingEquipment && (
+              {/* Asset Code */}
+              {editingEquipment ? (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <label className="block text-sm font-medium text-blue-700 mb-1">
-                    Codice Asset
-                  </label>
-                  <div className="font-mono text-lg font-bold text-blue-800">
-                    {editingEquipment.asset_code}
-                  </div>
-                  <p className="text-xs text-blue-600 mt-1">Il codice viene generato automaticamente</p>
+                  <label className="text-xs font-medium text-blue-700">Codice Asset</label>
+                  <div className="font-mono text-lg font-bold text-blue-800">{editingEquipment.asset_code}</div>
+                </div>
+              ) : (
+                <div className="bg-gray-50 border rounded-lg p-3 text-sm text-gray-600">
+                  <Hash size={14} className="inline mr-1" />
+                  Il codice asset verrà generato automaticamente
                 </div>
               )}
               
-              {!editingEquipment && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <p className="text-sm text-gray-600">
-                    <Hash size={14} className="inline mr-1" />
-                    Il codice asset (es. <span className="font-mono font-bold">ASSET-001</span>) verrà generato automaticamente
-                  </p>
-                </div>
-              )}
-              
-              {/* Categoria e Tipo */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Category & Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Categoria <span className="text-red-500">*</span>
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
                   <select
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value, type: '' })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    className="w-full px-3 py-3 border rounded-lg"
                   >
-                    {Object.entries(CATEGORIES).map(([key, config]) => (
-                      <option key={key} value={key}>{config.label} / {config.labelEn}</option>
-                    ))}
+                    {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                   </select>
                 </div>
-                
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo <span className="text-red-500">*</span>
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo *</label>
                   <div className="flex gap-2">
                     <select
                       value={formData.type}
                       onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="flex-1 px-3 py-3 border rounded-lg"
                     >
                       <option value="">-- Seleziona --</option>
-                      {typesForCategory.map(([key, config]) => (
-                        <option key={key} value={key}>
-                          {config.label} / {config.labelEn}
-                          {config.isCustom && ' ★'}
-                        </option>
-                      ))}
+                      {typesForCategory.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select>
                     <button
                       type="button"
-                      onClick={() => {
-                        setNewTypeForm({ labelIt: '', labelEn: '', category: formData.category })
-                        setShowNewTypeModal(true)
-                      }}
-                      className="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                      title="Aggiungi nuovo tipo"
+                      onClick={() => { setNewTypeForm({ labelIt: '', category: formData.category }); setShowNewTypeModal(true) }}
+                      className="px-4 py-3 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
                     >
-                      <PlusCircle size={18} />
+                      <PlusCircle size={20} />
                     </button>
                   </div>
                 </div>
               </div>
               
-              {/* Descrizione */}
+              {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
                 <input
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Es: Gru 50 ton, Generatore 100kW, Saldatrice MIG..."
+                  className="w-full px-3 py-3 border rounded-lg"
+                  placeholder="Es: Gru 50 ton marca..."
                 />
               </div>
               
-              {/* Proprietà e Azienda */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Ownership */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Proprietà</label>
                   <select
                     value={formData.ownership}
-                    onChange={(e) => {
-                      const newOwnership = e.target.value
-                      setFormData({ 
-                        ...formData, 
-                        ownership: newOwnership,
-                        ownerCompanyId: ''
-                      })
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => setFormData({ ...formData, ownership: e.target.value, ownerCompanyId: '' })}
+                    className="w-full px-3 py-3 border rounded-lg"
                   >
                     <option value="owned">Proprietà (Aziendale)</option>
                     <option value="rented">Noleggio</option>
                   </select>
                 </div>
-                
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {formData.ownership === 'owned' ? 'Azienda Proprietaria' : 'Azienda Noleggio'}
-                    {formData.ownership === 'rented' && <span className="text-red-500"> *</span>}
+                    {formData.ownership === 'owned' ? 'Azienda' : 'Azienda Noleggio *'}
                   </label>
                   {formData.ownership === 'owned' ? (
-                    <div className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600">
-                      {companies.find(c => c.is_main)?.company_name || 'Azienda principale'}
-                      <Star size={12} className="inline ml-1 text-yellow-500 fill-yellow-500" />
+                    <div className="px-3 py-3 border rounded-lg bg-gray-50 text-gray-600 flex items-center gap-2">
+                      <Star size={14} className="text-yellow-500" />
+                      {companies.find(c => c.is_main)?.company_name || 'Principale'}
                     </div>
                   ) : (
                     <select
                       value={formData.ownerCompanyId}
                       onChange={(e) => setFormData({ ...formData, ownerCompanyId: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      className="w-full px-3 py-3 border rounded-lg"
                     >
-                      <option value="">-- Seleziona azienda --</option>
-                      {companies.filter(c => !c.is_main).map(c => (
-                        <option key={c.id} value={c.id}>{c.company_name}</option>
-                      ))}
+                      <option value="">-- Seleziona --</option>
+                      {companies.filter(c => !c.is_main).map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
                     </select>
                   )}
                 </div>
               </div>
               
-              {/* Targa e Serial */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Plate & Serial */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Targa</label>
                   <input
                     type="text"
                     value={formData.plateNumber}
                     onChange={(e) => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
+                    className="w-full px-3 py-3 border rounded-lg font-mono"
                     placeholder="AB123CD"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Numero Seriale</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Seriale</label>
                   <input
                     type="text"
                     value={formData.serialNumber}
                     onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono"
-                    placeholder="SN-12345678"
+                    className="w-full px-3 py-3 border rounded-lg font-mono"
                   />
                 </div>
               </div>
               
-              {/* Note */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Note aggiuntive..."
-                />
-              </div>
-              
-              {/* ============ SEZIONE TARIFFE ============ */}
+              {/* RATES SECTION */}
               <div className="border-t pt-4">
                 <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
                   <DollarSign size={18} />
                   Tariffe
                 </h3>
                 
-                {/* Tariffe esistenti */}
                 {rates.length > 0 && (
-                  <div className="space-y-2 mb-4">
+                  <div className="space-y-2 mb-3">
                     {rates.map(rate => (
-                      <div key={rate.id} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                        <span className="font-medium text-gray-700">
-                          {RATE_TYPES[rate.rateType]?.label}
-                        </span>
-                        <span className="font-bold text-green-600">
-                          €{parseFloat(rate.amount).toFixed(2)}
-                        </span>
-                        <span className="text-sm text-gray-500">
-                          Dal {new Date(rate.validFrom).toLocaleDateString('it-IT')}
-                          {rate.validTo && ` al ${new Date(rate.validTo).toLocaleDateString('it-IT')}`}
-                        </span>
-                        <div className="flex-1 flex gap-2 justify-end">
-                          {rate.appliesWeekdays && (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Feriali</span>
-                          )}
-                          {rate.appliesWeekends && (
-                            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">Weekend</span>
-                          )}
+                      <div key={rate.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                        <div>
+                          <span className="font-medium text-sm">{RATE_TYPES[rate.rateType]?.label}</span>
+                          <span className="text-green-600 font-bold ml-2">€{parseFloat(rate.amount).toFixed(2)}</span>
                         </div>
-                        <button
-                          onClick={() => removeRate(rate.id)}
-                          className="p-1 hover:bg-red-100 rounded text-red-600"
-                        >
-                          <X size={16} />
+                        <button onClick={() => removeRate(rate.id)} className="p-2 hover:bg-red-100 rounded text-red-600">
+                          <X size={18} />
                         </button>
                       </div>
                     ))}
                   </div>
                 )}
                 
-                {/* Form nuova tariffa */}
-                <div className="bg-blue-50 rounded-lg p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Tipo Tariffa</label>
-                      <select
-                        value={newRate.rateType}
-                        onChange={(e) => setNewRate({ ...newRate, rateType: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      >
-                        {Object.entries(RATE_TYPES).map(([key, config]) => (
-                          <option key={key} value={key}>{config.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Importo €</label>
+                <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <select value={newRate.rateType} onChange={(e) => setNewRate({ ...newRate, rateType: e.target.value })} className="px-3 py-2 border rounded text-sm">
+                      {Object.entries(RATE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={newRate.amount}
+                      onChange={(e) => setNewRate({ ...newRate, amount: e.target.value })}
+                      className="px-3 py-2 border rounded text-sm"
+                      placeholder="€ Importo"
+                    />
+                  </div>
+                  <button onClick={addRate} className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium flex items-center justify-center gap-1">
+                    <Plus size={16} />
+                    Aggiungi Tariffa
+                  </button>
+                </div>
+              </div>
+              
+              {/* MAINTENANCE SECTION */}
+              <div className="border-t pt-4">
+                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                  <CalendarClock size={18} />
+                  Manutenzioni Programmate
+                </h3>
+                
+                {maintenanceList.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {maintenanceList.map(m => (
+                      <div key={m.id} className="flex items-center justify-between bg-amber-50 rounded-lg p-3">
+                        <div>
+                          <span className="font-medium text-sm">{m.description}</span>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {new Date(m.scheduledDate).toLocaleDateString('it-IT')} • {m.durationDays} giorn{m.durationDays === 1 ? 'o' : 'i'}
+                          </div>
+                        </div>
+                        <button onClick={() => removeMaintenance(m.id)} className="p-2 hover:bg-red-100 rounded text-red-600">
+                          <X size={18} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div className="bg-amber-50 rounded-lg p-3 space-y-2">
+                  <input
+                    type="text"
+                    value={newMaintenance.description}
+                    onChange={(e) => setNewMaintenance({ ...newMaintenance, description: e.target.value })}
+                    className="w-full px-3 py-2 border rounded text-sm"
+                    placeholder="Descrizione (es: Tagliando annuale)"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <select
+                      value={newMaintenance.maintenanceType}
+                      onChange={(e) => setNewMaintenance({ ...newMaintenance, maintenanceType: e.target.value })}
+                      className="px-2 py-2 border rounded text-sm"
+                    >
+                      {MAINTENANCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                    <input
+                      type="date"
+                      value={newMaintenance.scheduledDate}
+                      onChange={(e) => setNewMaintenance({ ...newMaintenance, scheduledDate: e.target.value })}
+                      className="px-2 py-2 border rounded text-sm"
+                    />
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
-                        step="0.01"
-                        min="0"
-                        value={newRate.amount}
-                        onChange={(e) => setNewRate({ ...newRate, amount: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                        placeholder="0.00"
+                        min="1"
+                        value={newMaintenance.durationDays}
+                        onChange={(e) => setNewMaintenance({ ...newMaintenance, durationDays: parseInt(e.target.value) || 1 })}
+                        className="w-14 px-2 py-2 border rounded text-sm"
                       />
+                      <span className="text-xs text-gray-600">gg</span>
                     </div>
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Valido dal</label>
-                      <input
-                        type="date"
-                        value={newRate.validFrom}
-                        onChange={(e) => setNewRate({ ...newRate, validFrom: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Valido fino al (opz.)</label>
-                      <input
-                        type="date"
-                        value={newRate.validTo}
-                        onChange={(e) => setNewRate({ ...newRate, validTo: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newRate.appliesWeekdays}
-                        onChange={(e) => setNewRate({ ...newRate, appliesWeekdays: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300"
-                      />
-                      <span className="text-sm text-gray-700">Giorni feriali</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newRate.appliesWeekends}
-                        onChange={(e) => setNewRate({ ...newRate, appliesWeekends: e.target.checked })}
-                        className="w-4 h-4 rounded border-gray-300"
-                      />
-                      <span className="text-sm text-gray-700">Weekend</span>
-                    </label>
-                  </div>
-                  
-                  <button
-                    onClick={addRate}
-                    className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-                  >
-                    <Plus size={16} className="inline mr-1" />
-                    Aggiungi Tariffa
+                  <button onClick={addMaintenance} className="w-full py-2 bg-amber-600 text-white rounded text-sm font-medium flex items-center justify-center gap-1">
+                    <Plus size={16} />
+                    Aggiungi Manutenzione
                   </button>
                 </div>
               </div>
             </div>
             
-            {/* Footer Modal */}
-            <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
-              <button
-                onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg"
-              >
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t p-4 flex gap-2">
+              <button onClick={() => setShowModal(false)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">
                 Annulla
               </button>
-              <button
-                onClick={handleSave}
-                className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark"
-              >
-                <Check size={18} className="inline mr-2" />
-                {editingEquipment ? 'Salva Modifiche' : 'Crea Asset'}
+              <button onClick={handleSave} className="flex-1 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium flex items-center justify-center gap-2">
+                <Check size={18} />
+                {editingEquipment ? 'Salva' : 'Crea'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============ MODAL NUOVO TIPO ============ */}
+      {/* MODAL NUOVO TIPO */}
       {showNewTypeModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <PlusCircle className="text-green-600" size={20} />
-                Nuovo Tipo di Asset
-              </h2>
-              <button onClick={() => setShowNewTypeModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
-                <X size={20} />
-              </button>
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4">
+            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <PlusCircle className="text-green-600" size={20} />
+              Nuovo Tipo
+            </h2>
+            <div className="space-y-3">
+              <select
+                value={newTypeForm.category}
+                onChange={(e) => setNewTypeForm({ ...newTypeForm, category: e.target.value })}
+                className="w-full px-3 py-3 border rounded-lg"
+              >
+                {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <input
+                type="text"
+                value={newTypeForm.labelIt}
+                onChange={(e) => setNewTypeForm({ ...newTypeForm, labelIt: e.target.value })}
+                className="w-full px-3 py-3 border rounded-lg"
+                placeholder="Nome tipo"
+                autoFocus
+              />
             </div>
-            
-            <div className="p-4 space-y-4">
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowNewTypeModal(false)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg">Annulla</button>
+              <button onClick={handleSaveNewType} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg">Salva</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL STORICO MANUTENZIONI */}
+      {showMaintenanceHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-2xl max-h-[85vh] flex flex-col rounded-t-xl">
+            <div className="border-b p-4 flex items-center justify-between">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Categoria
-                </label>
-                <select
-                  value={newTypeForm.category}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, category: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <History size={20} />
+                  Storico Manutenzioni
+                </h2>
+                <p className="text-sm text-gray-500">{showMaintenanceHistory.asset_code} - {EQUIPMENT_TYPES[showMaintenanceHistory.type]?.label}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => exportMaintenanceHistory(showMaintenanceHistory)}
+                  className="p-2.5 bg-green-100 hover:bg-green-200 rounded-lg text-green-700"
+                  title="Esporta Excel"
                 >
-                  {Object.entries(CATEGORIES).map(([key, config]) => (
-                    <option key={key} value={key}>{config.label}</option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome Italiano <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={newTypeForm.labelIt}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelIt: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Es: Piattaforma Semovente"
-                  autoFocus
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome Inglese (opzionale)
-                </label>
-                <input
-                  type="text"
-                  value={newTypeForm.labelEn}
-                  onChange={(e) => setNewTypeForm({ ...newTypeForm, labelEn: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  placeholder="Es: Self-propelled Platform"
-                />
+                  <Download size={20} />
+                </button>
+                <button onClick={() => setShowMaintenanceHistory(null)} className="p-2.5 hover:bg-gray-100 rounded-lg">
+                  <X size={20} />
+                </button>
               </div>
             </div>
             
-            <div className="flex justify-end gap-3 p-4 border-t">
-              <button
-                onClick={() => setShowNewTypeModal(false)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Annulla
-              </button>
-              <button
-                onClick={handleSaveNewType}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                <Check size={18} className="inline mr-2" />
-                Salva Tipo
+            <div className="flex-1 overflow-y-auto p-4">
+              {(maintenances[showMaintenanceHistory.id] || []).length === 0 ? (
+                <p className="text-center text-gray-500 py-8">Nessuna manutenzione registrata</p>
+              ) : (
+                <div className="space-y-3">
+                  {(maintenances[showMaintenanceHistory.id] || []).map(m => (
+                    <div key={m.id} className={`p-4 rounded-lg border ${
+                      m.status === 'completed' ? 'bg-green-50 border-green-200' :
+                      m.status === 'in_progress' ? 'bg-amber-50 border-amber-200' :
+                      m.status === 'cancelled' ? 'bg-gray-50 border-gray-200' :
+                      'bg-blue-50 border-blue-200'
+                    }`}>
+                      <div className="flex items-start justify-between">
+                        <span className="font-medium">{m.description}</span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          m.status === 'completed' ? 'bg-green-200 text-green-800' :
+                          m.status === 'in_progress' ? 'bg-amber-200 text-amber-800' :
+                          m.status === 'cancelled' ? 'bg-gray-200 text-gray-800' :
+                          'bg-blue-200 text-blue-800'
+                        }`}>
+                          {m.status === 'completed' ? 'Completata' : m.status === 'in_progress' ? 'In Corso' : m.status === 'cancelled' ? 'Annullata' : 'Programmata'}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600 mt-2 flex items-center gap-2">
+                        <Calendar size={14} />
+                        {new Date(m.scheduled_date).toLocaleDateString('it-IT')} • {m.duration_days} giorn{m.duration_days === 1 ? 'o' : 'i'}
+                        {m.maintenance_type && (
+                          <span className="bg-white px-2 py-0.5 rounded text-xs">
+                            {MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label}
+                          </span>
+                        )}
+                      </div>
+                      {m.actual_end_date && (
+                        <div className="text-xs text-gray-500 mt-2">
+                          ✓ Completata il {new Date(m.actual_end_date).toLocaleDateString('it-IT')}
+                          {m.completion_notes && <span className="block mt-1">Note: {m.completion_notes}</span>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="border-t p-4">
+              <button onClick={() => setShowMaintenanceHistory(null)} className="w-full py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
+                Chiudi
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============ MODAL CONFERMA ELIMINAZIONE ============ */}
+      {/* MODAL RITORNO MEZZO */}
+      {showReturnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4">
+            <h2 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
+              <RotateCcw className="text-green-600" size={20} />
+              Riporta Disponibile
+            </h2>
+            <p className="text-gray-600 mb-4">
+              Asset: <strong>{showReturnModal.asset_code}</strong>
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    checked={returnData.reassignToSquad}
+                    onChange={(e) => setReturnData({ ...returnData, reassignToSquad: e.target.checked })}
+                    className="w-5 h-5 rounded"
+                  />
+                  <span className="font-medium text-gray-700">Riassegna a squadra</span>
+                </label>
+                
+                {returnData.reassignToSquad && (
+                  <select
+                    value={returnData.squadId}
+                    onChange={(e) => setReturnData({ ...returnData, squadId: e.target.value })}
+                    className="w-full mt-2 px-3 py-3 border rounded-lg"
+                  >
+                    <option value="">-- Seleziona squadra --</option>
+                    {squads.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name || `Squadra ${s.squad_number}`}
+                        {s.id === showReturnModal.last_squad_id && ' ★ (precedente)'}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note (opzionale)</label>
+                <textarea
+                  value={returnData.notes}
+                  onChange={(e) => setReturnData({ ...returnData, notes: e.target.value })}
+                  rows={2}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Note sul completamento manutenzione..."
+                />
+              </div>
+            </div>
+            
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setShowReturnModal(null)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium">
+                Annulla
+              </button>
+              <button onClick={handleReturn} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                <Check size={18} />
+                Conferma
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFERMA ELIMINAZIONE */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4">
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
                 <AlertTriangle className="text-red-600" size={24} />
               </div>
               <div>
                 <h3 className="font-bold text-gray-800">Elimina Asset</h3>
-                <p className="text-sm text-gray-500">
-                  {showDeleteConfirm.asset_code} - {EQUIPMENT_TYPES[showDeleteConfirm.type]?.label || showDeleteConfirm.type}
-                </p>
+                <p className="text-sm text-gray-500">{showDeleteConfirm.asset_code}</p>
               </div>
             </div>
-            
-            <p className="text-gray-600 mb-6">
-              Sei sicuro di voler eliminare questo asset? 
-              L'asset verrà disattivato e non sarà più visibile nelle liste.
-            </p>
-            
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setShowDeleteConfirm(null)}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg"
-              >
-                Annulla
-              </button>
-              <button
-                onClick={() => handleDelete(showDeleteConfirm)}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-              >
-                <Trash2 size={18} className="inline mr-2" />
+            <p className="text-gray-600 mb-4">Sei sicuro? L'asset verrà disattivato e rimosso dalle squadre.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium">Annulla</button>
+              <button onClick={() => handleDelete(showDeleteConfirm)} className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
+                <Trash2 size={18} />
                 Elimina
               </button>
             </div>
