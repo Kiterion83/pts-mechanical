@@ -1023,7 +1023,7 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
             <td className="p-3 text-center"><span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">{fl.flange_type}</span></td>
             <td className="p-3 text-center text-xs">
               <span className="text-blue-600">{fl.first_part_code?.split('-').pop()}</span>
-              <span className="text-gray-400 mx-1">â†”</span>
+              <span className="text-gray-400 mx-1">↔</span>
               <span className="text-blue-600">{fl.second_part_code?.split('-').pop()}</span>
             </td>
             <td className="p-3 text-center text-xs">{fl.diameter_inch}" / {fl.pressure_rating}</td>
@@ -1050,7 +1050,7 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
         <tr>
           <th className="text-left p-3 font-medium">Weld No</th>
           <th className="text-left p-3 font-medium">ISO</th>
-          <th className="text-center p-3 font-medium">Spool 1 â†” Spool 2</th>
+          <th className="text-center p-3 font-medium">Spool 1 ↔ Spool 2</th>
           <th className="text-center p-3 font-medium">Type</th>
           <th className="text-center p-3 font-medium">Ø</th>
           <th className="text-center p-3 font-medium">Thick</th>
@@ -1069,7 +1069,7 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
             <td className="p-3 text-xs text-gray-600">{w.iso_number}</td>
             <td className="p-3 text-center">
               <span className="text-blue-600 font-mono text-xs">{w.full_first_spool?.split('-').pop()}</span>
-              <span className="text-gray-400 mx-2">â†”</span>
+              <span className="text-gray-400 mx-2">↔</span>
               <span className="text-blue-600 font-mono text-xs">{w.full_second_spool?.split('-').pop()}</span>
             </td>
             <td className="p-3 text-center"><span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">{w.weld_type}</span></td>
@@ -1091,7 +1091,7 @@ const WeldsTable = ({ welds, onEdit, onDelete }) => (
   </div>
 );
 
-// Materials Summary
+// Materials Summary - Restructured with 5 columns
 const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInventory }) => (
   <div className="space-y-6">
     <div className="bg-gray-50 rounded-xl p-5 border">
@@ -1101,30 +1101,35 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
           <thead className="bg-white">
             <tr>
               <th className="text-left p-3 font-medium border">Support Mark</th>
-              <th className="text-center p-3 font-medium border bg-blue-50">Qty Necessaria</th>
-              <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
+              <th className="text-center p-3 font-medium border bg-blue-50">Qty di Progetto</th>
               <th className="text-center p-3 font-medium border bg-amber-50">Qty Consegnate</th>
+              <th className="text-center p-3 font-medium border bg-purple-50">Qty Necessarie</th>
+              <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
               <th className="text-center p-3 font-medium border">Disponibilità</th>
             </tr>
           </thead>
           <tbody>
             {supportSummary.length === 0 ? (
-              <tr><td colSpan={5} className="p-4 text-center text-gray-400">Nessun dato</td></tr>
+              <tr><td colSpan={6} className="p-4 text-center text-gray-400">Nessun dato</td></tr>
             ) : supportSummary.map((item, idx) => {
-              const available = item.qty_warehouse - item.qty_delivered;
-              const remaining = item.qty_necessary - item.qty_delivered;
-              const isOk = available >= remaining;
+              const qtyProgetto = item.qty_necessary || 0;
+              const qtyConsegnate = item.qty_delivered || 0;
+              const qtyNecessarie = qtyProgetto - qtyConsegnate;
+              const qtyMagazzino = item.qty_warehouse || 0;
+              const disponibilita = qtyMagazzino - qtyNecessarie;
+              const isOk = disponibilita >= 0;
               return (
                 <tr key={idx} className="border-t">
                   <td className="p-3 border font-mono font-medium">{item.support_mark}</td>
-                  <td className="p-3 border text-center font-bold text-blue-700">{item.qty_necessary}</td>
+                  <td className="p-3 border text-center font-bold text-blue-700">{qtyProgetto}</td>
+                  <td className="p-3 border text-center text-amber-700">{qtyConsegnate}</td>
+                  <td className="p-3 border text-center font-bold text-purple-700">{qtyNecessarie}</td>
                   <td className="p-3 border text-center">
-                    <input type="number" defaultValue={item.qty_warehouse} onBlur={(e) => onUpdateInventory('support', item.support_mark, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
+                    <input type="number" defaultValue={qtyMagazzino} onBlur={(e) => onUpdateInventory('support', item.support_mark, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
                   </td>
-                  <td className="p-3 border text-center text-amber-700">{item.qty_delivered}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? '✓ OK' : `⚠️ -${remaining - available}`}
+                      {isOk ? `✓ +${disponibilita}` : `⚠️ ${disponibilita}`}
                     </span>
                   </td>
                 </tr>
@@ -1143,32 +1148,37 @@ const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInve
             <tr>
               <th className="text-left p-3 font-medium border">Codice</th>
               <th className="text-center p-3 font-medium border">Tipo</th>
-              <th className="text-center p-3 font-medium border bg-blue-50">Qty Necessaria</th>
-              <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
+              <th className="text-center p-3 font-medium border bg-blue-50">Qty di Progetto</th>
               <th className="text-center p-3 font-medium border bg-amber-50">Qty Consegnate</th>
+              <th className="text-center p-3 font-medium border bg-purple-50">Qty Necessarie</th>
+              <th className="text-center p-3 font-medium border bg-green-50">Qty Magazzino</th>
               <th className="text-center p-3 font-medium border">Disponibilità</th>
             </tr>
           </thead>
           <tbody>
             {flangeMaterialsSummary.length === 0 ? (
-              <tr><td colSpan={6} className="p-4 text-center text-gray-400">Nessun dato</td></tr>
+              <tr><td colSpan={7} className="p-4 text-center text-gray-400">Nessun dato</td></tr>
             ) : flangeMaterialsSummary.map((item, idx) => {
-              const available = item.qty_warehouse - (item.qty_delivered || 0);
-              const remaining = item.qty_necessary - (item.qty_delivered || 0);
-              const isOk = available >= remaining;
+              const qtyProgetto = item.qty_necessary || 0;
+              const qtyConsegnate = item.qty_delivered || 0;
+              const qtyNecessarie = qtyProgetto - qtyConsegnate;
+              const qtyMagazzino = item.qty_warehouse || 0;
+              const disponibilita = qtyMagazzino - qtyNecessarie;
+              const isOk = disponibilita >= 0;
               const typeColor = item.material_type === 'gasket' ? 'bg-purple-100 text-purple-700' : item.material_type === 'bolt' ? 'bg-gray-100 text-gray-700' : 'bg-cyan-100 text-cyan-700';
               return (
                 <tr key={idx} className="border-t">
                   <td className="p-3 border font-mono font-medium">{item.material_code}</td>
                   <td className="p-3 border text-center"><span className={`px-2 py-0.5 rounded text-xs ${typeColor}`}>{item.material_type === 'gasket' ? 'Gasket' : item.material_type === 'bolt' ? 'Bolt' : 'Insulation'}</span></td>
-                  <td className="p-3 border text-center font-bold text-blue-700">{item.qty_necessary}</td>
+                  <td className="p-3 border text-center font-bold text-blue-700">{qtyProgetto}</td>
+                  <td className="p-3 border text-center text-amber-700">{qtyConsegnate}</td>
+                  <td className="p-3 border text-center font-bold text-purple-700">{qtyNecessarie}</td>
                   <td className="p-3 border text-center">
-                    <input type="number" defaultValue={item.qty_warehouse} onBlur={(e) => onUpdateInventory('flange', { code: item.material_code, type: item.material_type }, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
+                    <input type="number" defaultValue={qtyMagazzino} onBlur={(e) => onUpdateInventory('flange', { code: item.material_code, type: item.material_type }, e.target.value)} className="w-20 text-center border rounded px-2 py-1" />
                   </td>
-                  <td className="p-3 border text-center text-amber-700">{item.qty_delivered || 0}</td>
                   <td className="p-3 border text-center">
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {isOk ? '✓ OK' : `⚠️ -${remaining - available}`}
+                      {isOk ? `✓ +${disponibilita}` : `⚠️ ${disponibilita}`}
                     </span>
                   </td>
                 </tr>

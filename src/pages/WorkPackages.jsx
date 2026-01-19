@@ -810,50 +810,68 @@ const WPActionCard = ({ wp, onEdit, onDelete }) => {
 };
 
 // ============================================================================
-// CREATE WP-P WIZARD - Con gestione conflitti
+// CREATE WP-P WIZARD - 6 Steps Weld-Centric
+// Step 1: Info Base | Step 2: Welds | Step 3: Spools | Step 4: Supports | Step 5: Flanges | Step 6: Assignment
 // ============================================================================
+
+// Spool Status Badge with colored dots
+const SpoolStatusDot = ({ status }) => {
+  const configs = {
+    in_production: { color: 'bg-gray-400', label: 'In Produzione' },
+    shipped: { color: 'bg-yellow-400', label: 'Shipment' },
+    at_laydown: { color: 'bg-blue-400', label: 'Laydown' },
+    ir_issued: { color: 'bg-orange-400', label: 'IR Issued' },
+    at_site: { color: 'bg-purple-400', label: 'To Site' },
+    erected: { color: 'bg-green-500', label: 'Erected' }
+  };
+  const config = configs[status] || configs.in_production;
+  return (
+    <span className={`inline-flex items-center gap-1`} title={config.label}>
+      <span className={`w-3 h-3 rounded-full ${config.color}`}></span>
+      <span className="text-xs text-gray-500 hidden sm:inline">{config.label}</span>
+    </span>
+  );
+};
+
+// Availability dot for supports/flanges
+const AvailabilityDot = ({ available }) => (
+  <span className={`w-3 h-3 rounded-full ${available ? 'bg-green-500' : 'bg-red-500'}`} 
+        title={available ? 'Disponibile' : 'Non disponibile'}></span>
+);
 
 const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports, flanges, allWorkPackages, onClose, onSuccess }) => {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({ description: '', area: '', notes: '' });
-  const [selectedArea, setSelectedArea] = useState('');
-  const [selectedIso, setSelectedIso] = useState('');
-  const [selectedSpools, setSelectedSpools] = useState([]);
+  
+  // Step 1: Info Base
+  const [formData, setFormData] = useState({ description: '', notes: '' });
+  const [nextCode, setNextCode] = useState('WP-P-001');
+  
+  // Step 2: Welds selection (primary)
+  const [selectedWelds, setSelectedWelds] = useState([]);
+  const [weldSearch, setWeldSearch] = useState('');
+  const [weldFilterIso, setWeldFilterIso] = useState('');
+  
+  // Step 3: Spools (derived from welds, can deselect)
+  const [excludedSpools, setExcludedSpools] = useState([]);
+  
+  // Step 4: Supports (derived from spools, can deselect)
+  const [excludedSupports, setExcludedSupports] = useState([]);
+  const [supportSummary, setSupportSummary] = useState([]);
+  
+  // Step 5: Flanges (derived from spools, can deselect)
+  const [excludedFlanges, setExcludedFlanges] = useState([]);
+  const [flangeSummary, setFlangeSummary] = useState([]);
+  
+  // Step 6: Assignment
   const [selectedSquad, setSelectedSquad] = useState('');
   const [plannedStart, setPlannedStart] = useState('');
   const [plannedEnd, setPlannedEnd] = useState('');
   const [splitResources, setSplitResources] = useState(false);
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [conflicts, setConflicts] = useState([]);
-  
-  const areas = [...new Set(isometrics.map(i => i.area).filter(Boolean))];
-  const filteredIsos = selectedArea ? isometrics.filter(i => i.area === selectedArea) : isometrics;
-  const filteredSpools = selectedIso ? spools.filter(s => s.isometric_id === selectedIso) : selectedArea ? spools.filter(s => { const iso = isometrics.find(i => i.id === s.isometric_id); return iso?.area === selectedArea; }) : spools;
 
-  const totals = useMemo(() => {
-    let weldsSet = new Set();
-    let supportsKg = 0;
-    let flangesCount = 0;
-    let hasDissimilar = false;
-    selectedSpools.forEach(spoolId => {
-      welds.filter(w => w.spool_1_id === spoolId || w.spool_2_id === spoolId).forEach(w => { weldsSet.add(w.id); if (w.is_dissimilar) hasDissimilar = true; });
-      supports.filter(s => s.spool_id === spoolId).forEach(s => supportsKg += Number(s.total_weight_kg || 0));
-      flangesCount += flanges.filter(f => f.part_1_id === spoolId).length;
-    });
-    return { welds: weldsSet.size, supportsKg, flanges: flangesCount, hasDissimilar };
-  }, [selectedSpools, welds, supports, flanges]);
-
-  const weights = useMemo(() => {
-    let count = 0;
-    if (totals.welds > 0) count++;
-    if (totals.supportsKg > 0) count++;
-    if (totals.flanges > 0) count++;
-    const w = count > 0 ? (100 / count).toFixed(1) : '-';
-    return { welding: totals.welds > 0 ? w : '-', supports: totals.supportsKg > 0 ? w : '-', flanges: totals.flanges > 0 ? w : '-' };
-  }, [totals]);
-
-  const [nextCode, setNextCode] = useState('WP-P-001');
+  // Generate WP code
   useEffect(() => {
     const generateCode = async () => {
       const { data } = await supabase.rpc('generate_wp_code', { p_project_id: project.id, p_type: 'piping' });
@@ -862,7 +880,110 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     generateCode();
   }, [project.id]);
 
-  // Check conflitti quando cambiano squadra o date
+  // Fetch inventory summaries
+  useEffect(() => {
+    const fetchSummaries = async () => {
+      try {
+        const { data: suppData } = await supabase
+          .from('v_mto_support_summary')
+          .select('*')
+          .eq('project_id', project.id);
+        setSupportSummary(suppData || []);
+      } catch (e) { console.error('Support summary error:', e); }
+      
+      try {
+        const { data: flangeData } = await supabase
+          .from('v_mto_flange_materials_summary')
+          .select('*')
+          .eq('project_id', project.id);
+        setFlangeSummary(flangeData || []);
+      } catch (e) { console.error('Flange summary error:', e); }
+    };
+    fetchSummaries();
+  }, [project.id]);
+
+  // Derive spools from selected welds
+  const derivedSpools = useMemo(() => {
+    const spoolIds = new Set();
+    selectedWelds.forEach(weldId => {
+      const weld = welds.find(w => w.id === weldId);
+      if (weld?.spool_1_id) spoolIds.add(weld.spool_1_id);
+      if (weld?.spool_2_id) spoolIds.add(weld.spool_2_id);
+    });
+    return spools.filter(s => spoolIds.has(s.id) && !excludedSpools.includes(s.id));
+  }, [selectedWelds, welds, spools, excludedSpools]);
+
+  // Derive supports from derived spools
+  const derivedSupports = useMemo(() => {
+    const spoolIds = derivedSpools.map(s => s.id);
+    return supports.filter(s => spoolIds.includes(s.spool_id) && !excludedSupports.includes(s.id));
+  }, [derivedSpools, supports, excludedSupports]);
+
+  // Derive flanges from derived spools
+  const derivedFlanges = useMemo(() => {
+    const spoolIds = derivedSpools.map(s => s.id);
+    return flanges.filter(f => (spoolIds.includes(f.part_1_id) || spoolIds.includes(f.first_part_id)) && !excludedFlanges.includes(f.id));
+  }, [derivedSpools, flanges, excludedFlanges]);
+
+  // Check support availability
+  const getSupportAvailability = (support) => {
+    const summary = supportSummary.find(s => s.support_mark === support.support_mark);
+    if (!summary) return false;
+    const qtyNecessarie = (summary.qty_necessary || 0) - (summary.qty_delivered || 0);
+    return (summary.qty_warehouse || 0) >= qtyNecessarie;
+  };
+
+  // Check flange material availability
+  const getFlangeAvailability = (flange) => {
+    // Check gasket
+    if (flange.gasket_code) {
+      const gasketSummary = flangeSummary.find(s => s.material_code === flange.gasket_code && s.material_type === 'gasket');
+      if (!gasketSummary) return false;
+      const qtyNecessarie = (gasketSummary.qty_necessary || 0) - (gasketSummary.qty_delivered || 0);
+      if ((gasketSummary.qty_warehouse || 0) < qtyNecessarie) return false;
+    }
+    // Check bolts
+    if (flange.bolt_code) {
+      const boltSummary = flangeSummary.find(s => s.material_code === flange.bolt_code && s.material_type === 'bolt');
+      if (!boltSummary) return false;
+      const qtyNecessarie = (boltSummary.qty_necessary || 0) - (boltSummary.qty_delivered || 0);
+      if ((boltSummary.qty_warehouse || 0) < qtyNecessarie) return false;
+    }
+    return true;
+  };
+
+  // Filter welds for display
+  const filteredWelds = useMemo(() => {
+    return welds.filter(w => {
+      if (weldFilterIso && w.isometric_id !== weldFilterIso) return false;
+      if (weldSearch) {
+        const search = weldSearch.toLowerCase();
+        if (!w.weld_no?.toLowerCase().includes(search) && 
+            !w.full_weld_no?.toLowerCase().includes(search) &&
+            !w.iso_number?.toLowerCase().includes(search)) return false;
+      }
+      return true;
+    });
+  }, [welds, weldFilterIso, weldSearch]);
+
+  // Check for dissimilar welds
+  const hasDissimilar = useMemo(() => {
+    return selectedWelds.some(weldId => {
+      const weld = welds.find(w => w.id === weldId);
+      return weld?.is_dissimilar;
+    });
+  }, [selectedWelds, welds]);
+
+  // Calculate totals
+  const totals = useMemo(() => ({
+    welds: selectedWelds.length,
+    spools: derivedSpools.length,
+    supports: derivedSupports.length,
+    supportsKg: derivedSupports.reduce((sum, s) => sum + Number(s.weight_kg || s.total_weight_kg || 0), 0),
+    flanges: derivedFlanges.length
+  }), [selectedWelds, derivedSpools, derivedSupports, derivedFlanges]);
+
+  // Check conflicts when squad/dates change
   useEffect(() => {
     if (selectedSquad && plannedStart && plannedEnd) {
       const foundConflicts = checkSquadConflicts(selectedSquad, plannedStart, plannedEnd, allWorkPackages);
@@ -884,26 +1005,36 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     return { id: squad.id, squad_number: squad.squad_number, name: squad.name, memberCount };
   };
 
+  // Save WP
   const handleSave = async () => {
     setSaving(true);
     try {
       const { data: wpData, error: wpError } = await supabase.from('work_packages').insert({
-        project_id: project.id, code: nextCode, wp_type: 'piping', description: formData.description,
-        area: formData.area || null, squad_id: selectedSquad || null, planned_start: plannedStart || null,
-        planned_end: plannedEnd || null, notes: formData.notes || null, status: selectedSquad ? 'planned' : 'not_assigned',
+        project_id: project.id, 
+        code: nextCode, 
+        wp_type: 'piping', 
+        description: formData.description || null,
+        squad_id: selectedSquad || null, 
+        planned_start: plannedStart || null,
+        planned_end: plannedEnd || null, 
+        notes: formData.notes || null, 
+        status: selectedSquad ? 'planned' : 'not_assigned',
         split_resources: splitResources
       }).select().single();
       if (wpError) throw wpError;
       
-      if (selectedSpools.length > 0) {
-        const spoolInserts = selectedSpools.map(spoolId => {
-          const spool = spools.find(s => s.id === spoolId);
-          return { work_package_id: wpData.id, spool_id: spoolId, spool_number: spool?.spool_number };
-        });
+      // Insert spools
+      if (derivedSpools.length > 0) {
+        const spoolInserts = derivedSpools.map(spool => ({
+          work_package_id: wpData.id, 
+          spool_id: spool.id, 
+          spool_number: spool.spool_number
+        }));
         const { error: spoolError } = await supabase.from('wp_spools').insert(spoolInserts);
         if (spoolError) throw spoolError;
       }
       
+      // Generate activities
       await supabase.rpc('generate_wp_activities', { p_wp_id: wpData.id });
       onSuccess();
     } catch (error) {
@@ -913,142 +1044,442 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     }
   };
 
+  // Can proceed to next step?
+  const canProceed = () => {
+    if (step === 2) return selectedWelds.length > 0;
+    return true;
+  };
+
+  const stepLabels = ['Info Base', 'Saldature', 'Spools', 'Supporti', 'Flanges', 'Assegnazione'];
+
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+          {/* Header */}
           <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-            <div><h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2><p className="text-sm text-gray-500">Step {step} di 4</p></div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2>
+              <p className="text-sm text-gray-500">Step {step} di 6 - {stepLabels[step - 1]}</p>
+            </div>
             <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
           </div>
           
-          <div className="flex border-b">
-            {['Info Base', 'Seleziona Spool', 'Riepilogo', 'Assegnazione'].map((label, idx) => (
-              <div key={idx} className={`flex-1 py-3 text-center text-sm font-medium border-b-2 ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
-                {step > idx + 1 ? '✓ ' : `${idx + 1}. `}{label}
+          {/* Step indicators */}
+          <div className="flex border-b overflow-x-auto">
+            {stepLabels.map((label, idx) => (
+              <div key={idx} className={`flex-1 py-3 text-center text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap px-2 
+                ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : 
+                  step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
+                {step > idx + 1 ? '✓' : `${idx + 1}.`} {label}
               </div>
             ))}
           </div>
           
+          {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
+            {/* Step 1: Info Base */}
             {step === 1 && (
               <div className="space-y-4 max-w-2xl">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label><input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg"><option value="">Seleziona...</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label>
+                  <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
                 </div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label><input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} placeholder="Es: Linea 24&quot; HC" className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Note</label><textarea rows={3} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+                  <input 
+                    type="text" 
+                    value={formData.description} 
+                    onChange={e => setFormData({...formData, description: e.target.value})} 
+                    placeholder="Es: Linea 24&quot; HC (opzionale)"
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                  <textarea 
+                    rows={3} 
+                    value={formData.notes} 
+                    onChange={e => setFormData({...formData, notes: e.target.value})} 
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                </div>
               </div>
             )}
             
+            {/* Step 2: Select Welds */}
             {step === 2 && (
               <div className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Area</label><select value={selectedArea} onChange={e => { setSelectedArea(e.target.value); setSelectedIso(''); }} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutte</option>{areas.map(a => <option key={a} value={a}>{a}</option>)}</select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label><select value={selectedIso} onChange={e => setSelectedIso(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white"><option value="">Tutti</option>{filteredIsos.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}</select></div>
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-orange-800">🔥 <strong>Seleziona le saldature</strong> da includere nel WP. Spools, supporti e flanges verranno derivati automaticamente.</p>
                 </div>
-                <div className="flex items-center justify-between mb-2"><h4 className="font-medium text-gray-700">Spool ({filteredSpools.length})</h4><span className="text-sm text-blue-600 font-medium">{selectedSpools.length} sel.</span></div>
+                
+                {/* Filters */}
+                <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Cerca</label>
+                    <input 
+                      type="text" 
+                      value={weldSearch} 
+                      onChange={e => setWeldSearch(e.target.value)} 
+                      placeholder="Weld No, ISO..."
+                      className="w-full px-3 py-2 border rounded-lg bg-white" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label>
+                    <select 
+                      value={weldFilterIso} 
+                      onChange={e => setWeldFilterIso(e.target.value)} 
+                      className="w-full px-3 py-2 border rounded-lg bg-white"
+                    >
+                      <option value="">Tutti</option>
+                      {isometrics.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Selection summary */}
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-gray-700">Saldature ({filteredWelds.length})</h4>
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-orange-600 font-medium">🔥 {selectedWelds.length} selezionate</span>
+                    {selectedWelds.length > 0 && (
+                      <button onClick={() => setSelectedWelds([])} className="text-sm text-gray-500 hover:text-gray-700">Deseleziona</button>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Welds list */}
                 <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
-                  {filteredSpools.map(spool => {
-                    const iso = isometrics.find(i => i.id === spool.isometric_id);
-                    const spoolWelds = welds.filter(w => w.spool_1_id === spool.id || w.spool_2_id === spool.id);
-                    const spoolSupports = supports.filter(s => s.spool_id === spool.id);
-                    const spoolFlanges = flanges.filter(f => f.part_1_id === spool.id);
-                    const hasDissimilar = spoolWelds.some(w => w.is_dissimilar);
-                    const isSelected = selectedSpools.includes(spool.id);
+                  {filteredWelds.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">Nessuna saldatura trovata</div>
+                  ) : filteredWelds.map(weld => {
+                    const isSelected = selectedWelds.includes(weld.id);
+                    const spool1 = spools.find(s => s.id === weld.spool_1_id);
+                    const spool2 = spools.find(s => s.id === weld.spool_2_id);
                     return (
-                      <label key={spool.id} className={`flex items-center gap-3 p-3 cursor-pointer ${hasDissimilar ? 'bg-yellow-50' : isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
-                        <input type="checkbox" checked={isSelected} onChange={e => { if (e.target.checked) setSelectedSpools([...selectedSpools, spool.id]); else setSelectedSpools(selectedSpools.filter(id => id !== spool.id)); }} className="w-4 h-4 text-blue-600 rounded" />
+                      <label key={weld.id} className={`flex items-center gap-3 p-3 cursor-pointer ${weld.is_dissimilar ? 'bg-yellow-50' : isSelected ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected} 
+                          onChange={e => {
+                            if (e.target.checked) setSelectedWelds([...selectedWelds, weld.id]);
+                            else setSelectedWelds(selectedWelds.filter(id => id !== weld.id));
+                          }} 
+                          className="w-4 h-4 text-orange-600 rounded" 
+                        />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2"><span className="font-mono font-medium text-sm">{spool.spool_number}</span>{hasDissimilar && <span className="text-yellow-600 text-xs bg-yellow-100 px-1.5 py-0.5 rounded">⚠️</span>}</div>
-                          <div className="text-xs text-gray-500">{iso?.iso_number} • {iso?.area}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-medium text-sm text-orange-700">{weld.weld_no}</span>
+                            {weld.is_dissimilar && <span className="text-yellow-600 text-xs bg-yellow-100 px-1.5 py-0.5 rounded">⚠️ Dissimilare</span>}
+                          </div>
+                          <div className="text-xs text-gray-500">{weld.iso_number}</div>
                         </div>
-                        <div className="flex gap-3 text-xs"><span className="text-orange-600">{spoolWelds.length}W</span><span className="text-gray-500">{spoolSupports.reduce((s,x) => s + Number(x.total_weight_kg || 0), 0).toFixed(0)}kg</span><span className="text-purple-600">{spoolFlanges.length}F</span></div>
-                        <SiteStatusBadge status={spool.site_status} />
+                        <div className="text-xs text-gray-600 text-right">
+                          <div className="font-mono">{spool1?.spool_number || '?'} ↔ {spool2?.spool_number || '?'}</div>
+                          <div>{weld.diameter_inch}" × {weld.thickness_mm}mm</div>
+                        </div>
+                        <span className={`px-2 py-0.5 rounded text-xs ${weld.weld_type === 'BW' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
+                          {weld.weld_type}
+                        </span>
                       </label>
                     );
                   })}
                 </div>
-                {selectedSpools.length > 0 && <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between"><span className="font-medium text-blue-800">📦 {selectedSpools.length} spool</span><button onClick={() => setSelectedSpools([])} className="text-sm text-blue-600">Deseleziona</button></div>}
-              </div>
-            )}
-            
-            {step === 3 && (
-              <div className="space-y-6">
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4"><h4 className="font-bold text-green-800 mb-2">✓ {selectedSpools.length} Spool</h4><div className="flex flex-wrap gap-2">{selectedSpools.map(spId => { const sp = spools.find(s => s.id === spId); return <span key={spId} className="bg-white px-2 py-1 rounded text-xs border font-mono">{sp?.short_name || sp?.spool_number}</span>; })}</div></div>
-                {totals.hasDissimilar && <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 flex items-start gap-3"><span className="text-2xl">⚠️</span><div><h4 className="font-bold text-yellow-800">Giunti Dissimili</h4><p className="text-sm text-yellow-700">WPS speciale richiesta</p></div></div>}
-                <div className="bg-white border rounded-lg overflow-hidden">
-                  <div className="bg-gray-100 px-4 py-3 font-semibold border-b">📊 Quantità</div>
-                  <div className="p-4 space-y-4">
-                    <div className="flex justify-between py-3 border-b"><span>🔥 Welding</span><span className="font-bold text-xl">{totals.welds} joints</span></div>
-                    <div className="flex justify-between py-3 border-b"><span>🔩 Supports</span><span className="font-bold text-xl">{totals.supportsKg.toFixed(1)} kg</span></div>
-                    <div className="flex justify-between py-3"><span>⚙️ Flanges</span><span className="font-bold text-xl">{totals.flanges} joints</span></div>
-                  </div>
-                </div>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h4 className="font-medium text-blue-800 mb-3">📐 Pesi</h4>
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div className={`rounded-lg p-3 ${totals.welds > 0 ? 'bg-white border-2 border-orange-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-orange-600">{weights.welding}%</div><div className="text-xs">Welding</div></div>
-                    <div className={`rounded-lg p-3 ${totals.supportsKg > 0 ? 'bg-white border-2 border-gray-400' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-gray-600">{weights.supports}%</div><div className="text-xs">Supports</div></div>
-                    <div className={`rounded-lg p-3 ${totals.flanges > 0 ? 'bg-white border-2 border-purple-300' : 'bg-gray-100 opacity-50'}`}><div className="text-2xl font-bold text-purple-600">{weights.flanges}%</div><div className="text-xs">Flanges</div></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {step === 4 && (
-              <div className="space-y-4 max-w-2xl">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Inizio</label><input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fine</label><input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg" /></div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Squadra
-                    {splitResources && <span className="ml-2 text-amber-600 text-xs font-normal">➗ risorse divise</span>}
-                  </label>
-                  <select 
-                    value={selectedSquad} 
-                    onChange={e => { setSelectedSquad(e.target.value); setSplitResources(false); }} 
-                    className={`w-full px-3 py-2 border rounded-lg ${splitResources ? 'border-amber-400 bg-amber-50' : ''}`}
-                  >
-                    <option value="">-- Non assegnare --</option>
-                    {squads.map(sq => {
-                      let count = sq.squad_members?.length || 0;
-                      if (sq.foreman_id) count++;
-                      return <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({count} pers.)</option>;
-                    })}
-                  </select>
-                </div>
-                {splitResources && conflicts.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <div className="flex items-start gap-2">
-                      <span className="text-amber-500 text-lg">⚠️</span>
-                      <div className="text-sm">
-                        <p className="font-medium text-amber-800">Risorse divise</p>
-                        <p className="text-amber-700">La squadra è condivisa con: {conflicts.map(c => c.code).join(', ')}</p>
-                      </div>
+                
+                {hasDissimilar && (
+                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 flex items-start gap-3">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <h4 className="font-bold text-yellow-800">Giunti Dissimili Selezionati</h4>
+                      <p className="text-sm text-yellow-700">WPS speciale richiesta per queste saldature</p>
                     </div>
                   </div>
                 )}
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4"><p className="text-sm text-amber-700">💡 Puoi assegnare anche dopo</p></div>
+              </div>
+            )}
+            
+            {/* Step 3: Spools (derived, can exclude) */}
+            {step === 3 && (
+              <div className="space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-blue-800">📦 Spools derivati dalle saldature selezionate. Puoi <strong>escludere</strong> singoli spools se necessario.</p>
+                </div>
+                
+                {/* Legend */}
+                <div className="flex flex-wrap gap-3 text-xs bg-gray-50 p-3 rounded-lg">
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-400"></span> In Produzione</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-400"></span> Shipment</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-blue-400"></span> Laydown</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-orange-400"></span> IR Issued</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-purple-400"></span> To Site</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> Erected</span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-gray-700">Spools inclusi ({derivedSpools.length})</h4>
+                  {excludedSpools.length > 0 && (
+                    <button onClick={() => setExcludedSpools([])} className="text-sm text-blue-600">Ripristina tutti</button>
+                  )}
+                </div>
+                
+                <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
+                  {derivedSpools.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">Nessuno spool derivato</div>
+                  ) : derivedSpools.map(spool => {
+                    const iso = isometrics.find(i => i.id === spool.isometric_id);
+                    const spoolWelds = welds.filter(w => (w.spool_1_id === spool.id || w.spool_2_id === spool.id) && selectedWelds.includes(w.id));
+                    return (
+                      <div key={spool.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
+                        <button 
+                          onClick={() => setExcludedSpools([...excludedSpools, spool.id])}
+                          className="p-1 hover:bg-red-100 rounded text-red-500 text-xs"
+                          title="Escludi"
+                        >✕</button>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-medium text-sm">{spool.spool_number}</div>
+                          <div className="text-xs text-gray-500">{iso?.iso_number} • {spool.diameter_inch}" • {spool.weight_kg}kg</div>
+                        </div>
+                        <div className="text-xs text-orange-600">{spoolWelds.length} welds</div>
+                        <SpoolStatusDot status={spool.site_status} />
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {excludedSpools.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">⚠️ {excludedSpools.length} spools esclusi</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Step 4: Supports (derived, can exclude) */}
+            {step === 4 && (
+              <div className="space-y-4">
+                <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-gray-800">🔩 Supporti derivati dagli spools. Puoi <strong>escludere</strong> singoli supporti se necessario.</p>
+                </div>
+                
+                {/* Legend */}
+                <div className="flex gap-4 text-xs bg-gray-50 p-3 rounded-lg">
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> Disponibile a magazzino</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> Non disponibile</span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-gray-700">Supporti inclusi ({derivedSupports.length}) - {derivedSupports.reduce((s,x) => s + Number(x.weight_kg || x.total_weight_kg || 0), 0).toFixed(1)} kg</h4>
+                  {excludedSupports.length > 0 && (
+                    <button onClick={() => setExcludedSupports([])} className="text-sm text-blue-600">Ripristina tutti</button>
+                  )}
+                </div>
+                
+                <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
+                  {derivedSupports.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">Nessun supporto derivato</div>
+                  ) : derivedSupports.map(support => {
+                    const spool = spools.find(s => s.id === support.spool_id);
+                    const isAvailable = getSupportAvailability(support);
+                    return (
+                      <div key={support.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
+                        <button 
+                          onClick={() => setExcludedSupports([...excludedSupports, support.id])}
+                          className="p-1 hover:bg-red-100 rounded text-red-500 text-xs"
+                          title="Escludi"
+                        >✕</button>
+                        <AvailabilityDot available={isAvailable} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-medium text-sm">{support.support_tag_no || support.tag_no}</div>
+                          <div className="text-xs text-gray-500">
+                            <span className="bg-gray-100 px-1 rounded">{support.support_mark}</span> • {spool?.spool_number}
+                          </div>
+                        </div>
+                        <div className="text-xs text-gray-600">{support.weight_kg || support.total_weight_kg || 0} kg</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {excludedSupports.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">⚠️ {excludedSupports.length} supporti esclusi</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Step 5: Flanges (derived, can exclude) */}
+            {step === 5 && (
+              <div className="space-y-4">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm text-purple-800">⚙️ Giunti flangiati derivati dagli spools. Puoi <strong>escludere</strong> singole flanges se necessario.</p>
+                </div>
+                
+                {/* Legend */}
+                <div className="flex gap-4 text-xs bg-gray-50 p-3 rounded-lg">
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> Materiali disponibili</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> Materiali non disponibili</span>
+                </div>
+                
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-gray-700">Flanges incluse ({derivedFlanges.length})</h4>
+                  {excludedFlanges.length > 0 && (
+                    <button onClick={() => setExcludedFlanges([])} className="text-sm text-blue-600">Ripristina tutti</button>
+                  )}
+                </div>
+                
+                <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
+                  {derivedFlanges.length === 0 ? (
+                    <div className="p-8 text-center text-gray-400">Nessuna flange derivata</div>
+                  ) : derivedFlanges.map(flange => {
+                    const isAvailable = getFlangeAvailability(flange);
+                    return (
+                      <div key={flange.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
+                        <button 
+                          onClick={() => setExcludedFlanges([...excludedFlanges, flange.id])}
+                          className="p-1 hover:bg-red-100 rounded text-red-500 text-xs"
+                          title="Escludi"
+                        >✕</button>
+                        <AvailabilityDot available={isAvailable} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-mono font-medium text-sm text-purple-700">{flange.flange_tag || flange.tag}</div>
+                          <div className="text-xs text-gray-500">{flange.iso_number} • {flange.flange_type || flange.type}</div>
+                        </div>
+                        <div className="text-xs text-right">
+                          <div className="text-gray-600">{flange.diameter_inch}" / {flange.pressure_rating}</div>
+                          <div className="text-gray-400">G: {flange.gasket_code} • B: {flange.bolt_code} ×{flange.bolt_qty}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                
+                {excludedFlanges.length > 0 && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-700">⚠️ {excludedFlanges.length} flanges escluse</p>
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Step 6: Assignment */}
+            {step === 6 && (
+              <div className="space-y-6">
+                {/* Summary */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h4 className="font-bold text-green-800 mb-3">📊 Riepilogo WP</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div className="bg-white rounded-lg p-3 border">
+                      <div className="text-2xl font-bold text-orange-600">{totals.welds}</div>
+                      <div className="text-xs text-gray-500">Saldature</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border">
+                      <div className="text-2xl font-bold text-blue-600">{totals.spools}</div>
+                      <div className="text-xs text-gray-500">Spools</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border">
+                      <div className="text-2xl font-bold text-gray-600">{totals.supportsKg.toFixed(1)}</div>
+                      <div className="text-xs text-gray-500">kg Supporti</div>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border">
+                      <div className="text-2xl font-bold text-purple-600">{totals.flanges}</div>
+                      <div className="text-xs text-gray-500">Flanges</div>
+                    </div>
+                  </div>
+                </div>
+                
+                {hasDissimilar && (
+                  <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-3 flex items-start gap-3">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <h4 className="font-bold text-yellow-800">Giunti Dissimili Presenti</h4>
+                      <p className="text-sm text-yellow-700">WPS speciale richiesta</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Assignment fields */}
+                <div className="space-y-4 max-w-2xl">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Data Inizio</label>
+                      <input type="date" value={plannedStart} onChange={e => setPlannedStart(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Data Fine</label>
+                      <input type="date" value={plannedEnd} onChange={e => setPlannedEnd(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Squadra
+                      {splitResources && <span className="ml-2 text-amber-600 text-xs font-normal">➗ risorse divise</span>}
+                    </label>
+                    <select 
+                      value={selectedSquad} 
+                      onChange={e => { setSelectedSquad(e.target.value); setSplitResources(false); }} 
+                      className={`w-full px-3 py-2 border rounded-lg ${splitResources ? 'border-amber-400 bg-amber-50' : ''}`}
+                    >
+                      <option value="">-- Non assegnare --</option>
+                      {squads.map(sq => {
+                        let count = sq.squad_members?.length || 0;
+                        if (sq.foreman_id) count++;
+                        return <option key={sq.id} value={sq.id}>Sq. {sq.squad_number} - {sq.name} ({count} pers.)</option>;
+                      })}
+                    </select>
+                  </div>
+                  {splitResources && conflicts.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="text-amber-500 text-lg">⚠️</span>
+                        <div className="text-sm">
+                          <p className="font-medium text-amber-800">Risorse divise</p>
+                          <p className="text-amber-700">La squadra è condivisa con: {conflicts.map(c => c.code).join(', ')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <p className="text-sm text-amber-700">💡 Puoi assegnare la squadra anche dopo la creazione</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
           
+          {/* Footer */}
           <div className="flex justify-between items-center p-4 border-t bg-gray-50">
-            <button onClick={() => step > 1 && setStep(step - 1)} disabled={step === 1} className={`px-4 py-2 rounded-lg font-medium ${step === 1 ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-200'}`}>← Indietro</button>
-            {step < 4 ? (
-              <button onClick={() => setStep(step + 1)} disabled={(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0)} className={`px-6 py-2 rounded-lg font-medium ${(step === 1 && !formData.description) || (step === 2 && selectedSpools.length === 0) ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>Avanti →</button>
+            <button 
+              onClick={() => step > 1 && setStep(step - 1)} 
+              disabled={step === 1} 
+              className={`px-4 py-2 rounded-lg font-medium ${step === 1 ? 'text-gray-300' : 'text-gray-700 hover:bg-gray-200'}`}
+            >
+              ← Indietro
+            </button>
+            {step < 6 ? (
+              <button 
+                onClick={() => setStep(step + 1)} 
+                disabled={!canProceed()} 
+                className={`px-6 py-2 rounded-lg font-medium ${!canProceed() ? 'bg-gray-300 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+              >
+                Avanti →
+              </button>
             ) : (
-              <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50">{saving ? 'Salvataggio...' : '✓ Crea WP'}</button>
+              <button 
+                onClick={handleSave} 
+                disabled={saving || selectedWelds.length === 0} 
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium disabled:opacity-50"
+              >
+                {saving ? 'Salvataggio...' : '✓ Crea WP'}
+              </button>
             )}
           </div>
         </div>
       </div>
       
-      {/* Modal Conflitto */}
+      {/* Conflict Modal */}
       {showConflictModal && selectedSquad && getSquadInfo() && (
         <ResourceConflictModal
           conflicts={conflicts}
