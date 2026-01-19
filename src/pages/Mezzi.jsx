@@ -2,118 +2,74 @@ import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useProject } from '../contexts/ProjectContext'
 import { supabase } from '../lib/supabase'
-import { 
-  Truck, Plus, Search, X, Check, Edit, Trash2,
-  Building2, Calendar, DollarSign, AlertTriangle, Wrench, 
-  Settings, Star, Hash, Package, PlusCircle, Users, 
-  Clock, CalendarClock, Download, History,
-  Bell, CheckCircle, XCircle, RotateCcw, ChevronDown, ChevronUp
-} from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { 
+  Truck, Package, Wrench, Plus, Search, Filter, X, Edit, Trash2,
+  ChevronDown, Building2, Calendar, DollarSign, FileText, AlertTriangle,
+  CheckCircle2, Clock, Download, History, RotateCcw, Users
+} from 'lucide-react'
 
 // ============================================================================
-// CONFIGURAZIONE CATEGORIE
+// CONFIGURAZIONE TIPI MEZZI (90+ tipi predefiniti)
 // ============================================================================
 
-const CATEGORIES = {
-  vehicle: { 
-    label: 'Mezzo', 
-    labelEn: 'Vehicle', 
-    icon: Truck, 
+const EQUIPMENT_TYPES = {
+  vehicle: {
+    label: 'Mezzi',
+    icon: Truck,
     color: 'bg-blue-100 text-blue-800',
-    iconColor: 'text-blue-600'
+    types: [
+      'Autocarro', 'Autoarticolato', 'Furgone', 'Pick-up', 'Auto Aziendale',
+      'Autobus/Minibus', 'Autogru', 'Camion con Gru', 'Bisarca', 'Betoniera',
+      'Autopompa', 'Cisterna', 'Rimorchio', 'Semirimorchio', 'Carrello Appendice'
+    ]
   },
-  equipment: { 
-    label: 'Equipment', 
-    labelEn: 'Equipment', 
-    icon: Package, 
+  equipment: {
+    label: 'Equipment',
+    icon: Package,
     color: 'bg-green-100 text-green-800',
-    iconColor: 'text-green-600'
+    types: [
+      'Gru a Torre', 'Gru Mobile', 'Gru Cingolata', 'Autogru', 'Gru su Camion',
+      'Carrello Elevatore', 'Sollevatore Telescopico', 'Piattaforma Aerea', 'Cestello',
+      'Paranchi e Argani', 'Verricello', 'Ponte Gru',
+      'Escavatore', 'Mini Escavatore', 'Escavatore Cingolato', 'Escavatore Gommato',
+      'Pala Caricatrice', 'Pala Gommata', 'Pala Cingolata', 'Skid Loader', 'Terna',
+      'Bulldozer', 'Apripista', 'Ruspa', 'Dumper', 'Motocarriola',
+      'Rullo Compattatore', 'Rullo Vibrante', 'Piastra Vibrante', 'Compattatore',
+      'Trivella', 'Perforatrice', 'Sonda', 'Martello Demolitore',
+      'Generatore', 'Gruppo Elettrogeno', 'Compressore', 'Compressore Aria',
+      'Motosaldatrice', 'Trasformatore', 'Quadro Elettrico Mobile',
+      'Pompa Acqua', 'Pompa Sommersa', 'Motopompa', 'Idropulitrice', 'Betonpompa',
+      'Container Ufficio', 'Container Magazzino', 'Container Spogliatoio',
+      'Modulo Bagni', 'Modulo Mensa', 'Box Prefabbricato',
+      'Torre Faro', 'Proiettore Mobile', 'Faro da Cantiere',
+      'Serbatoio Carburante', 'Serbatoio Acqua', 'Silos', 'Tramoggia',
+      'Nastro Trasportatore', 'Vibrovaglio', 'Frantoio Mobile', 'Betoniera Fissa'
+    ]
   },
-  tool: { 
-    label: 'Attrezzo', 
-    labelEn: 'Tool', 
-    icon: Wrench, 
+  tool: {
+    label: 'Attrezzi',
+    icon: Wrench,
     color: 'bg-orange-100 text-orange-800',
-    iconColor: 'text-orange-600'
+    types: [
+      'Saldatrice MIG/MAG', 'Saldatrice TIG', 'Saldatrice Elettrodo', 'Saldatrice Inverter',
+      'Saldatrice a Filo', 'Cannello Ossiacetilenico', 'Tagliatrice Plasma',
+      'Smerigliatrice', 'Smerigliatrice Angolare', 'Flex', 'Flessibile',
+      'Troncatrice', 'Seghetto Alternativo', 'Sega Circolare', 'Sega a Nastro',
+      'Mola da Banco', 'Cesoia', 'Roditrice',
+      'Trapano', 'Trapano a Colonna', 'Trapano Magnetico', 'Avvitatore',
+      'Tassellatore', 'Martello Perforatore', 'Carotatrice',
+      'Filettatrice', 'Maschiatore', 'Tagliatubi', 'Curvatubi', 'Svasatore',
+      'Paranco a Catena', 'Tirfor', 'Martinetto Idraulico', 'Cric',
+      'Transpallet', 'Carrello Porta Bombole',
+      'Livella Laser', 'Stazione Totale', 'Teodolite', 'Metro Laser',
+      'Spessimetro', 'Durometro', 'Cercafase', 'Multimetro',
+      'Avvitatore Pneumatico', 'Chiave Pneumatica', 'Martello Pneumatico',
+      'Scalpellatore Pneumatico', 'Pistola Soffiaggio',
+      'Aspiratore Industriale', 'Ventilatore', 'Deumidificatore',
+      'Riscaldatore', 'Stufa da Cantiere', 'Pistola Termica'
+    ]
   }
-}
-
-// ============================================================================
-// TIPI PREDEFINITI
-// ============================================================================
-
-const DEFAULT_EQUIPMENT_TYPES = {
-  // VEHICLES (Mezzi)
-  crane_mobile: { label: 'Gru Mobile', category: 'vehicle' },
-  crane_tower: { label: 'Gru a Torre', category: 'vehicle' },
-  crane_crawler: { label: 'Gru Cingolata', category: 'vehicle' },
-  crane_truck: { label: 'Autogrù', category: 'vehicle' },
-  truck: { label: 'Camion', category: 'vehicle' },
-  truck_flatbed: { label: 'Camion Pianale', category: 'vehicle' },
-  truck_dump: { label: 'Camion Ribaltabile', category: 'vehicle' },
-  lorry: { label: 'Autocarro', category: 'vehicle' },
-  van: { label: 'Furgone', category: 'vehicle' },
-  pickup: { label: 'Pickup', category: 'vehicle' },
-  trailer: { label: 'Rimorchio', category: 'vehicle' },
-  lowboy: { label: 'Carrellone', category: 'vehicle' },
-  excavator: { label: 'Escavatore', category: 'vehicle' },
-  excavator_mini: { label: 'Mini Escavatore', category: 'vehicle' },
-  wheel_loader: { label: 'Pala Gommata', category: 'vehicle' },
-  backhoe_loader: { label: 'Terna', category: 'vehicle' },
-  bulldozer: { label: 'Bulldozer', category: 'vehicle' },
-  skid_steer: { label: 'Skid Steer', category: 'vehicle' },
-  forklift: { label: 'Muletto', category: 'vehicle' },
-  forklift_telehandler: { label: 'Telehandler', category: 'vehicle' },
-  aerial_platform: { label: 'Piattaforma Aerea', category: 'vehicle' },
-  boom_lift: { label: 'Piattaforma Articolata', category: 'vehicle' },
-  scissor_lift: { label: 'Piattaforma a Forbice', category: 'vehicle' },
-  concrete_pump: { label: 'Pompa Calcestruzzo', category: 'vehicle' },
-  
-  // EQUIPMENT
-  generator: { label: 'Generatore', category: 'equipment' },
-  generator_large: { label: 'Gruppo Elettrogeno', category: 'equipment' },
-  light_tower: { label: 'Torre Faro', category: 'equipment' },
-  air_compressor: { label: 'Compressore Aria', category: 'equipment' },
-  welding_machine: { label: 'Saldatrice', category: 'equipment' },
-  welding_machine_mig: { label: 'Saldatrice MIG/MAG', category: 'equipment' },
-  welding_machine_tig: { label: 'Saldatrice TIG', category: 'equipment' },
-  plasma_cutter: { label: 'Taglio Plasma', category: 'equipment' },
-  pump_water: { label: 'Pompa Acqua', category: 'equipment' },
-  pump_hydraulic: { label: 'Centralina Idraulica', category: 'equipment' },
-  concrete_mixer: { label: 'Betoniera', category: 'equipment' },
-  scaffolding: { label: 'Ponteggio', category: 'equipment' },
-  container_office: { label: 'Container Ufficio', category: 'equipment' },
-  container_storage: { label: 'Container Magazzino', category: 'equipment' },
-  chain_hoist: { label: 'Paranco a Catena', category: 'equipment' },
-  hydraulic_jack: { label: 'Martinetto Idraulico', category: 'equipment' },
-  
-  // TOOLS (Attrezzi)
-  grinder_angle: { label: 'Smerigliatrice', category: 'tool' },
-  cut_off_saw: { label: 'Troncatrice', category: 'tool' },
-  circular_saw: { label: 'Sega Circolare', category: 'tool' },
-  drill_hammer: { label: 'Trapano a Percussione', category: 'tool' },
-  drill_magnetic: { label: 'Trapano Magnetico', category: 'tool' },
-  screwdriver_impact: { label: 'Avvitatore a Impulsi', category: 'tool' },
-  wrench_torque: { label: 'Chiave Dinamometrica', category: 'tool' },
-  wrench_hydraulic: { label: 'Chiave Idraulica', category: 'tool' },
-  beveling_machine: { label: 'Smussatrice', category: 'tool' },
-  demolition_hammer: { label: 'Martello Demolitore', category: 'tool' },
-  laser_level: { label: 'Livella Laser', category: 'tool' },
-  heat_gun: { label: 'Pistola Termica', category: 'tool' }
-}
-
-const RATE_TYPES = {
-  hourly: { label: 'Orario' },
-  daily: { label: 'Giornaliero' },
-  weekly: { label: 'Settimanale' },
-  monthly: { label: 'Mensile' },
-  lump_sum: { label: 'Forfettario' }
-}
-
-const OWNERSHIP_TYPES = {
-  owned: { label: 'Proprietà', color: 'bg-emerald-100 text-emerald-800' },
-  rented: { label: 'Noleggio', color: 'bg-amber-100 text-amber-800' }
 }
 
 const MAINTENANCE_TYPES = [
@@ -125,39 +81,41 @@ const MAINTENANCE_TYPES = [
   { value: 'altro', label: 'Altro' }
 ]
 
-const STATUS_CONFIG = {
-  active: { label: 'Disponibile', color: 'bg-green-100 text-green-800', icon: CheckCircle },
-  maintenance_scheduled: { label: 'Manutenzione Prevista', color: 'bg-amber-100 text-amber-800', icon: CalendarClock },
-  out_of_site: { label: 'Fuori Cantiere', color: 'bg-red-100 text-red-800', icon: XCircle },
-  inactive: { label: 'Disattivato', color: 'bg-gray-100 text-gray-800', icon: XCircle }
-}
+const RATE_TYPES = [
+  { value: 'hourly', label: '/ora' },
+  { value: 'daily', label: '/giorno' },
+  { value: 'weekly', label: '/settimana' },
+  { value: 'monthly', label: '/mese' },
+  { value: 'lump_sum', label: 'Forfait' }
+]
 
 // ============================================================================
-// HELPER COMPONENTS
+// COMPONENTI HELPER
 // ============================================================================
 
-function CategoryBadge({ category, size = 'normal' }) {
-  const config = CATEGORIES[category] || { label: category, color: 'bg-gray-100 text-gray-800', icon: Package }
-  const sizeClass = size === 'small' ? 'px-1.5 py-0.5 text-xs' : 'px-2 py-1 text-xs'
+const StatusBadge = ({ status }) => {
+  const configs = {
+    active: { label: 'Disponibile', color: 'bg-green-100 text-green-700', icon: CheckCircle2 },
+    maintenance_scheduled: { label: 'Manutenzione Prevista', color: 'bg-amber-100 text-amber-700', icon: Clock },
+    out_of_site: { label: 'Fuori Cantiere', color: 'bg-red-100 text-red-700', icon: AlertTriangle },
+    inactive: { label: 'Disattivato', color: 'bg-gray-100 text-gray-500', icon: X }
+  }
+  const config = configs[status] || configs.active
   const Icon = config.icon
+  
   return (
-    <span className={`${config.color} ${sizeClass} rounded-full font-medium whitespace-nowrap inline-flex items-center gap-1`}>
-      <Icon size={size === 'small' ? 10 : 12} />
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
+      <Icon size={12} />
       {config.label}
     </span>
   )
 }
 
-function OwnershipBadge({ ownership }) {
-  const config = OWNERSHIP_TYPES[ownership] || { label: ownership, color: 'bg-gray-100 text-gray-800' }
-  return <span className={`${config.color} px-2 py-0.5 text-xs rounded-full font-medium`}>{config.label}</span>
-}
-
-function StatusBadge({ status }) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.active
+const CategoryBadge = ({ category }) => {
+  const config = EQUIPMENT_TYPES[category] || EQUIPMENT_TYPES.equipment
   const Icon = config.icon
   return (
-    <span className={`${config.color} px-2 py-1 text-xs rounded-full font-medium inline-flex items-center gap-1`}>
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>
       <Icon size={12} />
       {config.label}
     </span>
@@ -165,153 +123,95 @@ function StatusBadge({ status }) {
 }
 
 // ============================================================================
-// MAIN COMPONENT
+// COMPONENTE PRINCIPALE
 // ============================================================================
 
 export default function Mezzi() {
   const { t } = useTranslation()
-  const { activeProject } = useProject()
+  const { activeProject, loading: projectLoading } = useProject()
   
   // Data state
   const [equipment, setEquipment] = useState([])
   const [companies, setCompanies] = useState([])
   const [squads, setSquads] = useState([])
-  const [assignments, setAssignments] = useState({})
   const [maintenances, setMaintenances] = useState({})
-  const [customTypes, setCustomTypes] = useState([])
+  const [assignments, setAssignments] = useState({})
   const [loading, setLoading] = useState(true)
   
   // UI State
-  const [showModal, setShowModal] = useState(false)
-  const [editingEquipment, setEditingEquipment] = useState(null)
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
-  const [showNewTypeModal, setShowNewTypeModal] = useState(false)
-  const [showMaintenanceHistory, setShowMaintenanceHistory] = useState(null)
-  const [showReturnModal, setShowReturnModal] = useState(null)
-  
-  // Filters
   const [searchTerm, setSearchTerm] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
-  const [filterOwnership, setFilterOwnership] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [filterOwnership, setFilterOwnership] = useState('')
+  
+  // Modal state
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingEquipment, setEditingEquipment] = useState(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null)
+  const [showHistoryModal, setShowHistoryModal] = useState(null)
+  const [showReturnModal, setShowReturnModal] = useState(null)
   
   // Form state
   const [formData, setFormData] = useState({
-    category: 'vehicle',
+    category: 'equipment',
     type: '',
+    customType: '',
     description: '',
+    plate_number: '',
+    serial_number: '',
     ownership: 'owned',
-    ownerCompanyId: '',
-    serialNumber: '',
-    plateNumber: '',
+    owner_company_id: '',
+    rental_rate: '',
+    rate_type: 'daily',
+    arrival_date: '',
     notes: ''
   })
   
-  // Nuovo tipo form
-  const [newTypeForm, setNewTypeForm] = useState({ labelIt: '', category: 'vehicle' })
-  
-  // Rates form
-  const [rates, setRates] = useState([])
-  const [newRate, setNewRate] = useState({
-    rateType: 'daily',
-    amount: '',
-    validFrom: new Date().toISOString().split('T')[0],
-    validTo: '',
-    appliesWeekdays: true,
-    appliesWeekends: true
-  })
-  
-  // Maintenance form
-  const [maintenanceList, setMaintenanceList] = useState([])
-  const [newMaintenance, setNewMaintenance] = useState({
-    description: '',
-    maintenanceType: 'tagliando',
-    scheduledDate: '',
-    durationDays: 1
-  })
-  
-  // Return modal
-  const [returnData, setReturnData] = useState({
-    reassignToSquad: false,
-    squadId: '',
-    notes: ''
-  })
+  // Maintenance form - OPZIONALE
+  const [maintenanceEntries, setMaintenanceEntries] = useState([])
 
   // ============================================================================
-  // MERGED TYPES
-  // ============================================================================
-  
-  const EQUIPMENT_TYPES = useMemo(() => ({
-    ...DEFAULT_EQUIPMENT_TYPES,
-    ...Object.fromEntries(
-      customTypes.map(ct => [ct.type_key, { label: ct.label_it, category: ct.category, isCustom: true }])
-    )
-  }), [customTypes])
-
-  // ============================================================================
-  // DATA LOADING
+  // DATA FETCHING
   // ============================================================================
   
   useEffect(() => {
-    if (activeProject) loadData()
-  }, [activeProject])
+    if (activeProject?.id) {
+      loadData()
+    }
+  }, [activeProject?.id])
 
   const loadData = async () => {
+    setLoading(true)
     try {
-      setLoading(true)
+      const { data: eqData } = await supabase
+        .from('equipment')
+        .select('*, owner_company:companies(id, company_name, is_main)')
+        .eq('project_id', activeProject.id)
+        .neq('status', 'inactive')
+        .order('created_at', { ascending: false })
+      setEquipment(eqData || [])
       
-      // Companies
-      const { data: companiesData } = await supabase
+      const { data: compData } = await supabase
         .from('companies')
         .select('*')
         .eq('project_id', activeProject.id)
         .eq('status', 'active')
-        .order('is_main', { ascending: false })
-      setCompanies(companiesData || [])
+      setCompanies(compData || [])
       
-      // Squads
-      const { data: squadsData } = await supabase
+      const { data: squadData } = await supabase
         .from('squads')
-        .select('id, name, squad_number')
-        .eq('project_id', activeProject.id)
-        .eq('status', 'active')
-        .order('squad_number')
-      setSquads(squadsData || [])
-      
-      // Custom types
-      const { data: typesData } = await supabase
-        .from('equipment_types')
         .select('*')
         .eq('project_id', activeProject.id)
-        .eq('is_active', true)
-      setCustomTypes(typesData || [])
-      
-      // Equipment (escludi solo inactive)
-      const { data: equipmentData } = await supabase
-        .from('equipment')
-        .select(`*, owner_company:companies(id, company_name, is_main), equipment_rates(*)`)
-        .eq('project_id', activeProject.id)
-        .neq('status', 'inactive')
-        .order('asset_code')
-      setEquipment(equipmentData || [])
-      
-      // Assignments
-      const { data: assignmentsData } = await supabase
-        .from('equipment_assignments')
-        .select(`*, squad:squads(id, name, squad_number)`)
         .eq('status', 'active')
-      const assignMap = {}
-      ;(assignmentsData || []).forEach(a => { assignMap[a.equipment_id] = a.squad })
-      setAssignments(assignMap)
+      setSquads(squadData || [])
       
-      // Maintenances
-      const equipIds = (equipmentData || []).map(e => e.id)
-      if (equipIds.length > 0) {
+      // Maintenances per equipment (se tabella esiste)
+      try {
         const { data: maintData } = await supabase
           .from('equipment_maintenance')
           .select('*')
-          .in('equipment_id', equipIds)
-          .order('scheduled_date', { ascending: false })
+          .in('equipment_id', (eqData || []).map(e => e.id))
+          .order('scheduled_date', { ascending: true })
         
         const maintMap = {}
         ;(maintData || []).forEach(m => {
@@ -319,7 +219,23 @@ export default function Mezzi() {
           maintMap[m.equipment_id].push(m)
         })
         setMaintenances(maintMap)
+      } catch (e) {
+        console.log('Maintenance table not available yet')
+        setMaintenances({})
       }
+      
+      // Assignments
+      const { data: assignData } = await supabase
+        .from('equipment_assignments')
+        .select('*, squad:squads(id, name, squad_number)')
+        .in('equipment_id', (eqData || []).map(e => e.id))
+        .eq('status', 'active')
+      
+      const assignMap = {}
+      ;(assignData || []).forEach(a => {
+        assignMap[a.equipment_id] = a
+      })
+      setAssignments(assignMap)
       
     } catch (err) {
       console.error('Error loading data:', err)
@@ -329,268 +245,261 @@ export default function Mezzi() {
   }
 
   // ============================================================================
-  // STATS & KPI
+  // STATS / KPI
   // ============================================================================
   
   const stats = useMemo(() => {
-    const maintenanceDueEquipment = equipment.filter(e => {
-      const maints = maintenances[e.id] || []
-      return maints.some(m => {
-        if (m.status !== 'scheduled' && m.status !== 'notified') return false
-        const daysUntil = Math.ceil((new Date(m.scheduled_date) - new Date()) / (1000 * 60 * 60 * 24))
-        return daysUntil <= 7 && daysUntil >= 0
-      })
-    })
+    const total = equipment.length
+    const active = equipment.filter(e => e.status === 'active').length
+    const maintenanceDue = equipment.filter(e => e.status === 'maintenance_scheduled').length
+    const outOfSite = equipment.filter(e => e.status === 'out_of_site').length
+    const assigned = Object.keys(assignments).length
+    const owned = equipment.filter(e => e.ownership === 'owned').length
+    const rented = equipment.filter(e => e.ownership === 'rented').length
     
-    return {
-      total: equipment.length,
-      available: equipment.filter(e => e.status === 'active' && !assignments[e.id]).length,
-      assigned: equipment.filter(e => e.status === 'active' && assignments[e.id]).length,
-      maintenanceDue: maintenanceDueEquipment.length,
-      outOfSite: equipment.filter(e => e.status === 'out_of_site').length,
-      owned: equipment.filter(e => e.ownership === 'owned').length,
-      rented: equipment.filter(e => e.ownership === 'rented').length
-    }
-  }, [equipment, maintenances, assignments])
+    return { total, active, maintenanceDue, outOfSite, assigned, owned, rented }
+  }, [equipment, assignments])
+
+  // ============================================================================
+  // FILTERS
+  // ============================================================================
+  
+  const filteredEquipment = useMemo(() => {
+    return equipment.filter(eq => {
+      if (filterCategory && eq.category !== filterCategory) return false
+      if (filterStatus && eq.status !== filterStatus) return false
+      if (filterOwnership && eq.ownership !== filterOwnership) return false
+      if (searchTerm) {
+        const search = searchTerm.toLowerCase()
+        const matches = 
+          eq.type?.toLowerCase().includes(search) ||
+          eq.description?.toLowerCase().includes(search) ||
+          eq.plate_number?.toLowerCase().includes(search) ||
+          eq.serial_number?.toLowerCase().includes(search) ||
+          eq.asset_code?.toLowerCase().includes(search)
+        if (!matches) return false
+      }
+      return true
+    })
+  }, [equipment, filterCategory, filterStatus, filterOwnership, searchTerm])
 
   // ============================================================================
   // FORM HANDLERS
   // ============================================================================
-
+  
   const resetForm = () => {
     setFormData({
-      category: 'vehicle', type: '', description: '', ownership: 'owned',
-      ownerCompanyId: '', serialNumber: '', plateNumber: '', notes: ''
+      category: 'equipment',
+      type: '',
+      customType: '',
+      description: '',
+      plate_number: '',
+      serial_number: '',
+      ownership: 'owned',
+      owner_company_id: '',
+      rental_rate: '',
+      rate_type: 'daily',
+      arrival_date: '',
+      notes: ''
     })
-    setRates([])
-    setMaintenanceList([])
-    setNewRate({ rateType: 'daily', amount: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', appliesWeekdays: true, appliesWeekends: true })
-    setNewMaintenance({ description: '', maintenanceType: 'tagliando', scheduledDate: '', durationDays: 1 })
-  }
-
-  const openAddModal = () => {
+    setMaintenanceEntries([])
     setEditingEquipment(null)
-    resetForm()
-    setShowModal(true)
   }
 
   const openEditModal = (eq) => {
     setFormData({
-      category: eq.category || 'vehicle',
+      category: eq.category || 'equipment',
       type: eq.type || '',
+      customType: '',
       description: eq.description || '',
+      plate_number: eq.plate_number || '',
+      serial_number: eq.serial_number || '',
       ownership: eq.ownership || 'owned',
-      ownerCompanyId: eq.owner_company_id || '',
-      serialNumber: eq.serial_number || '',
-      plateNumber: eq.plate_number || '',
+      owner_company_id: eq.owner_company_id || '',
+      rental_rate: eq.rental_rate || '',
+      rate_type: eq.rate_type || 'daily',
+      arrival_date: eq.arrival_date || '',
       notes: eq.notes || ''
     })
-    
-    // Rates
-    setRates((eq.equipment_rates || []).map(r => ({
-      id: r.id, rateType: r.rate_type, amount: r.amount,
-      validFrom: r.valid_from, validTo: r.valid_to || '',
-      appliesWeekdays: r.applies_weekdays, appliesWeekends: r.applies_weekends
-    })))
-    
-    // Manutenzioni programmate (solo scheduled/notified)
-    const eqMaints = (maintenances[eq.id] || []).filter(m => m.status === 'scheduled' || m.status === 'notified')
-    setMaintenanceList(eqMaints.map(m => ({
-      id: m.id, description: m.description, maintenanceType: m.maintenance_type,
-      scheduledDate: m.scheduled_date, durationDays: m.duration_days
-    })))
-    
+    setMaintenanceEntries([])
     setEditingEquipment(eq)
-    setShowModal(true)
+    setShowCreateModal(true)
   }
-
-  // ============================================================================
-  // RATES HANDLERS
-  // ============================================================================
-
-  const addRate = () => {
-    if (!newRate.amount || parseFloat(newRate.amount) <= 0) {
-      alert('Inserisci un importo valido')
-      return
-    }
-    setRates([...rates, { id: `new_${Date.now()}`, ...newRate, amount: parseFloat(newRate.amount) }])
-    setNewRate({ rateType: 'daily', amount: '', validFrom: new Date().toISOString().split('T')[0], validTo: '', appliesWeekdays: true, appliesWeekends: true })
-  }
-
-  const removeRate = (rateId) => setRates(rates.filter(r => r.id !== rateId))
-
-  // ============================================================================
-  // MAINTENANCE HANDLERS
-  // ============================================================================
-
-  const addMaintenance = () => {
-    if (!newMaintenance.description || !newMaintenance.scheduledDate) {
-      alert('Inserisci descrizione e data')
-      return
-    }
-    setMaintenanceList([...maintenanceList, { id: `new_${Date.now()}`, ...newMaintenance }])
-    setNewMaintenance({ description: '', maintenanceType: 'tagliando', scheduledDate: '', durationDays: 1 })
-  }
-
-  const removeMaintenance = (id) => setMaintenanceList(maintenanceList.filter(m => m.id !== id))
-
-  // ============================================================================
-  // SAVE HANDLER
-  // ============================================================================
 
   const handleSave = async () => {
-    if (!formData.type) {
-      alert('Seleziona un tipo')
-      return
-    }
-    if (formData.ownership === 'rented' && !formData.ownerCompanyId) {
-      alert('Seleziona l\'azienda di noleggio')
+    const typeValue = formData.type === 'altro' ? formData.customType : formData.type
+    
+    if (!typeValue) {
+      alert('Seleziona o inserisci un tipo di mezzo')
       return
     }
     
     try {
-      const mainCompany = companies.find(c => c.is_main)
-      
-      const equipmentDataToSave = {
+      const equipmentData = {
         project_id: activeProject.id,
         category: formData.category,
-        type: formData.type,
-        description: formData.description.trim() || null,
+        type: typeValue,
+        description: formData.description || null,
+        plate_number: formData.plate_number || null,
+        serial_number: formData.serial_number || null,
         ownership: formData.ownership,
-        owner_company_id: formData.ownership === 'owned' ? mainCompany?.id : formData.ownerCompanyId || null,
-        serial_number: formData.serialNumber.trim() || null,
-        plate_number: formData.plateNumber.trim() || null,
-        notes: formData.notes.trim() || null
+        owner_company_id: formData.ownership === 'rented' && formData.owner_company_id ? formData.owner_company_id : null,
+        rental_rate: formData.ownership === 'rented' && formData.rental_rate ? parseFloat(formData.rental_rate) : null,
+        rate_type: formData.ownership === 'rented' ? formData.rate_type : null,
+        arrival_date: formData.arrival_date || null,
+        notes: formData.notes || null,
+        status: 'active'
       }
       
       let equipmentId
       
       if (editingEquipment) {
-        const { error } = await supabase.from('equipment').update(equipmentDataToSave).eq('id', editingEquipment.id)
+        const { error } = await supabase
+          .from('equipment')
+          .update({ ...equipmentData, updated_at: new Date().toISOString() })
+          .eq('id', editingEquipment.id)
+        
         if (error) throw error
         equipmentId = editingEquipment.id
-        
-        // Delete old rates
-        await supabase.from('equipment_rates').delete().eq('equipment_id', equipmentId)
-        
-        // Delete removed maintenances
-        const existingMaintIds = maintenanceList.filter(m => !String(m.id).startsWith('new_')).map(m => m.id)
-        await supabase.from('equipment_maintenance')
-          .delete()
-          .eq('equipment_id', equipmentId)
-          .in('status', ['scheduled', 'notified'])
-          .not('id', 'in', `(${existingMaintIds.length > 0 ? existingMaintIds.join(',') : "''"})`)
-        
       } else {
-        const { data, error } = await supabase.from('equipment').insert([equipmentDataToSave]).select().single()
+        const { data: newEq, error } = await supabase
+          .from('equipment')
+          .insert(equipmentData)
+          .select()
+          .single()
+        
         if (error) throw error
-        equipmentId = data.id
+        equipmentId = newEq.id
       }
       
-      // Insert rates
-      if (rates.length > 0) {
-        const ratesData = rates.map(r => ({
-          equipment_id: equipmentId,
-          rate_type: r.rateType,
-          amount: parseFloat(r.amount),
-          valid_from: r.validFrom,
-          valid_to: r.validTo || null,
-          applies_weekdays: r.appliesWeekdays,
-          applies_weekends: r.appliesWeekends
-        }))
-        await supabase.from('equipment_rates').insert(ratesData)
-      }
-      
-      // Insert/Update maintenances
-      for (const m of maintenanceList) {
-        if (String(m.id).startsWith('new_')) {
-          await supabase.from('equipment_maintenance').insert({
+      // Salva manutenzioni se presenti (OPZIONALE)
+      if (maintenanceEntries.length > 0 && equipmentId) {
+        const maintInserts = maintenanceEntries
+          .filter(m => m.description && m.scheduled_date)
+          .map(m => ({
             equipment_id: equipmentId,
             description: m.description,
-            maintenance_type: m.maintenanceType,
-            scheduled_date: m.scheduledDate,
-            duration_days: m.durationDays
-          })
-        } else {
-          await supabase.from('equipment_maintenance').update({
-            description: m.description,
-            maintenance_type: m.maintenanceType,
-            scheduled_date: m.scheduledDate,
-            duration_days: m.durationDays
-          }).eq('id', m.id)
+            maintenance_type: m.maintenance_type || 'altro',
+            scheduled_date: m.scheduled_date,
+            duration_days: m.duration_days || 1,
+            status: 'scheduled'
+          }))
+        
+        if (maintInserts.length > 0) {
+          try {
+            const { error: maintError } = await supabase
+              .from('equipment_maintenance')
+              .insert(maintInserts)
+            
+            if (maintError) console.error('Error saving maintenance:', maintError)
+          } catch (e) {
+            console.log('Maintenance table not available')
+          }
         }
       }
       
-      setShowModal(false)
+      setShowCreateModal(false)
       resetForm()
       loadData()
     } catch (err) {
-      console.error('Error saving:', err)
+      console.error('Error saving equipment:', err)
       alert('Errore: ' + err.message)
     }
   }
 
-  // ============================================================================
-  // DELETE HANDLER
-  // ============================================================================
-  
   const handleDelete = async (eq) => {
     try {
-      // Remove assignments
-      await supabase.from('equipment_assignments').update({ status: 'inactive' }).eq('equipment_id', eq.id)
+      const { error } = await supabase
+        .from('equipment')
+        .update({ status: 'inactive', updated_at: new Date().toISOString() })
+        .eq('id', eq.id)
       
-      // Soft delete
-      const { error } = await supabase.from('equipment').update({ status: 'inactive' }).eq('id', eq.id)
       if (error) throw error
       
       setShowDeleteConfirm(null)
       loadData()
     } catch (err) {
-      console.error('Error deleting:', err)
+      console.error('Error deleting equipment:', err)
       alert('Errore: ' + err.message)
     }
   }
 
   // ============================================================================
+  // MAINTENANCE HANDLERS
+  // ============================================================================
+  
+  const addMaintenanceEntry = () => {
+    setMaintenanceEntries(prev => [...prev, {
+      description: '',
+      maintenance_type: 'tagliando',
+      scheduled_date: '',
+      duration_days: 1
+    }])
+  }
+  
+  const updateMaintenanceEntry = (index, field, value) => {
+    setMaintenanceEntries(prev => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }
+  
+  const removeMaintenanceEntry = (index) => {
+    setMaintenanceEntries(prev => prev.filter((_, i) => i !== index))
+  }
+
+  // ============================================================================
   // RETURN FROM MAINTENANCE
   // ============================================================================
-
+  
+  const [returnFormData, setReturnFormData] = useState({
+    reassignToSquad: false,
+    squadId: '',
+    completionNotes: ''
+  })
+  
   const handleReturn = async () => {
-    const eq = showReturnModal
-    if (!eq) return
+    if (!showReturnModal) return
     
     try {
-      // Find in-progress maintenance
-      const maintInProgress = (maintenances[eq.id] || []).find(m => m.status === 'in_progress')
+      const activeMaint = (maintenances[showReturnModal.id] || [])
+        .find(m => m.status === 'in_progress')
       
-      if (maintInProgress) {
-        // Complete maintenance
-        await supabase.from('equipment_maintenance').update({
-          status: 'completed',
-          actual_end_date: new Date().toISOString().split('T')[0],
-          completion_notes: returnData.notes,
-          completed_at: new Date().toISOString()
-        }).eq('id', maintInProgress.id)
+      if (activeMaint) {
+        await supabase
+          .from('equipment_maintenance')
+          .update({
+            status: 'completed',
+            actual_end_date: new Date().toISOString().split('T')[0],
+            completion_notes: returnFormData.completionNotes || null,
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', activeMaint.id)
       }
       
-      // Set equipment available
-      await supabase.from('equipment').update({ 
-        status: 'active',
-        last_squad_id: null
-      }).eq('id', eq.id)
+      await supabase
+        .from('equipment')
+        .update({ status: 'active', updated_at: new Date().toISOString() })
+        .eq('id', showReturnModal.id)
       
-      // Reassign if requested
-      if (returnData.reassignToSquad && returnData.squadId) {
-        await supabase.from('equipment_assignments').insert({
-          equipment_id: eq.id,
-          squad_id: returnData.squadId,
-          status: 'active',
-          notes: 'Riassegnato dopo manutenzione'
-        })
+      if (returnFormData.reassignToSquad && returnFormData.squadId) {
+        await supabase
+          .from('equipment_assignments')
+          .insert({
+            equipment_id: showReturnModal.id,
+            squad_id: returnFormData.squadId,
+            status: 'active'
+          })
+        
+        await supabase
+          .from('equipment')
+          .update({ last_squad_id: null })
+          .eq('id', showReturnModal.id)
       }
       
       setShowReturnModal(null)
-      setReturnData({ reassignToSquad: false, squadId: '', notes: '' })
+      setReturnFormData({ reassignToSquad: false, squadId: '', completionNotes: '' })
       loadData()
     } catch (err) {
       console.error('Error returning equipment:', err)
@@ -599,89 +508,45 @@ export default function Mezzi() {
   }
 
   // ============================================================================
-  // NEW TYPE HANDLER
+  // HISTORY EXPORT
   // ============================================================================
   
-  const handleSaveNewType = async () => {
-    if (!newTypeForm.labelIt.trim()) {
-      alert('Inserisci il nome')
-      return
-    }
-    const typeKey = newTypeForm.labelIt.toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-    if (EQUIPMENT_TYPES[typeKey]) {
-      alert('Questo tipo esiste già!')
-      return
-    }
-    try {
-      await supabase.from('equipment_types').insert([{
-        project_id: activeProject.id,
-        type_key: typeKey,
-        label_it: newTypeForm.labelIt.trim(),
-        category: newTypeForm.category
-      }])
-      setShowNewTypeModal(false)
-      setNewTypeForm({ labelIt: '', category: formData.category })
-      loadData()
-      setTimeout(() => setFormData(prev => ({ ...prev, type: typeKey })), 500)
-    } catch (err) {
-      alert('Errore: ' + err.message)
-    }
-  }
-
-  // ============================================================================
-  // EXPORT MAINTENANCE HISTORY
-  // ============================================================================
-
   const exportMaintenanceHistory = (eq) => {
-    const data = (maintenances[eq.id] || []).map(m => ({
-      'Codice Asset': eq.asset_code,
-      'Tipo': EQUIPMENT_TYPES[eq.type]?.label || eq.type,
-      'Descrizione Manutenzione': m.description,
-      'Tipo Manutenzione': MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label || m.maintenance_type,
+    const history = maintenances[eq.id] || []
+    
+    if (history.length === 0) {
+      alert('Nessuna manutenzione da esportare')
+      return
+    }
+    
+    const exportData = history.map(m => ({
+      'Descrizione': m.description,
+      'Tipo': MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label || m.maintenance_type,
       'Data Programmata': m.scheduled_date,
       'Durata (giorni)': m.duration_days,
       'Stato': m.status === 'completed' ? 'Completata' : m.status === 'in_progress' ? 'In Corso' : m.status === 'cancelled' ? 'Annullata' : 'Programmata',
-      'Data Fine Effettiva': m.actual_end_date || '',
-      'Note Completamento': m.completion_notes || ''
+      'Data Completamento': m.actual_end_date || '',
+      'Note': m.completion_notes || ''
     }))
     
-    const ws = XLSX.utils.json_to_sheet(data)
+    const ws = XLSX.utils.json_to_sheet(exportData)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Storico Manutenzioni')
-    XLSX.writeFile(wb, `Manutenzioni_${eq.asset_code}.xlsx`)
+    XLSX.utils.book_append_sheet(wb, ws, 'Manutenzioni')
+    XLSX.writeFile(wb, `Manutenzioni_${eq.asset_code || eq.type}.xlsx`)
   }
 
   // ============================================================================
-  // FILTERS
+  // RENDER
   // ============================================================================
   
-  const filteredEquipment = useMemo(() => {
-    return equipment.filter(eq => {
-      if (searchTerm) {
-        const search = searchTerm.toLowerCase()
-        const typeLabel = EQUIPMENT_TYPES[eq.type]?.label || eq.type
-        if (!eq.asset_code?.toLowerCase().includes(search) &&
-            !typeLabel.toLowerCase().includes(search) &&
-            !eq.description?.toLowerCase().includes(search) &&
-            !eq.plate_number?.toLowerCase().includes(search)) return false
-      }
-      if (filterCategory && eq.category !== filterCategory) return false
-      if (filterOwnership && eq.ownership !== filterOwnership) return false
-      if (filterStatus && eq.status !== filterStatus) return false
-      return true
-    })
-  }, [equipment, searchTerm, filterCategory, filterOwnership, filterStatus, EQUIPMENT_TYPES])
+  if (projectLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
 
-  const typesForCategory = useMemo(() => {
-    return Object.entries(EQUIPMENT_TYPES)
-      .filter(([_, config]) => config.category === formData.category)
-      .sort((a, b) => a[1].label.localeCompare(b[1].label))
-  }, [EQUIPMENT_TYPES, formData.category])
-
-  // ============================================================================
-  // RENDER - NO PROJECT
-  // ============================================================================
-  
   if (!activeProject) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -691,668 +556,662 @@ export default function Mezzi() {
     )
   }
 
-  // ============================================================================
-  // RENDER - LOADING
-  // ============================================================================
-  
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    )
-  }
-
-  // ============================================================================
-  // MAIN RENDER
-  // ============================================================================
+  const typesForCategory = EQUIPMENT_TYPES[formData.category]?.types || []
 
   return (
-    <div className="space-y-4 md:space-y-6 pb-20">
+    <div className="space-y-6">
       {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Truck className="text-primary" size={24} />
-            Mezzi / Asset
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <Truck className="text-primary" />
+            Mezzi / Equipment
           </h1>
-          <p className="text-sm text-gray-500 mt-1">{activeProject.name}</p>
+          <p className="text-gray-500 mt-1">{activeProject.name} • {equipment.length} mezzi registrati</p>
         </div>
-        <button onClick={openAddModal} className="btn-primary flex items-center justify-center gap-2 w-full sm:w-auto py-3 sm:py-2">
+        
+        <button
+          onClick={() => { resetForm(); setShowCreateModal(true) }}
+          className="btn-primary flex items-center justify-center gap-2 w-full sm:w-auto"
+        >
           <Plus size={20} />
-          Nuovo Asset
+          Nuovo Mezzo
         </button>
       </div>
 
       {/* KPI DASHBOARD */}
-      <div className="bg-white rounded-xl border p-4">
-        <h2 className="text-sm font-semibold text-gray-600 mb-3 flex items-center gap-2">
-          <Settings size={16} />
-          Riepilogo
-        </h2>
-        
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3">
-          <div className="bg-blue-50 rounded-lg p-3 text-center">
-            <div className="text-xl sm:text-2xl font-bold text-blue-700">{stats.total}</div>
-            <div className="text-xs text-blue-600">Totale</div>
-          </div>
-          <div className="bg-green-50 rounded-lg p-3 text-center">
-            <div className="text-xl sm:text-2xl font-bold text-green-700">{stats.available}</div>
-            <div className="text-xs text-green-600">Disponibili</div>
-          </div>
-          <div className="bg-purple-50 rounded-lg p-3 text-center">
-            <div className="text-xl sm:text-2xl font-bold text-purple-700">{stats.assigned}</div>
-            <div className="text-xs text-purple-600">Assegnati</div>
-          </div>
-          <div className={`rounded-lg p-3 text-center ${stats.maintenanceDue > 0 ? 'bg-amber-100 ring-2 ring-amber-400' : 'bg-amber-50'}`}>
-            <div className={`text-xl sm:text-2xl font-bold flex items-center justify-center gap-1 ${stats.maintenanceDue > 0 ? 'text-amber-700' : 'text-amber-600'}`}>
-              {stats.maintenanceDue > 0 && <Bell size={16} className="animate-bounce" />}
-              {stats.maintenanceDue}
-            </div>
-            <div className="text-xs text-amber-600">Manutenzione</div>
-          </div>
-          <div className={`rounded-lg p-3 text-center ${stats.outOfSite > 0 ? 'bg-red-100' : 'bg-red-50'}`}>
-            <div className={`text-xl sm:text-2xl font-bold ${stats.outOfSite > 0 ? 'text-red-700' : 'text-red-400'}`}>
-              {stats.outOfSite}
-            </div>
-            <div className="text-xs text-red-600">Fuori Cantiere</div>
-          </div>
-          <div className="bg-emerald-50 rounded-lg p-3 text-center">
-            <div className="text-xl sm:text-2xl font-bold text-emerald-700">{stats.owned}</div>
-            <div className="text-xs text-emerald-600">Proprietà</div>
-          </div>
-          <div className="bg-orange-50 rounded-lg p-3 text-center">
-            <div className="text-xl sm:text-2xl font-bold text-orange-700">{stats.rented}</div>
-            <div className="text-xs text-orange-600">Noleggio</div>
-          </div>
+      <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
+          <KPICard value={stats.total} label="Totale" color="bg-gray-50" />
+          <KPICard value={stats.active} label="Disponibili" color="bg-green-50" textColor="text-green-600" />
+          <KPICard value={stats.assigned} label="Assegnati" color="bg-blue-50" textColor="text-blue-600" />
+          <KPICard value={stats.maintenanceDue} label="Manutenzione" color="bg-amber-50" textColor="text-amber-600" highlight={stats.maintenanceDue > 0} />
+          <KPICard value={stats.outOfSite} label="Fuori Cantiere" color="bg-red-50" textColor="text-red-600" highlight={stats.outOfSite > 0} />
+          <KPICard value={stats.owned} label="Proprietà" color="bg-purple-50" textColor="text-purple-600" />
+          <KPICard value={stats.rented} label="Noleggio" color="bg-cyan-50" textColor="text-cyan-600" />
         </div>
       </div>
 
-      {/* FILTERS */}
-      <div className="bg-white rounded-xl border p-3">
-        <div className="flex flex-col gap-2">
-          <div className="relative">
+      {/* FILTRI */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cerca per codice, tipo, targa..."
-              className="w-full pl-10 pr-4 py-3 border rounded-lg text-sm"
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Cerca per tipo, descrizione, targa, codice..."
+              className="w-full pl-10 pr-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary"
             />
           </div>
-          <div className="grid grid-cols-3 gap-2">
-            <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
-              <option value="">Categoria</option>
-              {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
-              <option value="">Stato</option>
-              <option value="active">Disponibile</option>
-              <option value="maintenance_scheduled">Manutenzione</option>
-              <option value="out_of_site">Fuori Cantiere</option>
-            </select>
-            <select value={filterOwnership} onChange={(e) => setFilterOwnership(e.target.value)} className="px-3 py-2 border rounded-lg text-sm">
-              <option value="">Proprietà</option>
-              {Object.entries(OWNERSHIP_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </select>
-          </div>
+          
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="px-3 py-2.5 border rounded-lg">
+            <option value="">Tutte le categorie</option>
+            {Object.entries(EQUIPMENT_TYPES).map(([key, config]) => (
+              <option key={key} value={key}>{config.label}</option>
+            ))}
+          </select>
+          
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2.5 border rounded-lg">
+            <option value="">Tutti gli stati</option>
+            <option value="active">Disponibile</option>
+            <option value="maintenance_scheduled">Manutenzione Prevista</option>
+            <option value="out_of_site">Fuori Cantiere</option>
+          </select>
+          
+          <select value={filterOwnership} onChange={e => setFilterOwnership(e.target.value)} className="px-3 py-2.5 border rounded-lg">
+            <option value="">Proprietà/Noleggio</option>
+            <option value="owned">Proprietà</option>
+            <option value="rented">Noleggio</option>
+          </select>
         </div>
       </div>
 
-      {/* EQUIPMENT LIST */}
-      <div className="bg-white rounded-xl border">
-        {filteredEquipment.length === 0 ? (
-          <div className="p-8 text-center">
+      {/* LISTA MEZZI */}
+      <div className="space-y-3">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        ) : filteredEquipment.length === 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
             <Truck size={48} className="mx-auto text-gray-300 mb-4" />
-            <p className="text-gray-500 mb-4">{equipment.length === 0 ? 'Nessun asset registrato' : 'Nessun risultato'}</p>
+            <p className="text-gray-500 mb-4">{equipment.length === 0 ? 'Nessun mezzo registrato' : 'Nessun risultato'}</p>
             {equipment.length === 0 && (
-              <button onClick={openAddModal} className="btn-primary"><Plus size={18} className="mr-2" />Aggiungi</button>
+              <button onClick={() => { resetForm(); setShowCreateModal(true) }} className="btn-primary">
+                Aggiungi il primo mezzo
+              </button>
             )}
           </div>
         ) : (
-          <div className="divide-y">
-            {filteredEquipment.map(eq => {
-              const typeConfig = EQUIPMENT_TYPES[eq.type] || { label: eq.type }
-              const squad = assignments[eq.id]
-              const eqMaints = maintenances[eq.id] || []
-              const nextMaint = eqMaints.find(m => m.status === 'scheduled' || m.status === 'notified')
-              const daysUntilMaint = nextMaint ? Math.ceil((new Date(nextMaint.scheduled_date) - new Date()) / (1000 * 60 * 60 * 24)) : null
-              
-              return (
-                <div key={eq.id} className="p-3 md:p-4 hover:bg-gray-50">
-                  <div className="flex flex-col gap-3">
-                    {/* Main info row */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-bold text-primary text-sm">{eq.asset_code}</span>
-                          <CategoryBadge category={eq.category} size="small" />
-                          <StatusBadge status={eq.status} />
-                        </div>
-                        <div className="mt-1">
-                          <span className="font-medium text-gray-800">{typeConfig.label}</span>
-                          {eq.description && <span className="text-gray-500 text-sm ml-2">- {eq.description}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
-                          {eq.plate_number && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{eq.plate_number}</span>}
-                          <OwnershipBadge ownership={eq.ownership} />
-                          {squad && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
-                              <Users size={10} />
-                              {squad.name || `Sq. ${squad.squad_number}`}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Actions - Vertical on mobile */}
-                      <div className="flex flex-col sm:flex-row gap-1">
-                        {eq.status === 'out_of_site' && (
-                          <button
-                            onClick={() => {
-                              setReturnData({ reassignToSquad: !!eq.last_squad_id, squadId: eq.last_squad_id || '', notes: '' })
-                              setShowReturnModal(eq)
-                            }}
-                            className="p-2.5 bg-green-100 hover:bg-green-200 rounded-lg text-green-700"
-                            title="Riporta disponibile"
-                          >
-                            <RotateCcw size={18} />
-                          </button>
-                        )}
-                        <button
-                          onClick={() => setShowMaintenanceHistory(eq)}
-                          className="p-2.5 hover:bg-gray-100 rounded-lg text-gray-600"
-                          title="Storico manutenzioni"
-                        >
-                          <History size={18} />
-                        </button>
-                        <button onClick={() => openEditModal(eq)} className="p-2.5 hover:bg-blue-100 rounded-lg text-blue-600" title="Modifica">
-                          <Edit size={18} />
-                        </button>
-                        <button onClick={() => setShowDeleteConfirm(eq)} className="p-2.5 hover:bg-red-100 rounded-lg text-red-600" title="Elimina">
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    {/* Maintenance alert */}
-                    {nextMaint && daysUntilMaint !== null && daysUntilMaint <= 7 && (
-                      <div className={`text-xs px-3 py-2 rounded-lg flex items-center gap-2 ${
-                        daysUntilMaint <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                      }`}>
-                        <CalendarClock size={14} />
-                        <span className="font-medium">
-                          {daysUntilMaint <= 0 ? 'Manutenzione oggi!' : `Manutenzione tra ${daysUntilMaint} giorn${daysUntilMaint === 1 ? 'o' : 'i'}`}
-                        </span>
-                        <span className="text-gray-600">- {nextMaint.description}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          filteredEquipment.map(eq => (
+            <EquipmentCard
+              key={eq.id}
+              equipment={eq}
+              maintenance={maintenances[eq.id]}
+              assignment={assignments[eq.id]}
+              onEdit={() => openEditModal(eq)}
+              onDelete={() => setShowDeleteConfirm(eq)}
+              onShowHistory={() => setShowHistoryModal(eq)}
+              onReturn={() => setShowReturnModal(eq)}
+            />
+          ))
         )}
       </div>
 
-      {/* ============ MODAL NUOVO/MODIFICA ============ */}
-      {showModal && (
+      {/* CREATE/EDIT MODAL */}
+      {showCreateModal && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
-          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-2xl max-h-[90vh] overflow-y-auto rounded-t-xl">
-            <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between z-10">
-              <h2 className="text-lg font-bold text-gray-800">
-                {editingEquipment ? 'Modifica Asset' : 'Nuovo Asset'}
-              </h2>
-              <button onClick={() => setShowModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+          <div className="bg-white w-full sm:max-w-2xl sm:rounded-xl sm:max-h-[90vh] max-h-[85vh] flex flex-col rounded-t-xl">
+            <div className="flex items-center justify-between p-4 border-b bg-gray-50 rounded-t-xl">
+              <h2 className="text-lg font-semibold">{editingEquipment ? 'Modifica Mezzo' : 'Nuovo Mezzo'}</h2>
+              <button onClick={() => { setShowCreateModal(false); resetForm() }} className="p-2 hover:bg-gray-200 rounded-lg">
                 <X size={20} />
               </button>
             </div>
             
-            <div className="p-4 space-y-4">
-              {/* Asset Code */}
-              {editingEquipment ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <label className="text-xs font-medium text-blue-700">Codice Asset</label>
-                  <div className="font-mono text-lg font-bold text-blue-800">{editingEquipment.asset_code}</div>
-                </div>
-              ) : (
-                <div className="bg-gray-50 border rounded-lg p-3 text-sm text-gray-600">
-                  <Hash size={14} className="inline mr-1" />
-                  Il codice asset verrà generato automaticamente
-                </div>
-              )}
-              
-              {/* Category & Type */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value, type: '' })}
-                    className="w-full px-3 py-3 border rounded-lg"
-                  >
-                    {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tipo *</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.type}
-                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                      className="flex-1 px-3 py-3 border rounded-lg"
-                    >
-                      <option value="">-- Seleziona --</option>
-                      {typesForCategory.map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => { setNewTypeForm({ labelIt: '', category: formData.category }); setShowNewTypeModal(true) }}
-                      className="px-4 py-3 bg-green-100 text-green-700 rounded-lg hover:bg-green-200"
-                    >
-                      <PlusCircle size={20} />
-                    </button>
-                  </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Categoria */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Categoria *</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(EQUIPMENT_TYPES).map(([key, config]) => {
+                    const Icon = config.icon
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, category: key, type: '' }))}
+                        className={`p-3 rounded-lg border-2 flex flex-col items-center gap-1 transition-colors ${
+                          formData.category === key ? 'border-primary bg-primary/10' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <Icon size={20} className={formData.category === key ? 'text-primary' : 'text-gray-500'} />
+                        <span className="text-sm font-medium">{config.label}</span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
               
-              {/* Description */}
+              {/* Tipo */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo *</label>
+                <select
+                  value={formData.type}
+                  onChange={e => setFormData(prev => ({ ...prev, type: e.target.value }))}
+                  className="w-full px-3 py-2.5 border rounded-lg"
+                >
+                  <option value="">Seleziona tipo...</option>
+                  {typesForCategory.map(type => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                  <option value="altro">Altro (specifica)</option>
+                </select>
+                
+                {formData.type === 'altro' && (
+                  <input
+                    type="text"
+                    value={formData.customType}
+                    onChange={e => setFormData(prev => ({ ...prev, customType: e.target.value }))}
+                    placeholder="Specifica il tipo..."
+                    className="w-full mt-2 px-3 py-2.5 border rounded-lg"
+                  />
+                )}
+              </div>
+              
+              {/* Descrizione */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione / Note identificative</label>
                 <input
                   type="text"
                   value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-3 border rounded-lg"
-                  placeholder="Es: Gru 50 ton marca..."
+                  onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="es. Escavatore CAT 320, Muletto Toyota..."
+                  className="w-full px-3 py-2.5 border rounded-lg"
                 />
               </div>
               
-              {/* Ownership */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Proprietà</label>
-                  <select
-                    value={formData.ownership}
-                    onChange={(e) => setFormData({ ...formData, ownership: e.target.value, ownerCompanyId: '' })}
-                    className="w-full px-3 py-3 border rounded-lg"
-                  >
-                    <option value="owned">Proprietà (Aziendale)</option>
-                    <option value="rented">Noleggio</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {formData.ownership === 'owned' ? 'Azienda' : 'Azienda Noleggio *'}
-                  </label>
-                  {formData.ownership === 'owned' ? (
-                    <div className="px-3 py-3 border rounded-lg bg-gray-50 text-gray-600 flex items-center gap-2">
-                      <Star size={14} className="text-yellow-500" />
-                      {companies.find(c => c.is_main)?.company_name || 'Principale'}
-                    </div>
-                  ) : (
-                    <select
-                      value={formData.ownerCompanyId}
-                      onChange={(e) => setFormData({ ...formData, ownerCompanyId: e.target.value })}
-                      className="w-full px-3 py-3 border rounded-lg"
-                    >
-                      <option value="">-- Seleziona --</option>
-                      {companies.filter(c => !c.is_main).map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-                    </select>
-                  )}
-                </div>
-              </div>
-              
-              {/* Plate & Serial */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Targa e Matricola */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Targa</label>
                   <input
                     type="text"
-                    value={formData.plateNumber}
-                    onChange={(e) => setFormData({ ...formData, plateNumber: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-3 border rounded-lg font-mono"
-                    placeholder="AB123CD"
+                    value={formData.plate_number}
+                    onChange={e => setFormData(prev => ({ ...prev, plate_number: e.target.value.toUpperCase() }))}
+                    placeholder="AA000BB"
+                    className="w-full px-3 py-2.5 border rounded-lg"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Seriale</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Matricola / S/N</label>
                   <input
                     type="text"
-                    value={formData.serialNumber}
-                    onChange={(e) => setFormData({ ...formData, serialNumber: e.target.value })}
-                    className="w-full px-3 py-3 border rounded-lg font-mono"
+                    value={formData.serial_number}
+                    onChange={e => setFormData(prev => ({ ...prev, serial_number: e.target.value }))}
+                    placeholder="Numero seriale"
+                    className="w-full px-3 py-2.5 border rounded-lg"
                   />
                 </div>
               </div>
               
-              {/* RATES SECTION */}
-              <div className="border-t pt-4">
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <DollarSign size={18} />
-                  Tariffe
-                </h3>
-                
-                {rates.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {rates.map(rate => (
-                      <div key={rate.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                        <div>
-                          <span className="font-medium text-sm">{RATE_TYPES[rate.rateType]?.label}</span>
-                          <span className="text-green-600 font-bold ml-2">€{parseFloat(rate.amount).toFixed(2)}</span>
-                        </div>
-                        <button onClick={() => removeRate(rate.id)} className="p-2 hover:bg-red-100 rounded text-red-600">
-                          <X size={18} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="bg-blue-50 rounded-lg p-3 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <select value={newRate.rateType} onChange={(e) => setNewRate({ ...newRate, rateType: e.target.value })} className="px-3 py-2 border rounded text-sm">
-                      {Object.entries(RATE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={newRate.amount}
-                      onChange={(e) => setNewRate({ ...newRate, amount: e.target.value })}
-                      className="px-3 py-2 border rounded text-sm"
-                      placeholder="€ Importo"
-                    />
-                  </div>
-                  <button onClick={addRate} className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium flex items-center justify-center gap-1">
-                    <Plus size={16} />
-                    Aggiungi Tariffa
+              {/* Data Arrivo Cantiere */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Data Arrivo Cantiere / Inizio Noleggio</label>
+                <input
+                  type="date"
+                  value={formData.arrival_date}
+                  onChange={e => setFormData(prev => ({ ...prev, arrival_date: e.target.value }))}
+                  className="w-full px-3 py-2.5 border rounded-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">Da quando è disponibile questo mezzo? (opzionale)</p>
+              </div>
+              
+              {/* Proprietà */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Proprietà</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, ownership: 'owned' }))}
+                    className={`p-3 rounded-lg border-2 flex items-center justify-center gap-2 ${
+                      formData.ownership === 'owned' ? 'border-primary bg-primary/10' : 'border-gray-200'
+                    }`}
+                  >
+                    <Building2 size={18} />
+                    <span>Proprietà</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, ownership: 'rented' }))}
+                    className={`p-3 rounded-lg border-2 flex items-center justify-center gap-2 ${
+                      formData.ownership === 'rented' ? 'border-primary bg-primary/10' : 'border-gray-200'
+                    }`}
+                  >
+                    <DollarSign size={18} />
+                    <span>Noleggio</span>
                   </button>
                 </div>
               </div>
               
-              {/* MAINTENANCE SECTION */}
-              <div className="border-t pt-4">
-                <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                  <CalendarClock size={18} />
-                  Manutenzioni Programmate
-                </h3>
-                
-                {maintenanceList.length > 0 && (
-                  <div className="space-y-2 mb-3">
-                    {maintenanceList.map(m => (
-                      <div key={m.id} className="flex items-center justify-between bg-amber-50 rounded-lg p-3">
-                        <div>
-                          <span className="font-medium text-sm">{m.description}</span>
-                          <div className="text-xs text-gray-500 mt-0.5">
-                            {new Date(m.scheduledDate).toLocaleDateString('it-IT')} • {m.durationDays} giorn{m.durationDays === 1 ? 'o' : 'i'}
-                          </div>
-                        </div>
-                        <button onClick={() => removeMaintenance(m.id)} className="p-2 hover:bg-red-100 rounded text-red-600">
-                          <X size={18} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                
-                <div className="bg-amber-50 rounded-lg p-3 space-y-2">
-                  <input
-                    type="text"
-                    value={newMaintenance.description}
-                    onChange={(e) => setNewMaintenance({ ...newMaintenance, description: e.target.value })}
-                    className="w-full px-3 py-2 border rounded text-sm"
-                    placeholder="Descrizione (es: Tagliando annuale)"
-                  />
-                  <div className="grid grid-cols-3 gap-2">
+              {/* Campi Noleggio */}
+              {formData.ownership === 'rented' && (
+                <div className="p-4 bg-cyan-50 rounded-lg space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Azienda Noleggiante</label>
                     <select
-                      value={newMaintenance.maintenanceType}
-                      onChange={(e) => setNewMaintenance({ ...newMaintenance, maintenanceType: e.target.value })}
-                      className="px-2 py-2 border rounded text-sm"
+                      value={formData.owner_company_id}
+                      onChange={e => setFormData(prev => ({ ...prev, owner_company_id: e.target.value }))}
+                      className="w-full px-3 py-2.5 border rounded-lg"
                     >
-                      {MAINTENANCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      <option value="">Seleziona azienda...</option>
+                      {companies.map(c => (
+                        <option key={c.id} value={c.id}>{c.company_name}</option>
+                      ))}
                     </select>
-                    <input
-                      type="date"
-                      value={newMaintenance.scheduledDate}
-                      onChange={(e) => setNewMaintenance({ ...newMaintenance, scheduledDate: e.target.value })}
-                      className="px-2 py-2 border rounded text-sm"
-                    />
-                    <div className="flex items-center gap-1">
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tariffa (€)</label>
                       <input
                         type="number"
-                        min="1"
-                        value={newMaintenance.durationDays}
-                        onChange={(e) => setNewMaintenance({ ...newMaintenance, durationDays: parseInt(e.target.value) || 1 })}
-                        className="w-14 px-2 py-2 border rounded text-sm"
+                        step="0.01"
+                        value={formData.rental_rate}
+                        onChange={e => setFormData(prev => ({ ...prev, rental_rate: e.target.value }))}
+                        placeholder="0.00"
+                        className="w-full px-3 py-2.5 border rounded-lg"
                       />
-                      <span className="text-xs text-gray-600">gg</span>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Tipo Tariffa</label>
+                      <select
+                        value={formData.rate_type}
+                        onChange={e => setFormData(prev => ({ ...prev, rate_type: e.target.value }))}
+                        className="w-full px-3 py-2.5 border rounded-lg"
+                      >
+                        {RATE_TYPES.map(rt => (
+                          <option key={rt.value} value={rt.value}>{rt.label}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                  <button onClick={addMaintenance} className="w-full py-2 bg-amber-600 text-white rounded text-sm font-medium flex items-center justify-center gap-1">
-                    <Plus size={16} />
-                    Aggiungi Manutenzione
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="sticky bottom-0 bg-white border-t p-4 flex gap-2">
-              <button onClick={() => setShowModal(false)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium">
-                Annulla
-              </button>
-              <button onClick={handleSave} className="flex-1 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark font-medium flex items-center justify-center gap-2">
-                <Check size={18} />
-                {editingEquipment ? 'Salva' : 'Crea'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL NUOVO TIPO */}
-      {showNewTypeModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-4">
-            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <PlusCircle className="text-green-600" size={20} />
-              Nuovo Tipo
-            </h2>
-            <div className="space-y-3">
-              <select
-                value={newTypeForm.category}
-                onChange={(e) => setNewTypeForm({ ...newTypeForm, category: e.target.value })}
-                className="w-full px-3 py-3 border rounded-lg"
-              >
-                {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-              <input
-                type="text"
-                value={newTypeForm.labelIt}
-                onChange={(e) => setNewTypeForm({ ...newTypeForm, labelIt: e.target.value })}
-                className="w-full px-3 py-3 border rounded-lg"
-                placeholder="Nome tipo"
-                autoFocus
-              />
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setShowNewTypeModal(false)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg">Annulla</button>
-              <button onClick={handleSaveNewType} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg">Salva</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL STORICO MANUTENZIONI */}
-      {showMaintenanceHistory && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
-          <div className="bg-white w-full sm:rounded-xl sm:m-4 sm:max-w-2xl max-h-[85vh] flex flex-col rounded-t-xl">
-            <div className="border-b p-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                  <History size={20} />
-                  Storico Manutenzioni
-                </h2>
-                <p className="text-sm text-gray-500">{showMaintenanceHistory.asset_code} - {EQUIPMENT_TYPES[showMaintenanceHistory.type]?.label}</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => exportMaintenanceHistory(showMaintenanceHistory)}
-                  className="p-2.5 bg-green-100 hover:bg-green-200 rounded-lg text-green-700"
-                  title="Esporta Excel"
-                >
-                  <Download size={20} />
-                </button>
-                <button onClick={() => setShowMaintenanceHistory(null)} className="p-2.5 hover:bg-gray-100 rounded-lg">
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4">
-              {(maintenances[showMaintenanceHistory.id] || []).length === 0 ? (
-                <p className="text-center text-gray-500 py-8">Nessuna manutenzione registrata</p>
-              ) : (
-                <div className="space-y-3">
-                  {(maintenances[showMaintenanceHistory.id] || []).map(m => (
-                    <div key={m.id} className={`p-4 rounded-lg border ${
-                      m.status === 'completed' ? 'bg-green-50 border-green-200' :
-                      m.status === 'in_progress' ? 'bg-amber-50 border-amber-200' :
-                      m.status === 'cancelled' ? 'bg-gray-50 border-gray-200' :
-                      'bg-blue-50 border-blue-200'
-                    }`}>
-                      <div className="flex items-start justify-between">
-                        <span className="font-medium">{m.description}</span>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          m.status === 'completed' ? 'bg-green-200 text-green-800' :
-                          m.status === 'in_progress' ? 'bg-amber-200 text-amber-800' :
-                          m.status === 'cancelled' ? 'bg-gray-200 text-gray-800' :
-                          'bg-blue-200 text-blue-800'
-                        }`}>
-                          {m.status === 'completed' ? 'Completata' : m.status === 'in_progress' ? 'In Corso' : m.status === 'cancelled' ? 'Annullata' : 'Programmata'}
-                        </span>
-                      </div>
-                      <div className="text-sm text-gray-600 mt-2 flex items-center gap-2">
-                        <Calendar size={14} />
-                        {new Date(m.scheduled_date).toLocaleDateString('it-IT')} • {m.duration_days} giorn{m.duration_days === 1 ? 'o' : 'i'}
-                        {m.maintenance_type && (
-                          <span className="bg-white px-2 py-0.5 rounded text-xs">
-                            {MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label}
-                          </span>
-                        )}
-                      </div>
-                      {m.actual_end_date && (
-                        <div className="text-xs text-gray-500 mt-2">
-                          ✓ Completata il {new Date(m.actual_end_date).toLocaleDateString('it-IT')}
-                          {m.completion_notes && <span className="block mt-1">Note: {m.completion_notes}</span>}
-                        </div>
-                      )}
-                    </div>
-                  ))}
                 </div>
               )}
+              
+              {/* Note */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={e => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={2}
+                  placeholder="Note aggiuntive..."
+                  className="w-full px-3 py-2.5 border rounded-lg resize-none"
+                />
+              </div>
+              
+              {/* MANUTENZIONI - OPZIONALE */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium text-gray-700">Manutenzioni Programmate (opzionale)</label>
+                  <button
+                    type="button"
+                    onClick={addMaintenanceEntry}
+                    className="text-sm text-primary hover:text-primary/80 flex items-center gap-1"
+                  >
+                    <Plus size={16} />
+                    Aggiungi
+                  </button>
+                </div>
+                
+                {maintenanceEntries.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4 bg-gray-50 rounded-lg">
+                    Nessuna manutenzione programmata. Puoi aggiungerla in seguito.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {maintenanceEntries.map((entry, idx) => (
+                      <div key={idx} className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-amber-700">Manutenzione #{idx + 1}</span>
+                          <button type="button" onClick={() => removeMaintenanceEntry(idx)} className="p-1 hover:bg-amber-100 rounded text-amber-600">
+                            <X size={16} />
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="sm:col-span-2">
+                            <input
+                              type="text"
+                              value={entry.description}
+                              onChange={e => updateMaintenanceEntry(idx, 'description', e.target.value)}
+                              placeholder="Descrizione"
+                              className="w-full px-3 py-2 border rounded-lg text-sm"
+                            />
+                          </div>
+                          <select
+                            value={entry.maintenance_type}
+                            onChange={e => updateMaintenanceEntry(idx, 'maintenance_type', e.target.value)}
+                            className="px-3 py-2 border rounded-lg text-sm"
+                          >
+                            {MAINTENANCE_TYPES.map(mt => (
+                              <option key={mt.value} value={mt.value}>{mt.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            type="date"
+                            value={entry.scheduled_date}
+                            onChange={e => updateMaintenanceEntry(idx, 'scheduled_date', e.target.value)}
+                            className="px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={entry.duration_days}
+                              onChange={e => updateMaintenanceEntry(idx, 'duration_days', parseInt(e.target.value) || 1)}
+                              className="w-20 px-3 py-2 border rounded-lg text-sm"
+                            />
+                            <span className="text-sm text-gray-600">giorni</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             
-            <div className="border-t p-4">
-              <button onClick={() => setShowMaintenanceHistory(null)} className="w-full py-3 bg-gray-200 hover:bg-gray-300 rounded-lg font-medium">
-                Chiudi
+            <div className="flex gap-3 p-4 border-t bg-gray-50">
+              <button onClick={() => { setShowCreateModal(false); resetForm() }} className="flex-1 px-4 py-3 border rounded-lg hover:bg-gray-100">
+                Annulla
+              </button>
+              <button onClick={handleSave} className="flex-1 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90">
+                {editingEquipment ? 'Salva Modifiche' : 'Crea Mezzo'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* MODAL RITORNO MEZZO */}
-      {showReturnModal && (
+      
+      {/* DELETE CONFIRM */}
+      {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4">
-            <h2 className="text-lg font-bold text-gray-800 mb-2 flex items-center gap-2">
-              <RotateCcw className="text-green-600" size={20} />
-              Riporta Disponibile
-            </h2>
-            <p className="text-gray-600 mb-4">
-              Asset: <strong>{showReturnModal.asset_code}</strong>
-            </p>
+          <div className="bg-white rounded-xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Trash2 className="text-red-600" size={24} />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">Elimina Mezzo</h3>
+              <p className="text-gray-600 mt-2">Sei sicuro di voler eliminare "{showDeleteConfirm.type}"?</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-2.5 border rounded-lg hover:bg-gray-100">Annulla</button>
+              <button onClick={() => handleDelete(showDeleteConfirm)} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700">Elimina</button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* HISTORY MODAL */}
+      {showHistoryModal && (
+        <HistoryModal
+          equipment={showHistoryModal}
+          maintenances={maintenances[showHistoryModal.id] || []}
+          onExport={() => exportMaintenanceHistory(showHistoryModal)}
+          onClose={() => setShowHistoryModal(null)}
+        />
+      )}
+      
+      {/* RETURN MODAL */}
+      {showReturnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+          <div className="bg-white w-full sm:max-w-md sm:rounded-xl rounded-t-xl">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">Riporta Disponibile</h3>
+              <button onClick={() => setShowReturnModal(null)} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+            </div>
             
-            <div className="space-y-4">
+            <div className="p-4 space-y-4">
+              <p className="text-gray-600">Confermi il ritorno di <strong>{showReturnModal.type}</strong> dalla manutenzione?</p>
+              
+              {showReturnModal.last_squad_id && (
+                <div className="p-3 bg-blue-50 rounded-lg">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={returnFormData.reassignToSquad}
+                      onChange={e => setReturnFormData(prev => ({ 
+                        ...prev, 
+                        reassignToSquad: e.target.checked,
+                        squadId: e.target.checked ? showReturnModal.last_squad_id : ''
+                      }))}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Riassegna alla squadra precedente</span>
+                  </label>
+                </div>
+              )}
+              
               <div>
-                <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-lg">
-                  <input
-                    type="checkbox"
-                    checked={returnData.reassignToSquad}
-                    onChange={(e) => setReturnData({ ...returnData, reassignToSquad: e.target.checked })}
-                    className="w-5 h-5 rounded"
-                  />
-                  <span className="font-medium text-gray-700">Riassegna a squadra</span>
-                </label>
-                
-                {returnData.reassignToSquad && (
-                  <select
-                    value={returnData.squadId}
-                    onChange={(e) => setReturnData({ ...returnData, squadId: e.target.value })}
-                    className="w-full mt-2 px-3 py-3 border rounded-lg"
-                  >
-                    <option value="">-- Seleziona squadra --</option>
-                    {squads.map(s => (
-                      <option key={s.id} value={s.id}>
-                        {s.name || `Squadra ${s.squad_number}`}
-                        {s.id === showReturnModal.last_squad_id && ' ★ (precedente)'}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assegna a squadra (opzionale)</label>
+                <select
+                  value={returnFormData.squadId}
+                  onChange={e => setReturnFormData(prev => ({ ...prev, squadId: e.target.value, reassignToSquad: !!e.target.value }))}
+                  className="w-full px-3 py-2.5 border rounded-lg"
+                >
+                  <option value="">Nessuna assegnazione</option>
+                  {squads.map(s => (
+                    <option key={s.id} value={s.id}>{s.name || `Squadra ${s.squad_number}`}</option>
+                  ))}
+                </select>
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note (opzionale)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Note completamento</label>
                 <textarea
-                  value={returnData.notes}
-                  onChange={(e) => setReturnData({ ...returnData, notes: e.target.value })}
+                  value={returnFormData.completionNotes}
+                  onChange={e => setReturnFormData(prev => ({ ...prev, completionNotes: e.target.value }))}
                   rows={2}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="Note sul completamento manutenzione..."
+                  placeholder="Note sulla manutenzione completata..."
+                  className="w-full px-3 py-2.5 border rounded-lg resize-none"
                 />
               </div>
             </div>
             
-            <div className="flex gap-2 mt-4">
-              <button onClick={() => setShowReturnModal(null)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium">
-                Annulla
-              </button>
-              <button onClick={handleReturn} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
-                <Check size={18} />
-                Conferma
+            <div className="flex gap-3 p-4 border-t">
+              <button onClick={() => setShowReturnModal(null)} className="flex-1 px-4 py-3 border rounded-lg hover:bg-gray-100">Annulla</button>
+              <button onClick={handleReturn} className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2">
+                <RotateCcw size={18} />
+                Conferma Ritorno
               </button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  )
+}
 
-      {/* MODAL CONFERMA ELIMINAZIONE */}
-      {showDeleteConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-4">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <AlertTriangle className="text-red-600" size={24} />
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+function KPICard({ value, label, color, textColor = 'text-gray-800', highlight = false }) {
+  return (
+    <div className={`${color} rounded-lg p-3 sm:p-4 text-center ${highlight ? 'ring-2 ring-offset-2 ring-amber-400' : ''}`}>
+      <div className={`text-2xl sm:text-3xl font-bold ${textColor}`}>{value}</div>
+      <div className="text-xs sm:text-sm text-gray-600">{label}</div>
+    </div>
+  )
+}
+
+function EquipmentCard({ equipment, maintenance = [], assignment, onEdit, onDelete, onShowHistory, onReturn }) {
+  const [expanded, setExpanded] = useState(false)
+  
+  const nextMaint = maintenance
+    .filter(m => m.status === 'scheduled' || m.status === 'notified')
+    .sort((a, b) => new Date(a.scheduled_date) - new Date(b.scheduled_date))[0]
+  
+  const daysUntilMaint = nextMaint 
+    ? Math.ceil((new Date(nextMaint.scheduled_date) - new Date()) / (1000 * 60 * 60 * 24))
+    : null
+  
+  const showMaintAlert = daysUntilMaint !== null && daysUntilMaint <= 7
+  
+  return (
+    <div className={`bg-white rounded-xl border overflow-hidden ${
+      equipment.status === 'out_of_site' ? 'border-red-300' : 
+      equipment.status === 'maintenance_scheduled' ? 'border-amber-300' : 
+      'border-gray-200'
+    }`}>
+      <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50" onClick={() => setExpanded(!expanded)}>
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2">
+            <ChevronDown size={20} className={`text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            <CategoryBadge category={equipment.category} />
+          </div>
+          
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{equipment.asset_code || 'N/A'}</span>
+              <h3 className="font-semibold text-gray-800 truncate">{equipment.type}</h3>
+            </div>
+            {equipment.description && <p className="text-sm text-gray-500 truncate">{equipment.description}</p>}
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+          <StatusBadge status={equipment.status} />
+        </div>
+      </div>
+      
+      {showMaintAlert && equipment.status !== 'out_of_site' && (
+        <div className={`px-4 py-2 flex items-center gap-2 text-sm ${daysUntilMaint <= 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+          <AlertTriangle size={16} />
+          {daysUntilMaint <= 0 ? 'Manutenzione in scadenza OGGI!' : `Manutenzione tra ${daysUntilMaint} giorni: ${nextMaint.description}`}
+        </div>
+      )}
+      
+      {expanded && (
+        <div className="border-t p-4 bg-gray-50 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            {equipment.plate_number && <div><span className="text-gray-500">Targa:</span><span className="ml-2 font-medium">{equipment.plate_number}</span></div>}
+            {equipment.serial_number && <div><span className="text-gray-500">Matricola:</span><span className="ml-2 font-medium">{equipment.serial_number}</span></div>}
+            {equipment.arrival_date && <div><span className="text-gray-500">Arrivo:</span><span className="ml-2 font-medium">{new Date(equipment.arrival_date).toLocaleDateString('it-IT')}</span></div>}
+            <div><span className="text-gray-500">Proprietà:</span><span className={`ml-2 font-medium ${equipment.ownership === 'rented' ? 'text-cyan-600' : ''}`}>{equipment.ownership === 'rented' ? 'Noleggio' : 'Proprietà'}</span></div>
+            {equipment.ownership === 'rented' && equipment.owner_company && (
+              <div className="col-span-2">
+                <span className="text-gray-500">Da:</span>
+                <span className="ml-2 font-medium">{equipment.owner_company.company_name}</span>
+                {equipment.rental_rate && <span className="ml-2 text-cyan-600">€{equipment.rental_rate} {RATE_TYPES.find(r => r.value === equipment.rate_type)?.label}</span>}
               </div>
-              <div>
-                <h3 className="font-bold text-gray-800">Elimina Asset</h3>
-                <p className="text-sm text-gray-500">{showDeleteConfirm.asset_code}</p>
+            )}
+          </div>
+          
+          {assignment && (
+            <div className="flex items-center gap-2 text-sm">
+              <Users size={16} className="text-blue-500" />
+              <span className="text-gray-500">Assegnato a:</span>
+              <span className="font-medium">{assignment.squad?.name || `Squadra ${assignment.squad?.squad_number}`}</span>
+            </div>
+          )}
+          
+          {maintenance.filter(m => m.status !== 'completed' && m.status !== 'cancelled').length > 0 && (
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Prossime Manutenzioni</h4>
+              <div className="space-y-1">
+                {maintenance.filter(m => m.status !== 'completed' && m.status !== 'cancelled').slice(0, 3).map(m => (
+                  <div key={m.id} className="flex items-center justify-between text-sm bg-white p-2 rounded">
+                    <span>{m.description}</span>
+                    <span className="text-gray-500">{new Date(m.scheduled_date).toLocaleDateString('it-IT')}</span>
+                  </div>
+                ))}
               </div>
             </div>
-            <p className="text-gray-600 mb-4">Sei sicuro? L'asset verrà disattivato e rimosso dalle squadre.</p>
-            <div className="flex gap-2">
-              <button onClick={() => setShowDeleteConfirm(null)} className="flex-1 px-4 py-3 text-gray-700 bg-gray-100 rounded-lg font-medium">Annulla</button>
-              <button onClick={() => handleDelete(showDeleteConfirm)} className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-medium flex items-center justify-center gap-2">
-                <Trash2 size={18} />
-                Elimina
+          )}
+          
+          <div className="flex flex-wrap gap-2 pt-2 border-t">
+            <button onClick={(e) => { e.stopPropagation(); onEdit() }} className="flex items-center gap-1 px-3 py-2 text-sm text-blue-600 hover:bg-blue-100 rounded-lg">
+              <Edit size={16} />Modifica
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); onShowHistory() }} className="flex items-center gap-1 px-3 py-2 text-sm text-purple-600 hover:bg-purple-100 rounded-lg">
+              <History size={16} />Storico
+            </button>
+            {equipment.status === 'out_of_site' && (
+              <button onClick={(e) => { e.stopPropagation(); onReturn() }} className="flex items-center gap-1 px-3 py-2 text-sm text-green-600 hover:bg-green-100 rounded-lg">
+                <RotateCcw size={16} />Riporta Disponibile
               </button>
-            </div>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); onDelete() }} className="flex items-center gap-1 px-3 py-2 text-sm text-red-600 hover:bg-red-100 rounded-lg ml-auto">
+              <Trash2 size={16} />Elimina
+            </button>
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function HistoryModal({ equipment, maintenances, onExport, onClose }) {
+  const statusConfig = {
+    scheduled: { label: 'Programmata', color: 'bg-blue-100 text-blue-700' },
+    notified: { label: 'Notificata', color: 'bg-amber-100 text-amber-700' },
+    in_progress: { label: 'In Corso', color: 'bg-orange-100 text-orange-700' },
+    completed: { label: 'Completata', color: 'bg-green-100 text-green-700' },
+    cancelled: { label: 'Annullata', color: 'bg-gray-100 text-gray-500' }
+  }
+  
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl max-h-[85vh] sm:max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="text-lg font-semibold">Storico Manutenzioni</h3>
+            <p className="text-sm text-gray-500">{equipment.type} - {equipment.asset_code}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onExport} className="p-2 hover:bg-green-100 rounded-lg text-green-600" title="Esporta Excel"><Download size={20} /></button>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg"><X size={20} /></button>
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4">
+          {maintenances.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">Nessuna manutenzione registrata</p>
+          ) : (
+            <div className="space-y-3">
+              {maintenances.map(m => {
+                const config = statusConfig[m.status] || statusConfig.scheduled
+                return (
+                  <div key={m.id} className="p-3 bg-gray-50 rounded-lg border">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-medium">{m.description}</h4>
+                        <p className="text-sm text-gray-500">{MAINTENANCE_TYPES.find(t => t.value === m.maintenance_type)?.label || m.maintenance_type}</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${config.color}`}>{config.label}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-600">
+                      <span>📅 Programmata: {new Date(m.scheduled_date).toLocaleDateString('it-IT')}</span>
+                      <span>⏱ Durata: {m.duration_days} giorni</span>
+                      {m.actual_end_date && <span>✓ Completata: {new Date(m.actual_end_date).toLocaleDateString('it-IT')}</span>}
+                    </div>
+                    {m.completion_notes && <p className="mt-2 text-sm text-gray-600 bg-white p-2 rounded">{m.completion_notes}</p>}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        
+        <div className="p-4 border-t">
+          <button onClick={onClose} className="w-full py-2.5 border rounded-lg hover:bg-gray-100">Chiudi</button>
+        </div>
+      </div>
     </div>
   )
 }
