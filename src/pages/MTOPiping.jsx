@@ -23,12 +23,6 @@ export default function MTOPiping() {
   const [flangeMaterialsSummary, setFlangeMaterialsSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // WP Coverage state
-  const [wpSpools, setWpSpools] = useState([]);
-  const [wpWelds, setWpWelds] = useState([]);
-  const [wpSupports, setWpSupports] = useState([]);
-  const [wpFlanges, setWpFlanges] = useState([]);
-  
   // UI state
   const [activeTab, setActiveTab] = useState('spools');
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,50 +65,10 @@ export default function MTOPiping() {
         fetchSupportSummary(),
         fetchFlangeMaterialsSummary()
       ]);
-      // Fetch WP coverage separately to handle missing tables
-      await fetchWPCoverage();
     } catch (error) {
       console.error('MTO: Error fetching data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchWPCoverage = async () => {
-    // Initialize with empty arrays
-    setWpSpools([]);
-    setWpWelds([]);
-    setWpSupports([]);
-    setWpFlanges([]);
-    
-    try {
-      // Get all work packages for this project first
-      const { data: projectWPs, error: wpError } = await supabase
-        .from('work_packages')
-        .select('id')
-        .eq('project_id', activeProject.id);
-      
-      if (wpError || !projectWPs || projectWPs.length === 0) {
-        return;
-      }
-      
-      const wpIds = projectWPs.map(wp => wp.id);
-      
-      // Fetch WP items - use error handling for each
-      const { data: spoolData } = await supabase.from('wp_spools').select('spool_id, work_package_id').in('work_package_id', wpIds);
-      if (spoolData) setWpSpools(spoolData);
-      
-      const { data: weldData } = await supabase.from('wp_welds').select('weld_id, work_package_id').in('work_package_id', wpIds);
-      if (weldData) setWpWelds(weldData);
-      
-      const { data: supportData } = await supabase.from('wp_supports').select('support_id, work_package_id').in('work_package_id', wpIds);
-      if (supportData) setWpSupports(supportData);
-      
-      const { data: flangeData } = await supabase.from('wp_flanges').select('flange_id, work_package_id').in('work_package_id', wpIds);
-      if (flangeData) setWpFlanges(flangeData);
-      
-    } catch (error) {
-      console.error('Error fetching WP coverage:', error);
     }
   };
 
@@ -798,42 +752,12 @@ export default function MTOPiping() {
     );
   }
 
-  // Calculate WP coverage stats
-  const coverageStats = useMemo(() => {
-    // Safety check for arrays
-    const safeSpools = spools || [];
-    const safeWelds = welds || [];
-    const safeSupports = supports || [];
-    const safeFlanges = flanges || [];
-    const safeWpSpools = wpSpools || [];
-    const safeWpWelds = wpWelds || [];
-    const safeWpSupports = wpSupports || [];
-    const safeWpFlanges = wpFlanges || [];
-    
-    const coveredSpoolIds = new Set(safeWpSpools.map(w => w.spool_id));
-    const coveredWeldIds = new Set(safeWpWelds.map(w => w.weld_id));
-    const coveredSupportIds = new Set(safeWpSupports.map(w => w.support_id));
-    const coveredFlangeIds = new Set(safeWpFlanges.map(w => w.flange_id));
-    
-    return {
-      spools: { total: safeSpools.length, covered: safeSpools.filter(s => coveredSpoolIds.has(s.id)).length },
-      welds: { total: safeWelds.length, covered: safeWelds.filter(w => coveredWeldIds.has(w.id)).length },
-      supports: { total: safeSupports.length, covered: safeSupports.filter(s => coveredSupportIds.has(s.id)).length },
-      flanges: { total: safeFlanges.length, covered: safeFlanges.filter(f => coveredFlangeIds.has(f.id)).length },
-      uncoveredSpools: safeSpools.filter(s => !coveredSpoolIds.has(s.id)),
-      uncoveredWelds: safeWelds.filter(w => !coveredWeldIds.has(w.id)),
-      uncoveredSupports: safeSupports.filter(s => !coveredSupportIds.has(s.id)),
-      uncoveredFlanges: safeFlanges.filter(f => !coveredFlangeIds.has(f.id))
-    };
-  }, [spools, welds, supports, flanges, wpSpools, wpWelds, wpSupports, wpFlanges]);
-
   const tabs = [
     { id: 'spools', label: '📦 Spools', count: spools.length },
     { id: 'supports', label: '🔩 Supports', count: supports.length },
     { id: 'flanges', label: '⚙️ Flanges', count: flanges.length },
     { id: 'welds', label: '🔥 Welds', count: welds.length },
-    { id: 'summary', label: '📊 Riepilogo', count: null },
-    { id: 'coverage', label: '📋 Copertura WP', count: null }
+    { id: 'summary', label: '📊 Riepilogo', count: null }
   ];
 
   const openAddModal = (type) => {
@@ -935,7 +859,6 @@ export default function MTOPiping() {
           {activeTab === 'flanges' && <FlangesTable flanges={filteredFlanges} onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }} onDelete={(id) => handleDelete('flange', id)} />}
           {activeTab === 'welds' && <WeldsTable welds={filteredWelds} spools={spools} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
           {activeTab === 'summary' && <MaterialsSummary supportSummary={supportSummary} flangeMaterialsSummary={flangeMaterialsSummary} onUpdateInventory={handleUpdateInventory} />}
-          {activeTab === 'coverage' && <WPCoverageTab coverageStats={coverageStats} />}
         </div>
       </div>
 
@@ -1729,273 +1652,6 @@ const EditModal = ({ item, type, onSave, onClose }) => {
           <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
         </div>
       </div>
-    </div>
-  );
-};
-
-// WP Coverage Tab - KPI and uncovered items
-const WPCoverageTab = ({ coverageStats }) => {
-  const [showUncovered, setShowUncovered] = useState(null);
-  
-  // Safety check
-  if (!coverageStats) {
-    return <div className="p-8 text-center text-gray-400">Caricamento dati copertura...</div>;
-  }
-  
-  const exportUncovered = (type) => {
-    const key = `uncovered${type.charAt(0).toUpperCase() + type.slice(1)}`;
-    const items = coverageStats[key] || [];
-    if (items.length === 0) {
-      alert('Nessun elemento da esportare');
-      return;
-    }
-    
-    let csvContent = '';
-    let filename = '';
-    
-    if (type === 'spools') {
-      csvContent = 'Full_Spool_No,ISO_Number,Spool_No,Diameter,Weight_kg,Status\n';
-      items.forEach(s => {
-        csvContent += `"${s.full_spool_no}","${s.iso_number}","${s.spool_no}",${s.diameter_inch || ''},${s.weight_kg || ''},"${s.site_status || ''}"\n`;
-      });
-      filename = 'Spools_Non_Coperti.csv';
-    } else if (type === 'welds') {
-      csvContent = 'Full_Weld_No,Weld_No,ISO_Number,Spool_1,Spool_2,Type,Diameter,Thickness,Dissimilar\n';
-      items.forEach(w => {
-        csvContent += `"${w.full_weld_no}","${w.weld_no}","${w.iso_number}","${w.full_first_spool || ''}","${w.full_second_spool || ''}","${w.weld_type || ''}",${w.diameter_inch || ''},${w.thickness_mm || ''},${w.is_dissimilar ? 'SI' : 'NO'}\n`;
-      });
-      filename = 'Welds_Non_Coperti.csv';
-    } else if (type === 'supports') {
-      csvContent = 'Support_Tag_No,Support_Mark,ISO_Number,Full_Spool_No,Weight_kg\n';
-      items.forEach(s => {
-        csvContent += `"${s.support_tag_no}","${s.support_mark}","${s.iso_number || ''}","${s.full_spool_no || ''}",${s.weight_kg || ''}\n`;
-      });
-      filename = 'Supports_Non_Coperti.csv';
-    } else if (type === 'flanges') {
-      csvContent = 'Flange_Tag,ISO_Number,Type,First_Part,Second_Part,Diameter,Gasket,Bolt\n';
-      items.forEach(f => {
-        csvContent += `"${f.flange_tag}","${f.iso_number || ''}","${f.flange_type || ''}","${f.first_part_code || ''}","${f.second_part_code || ''}",${f.diameter_inch || ''},"${f.gasket_code || ''}","${f.bolt_code || ''}"\n`;
-      });
-      filename = 'Flanges_Non_Coperti.csv';
-    }
-    
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-  };
-
-  const KPICard = ({ icon, label, total, covered, color, type }) => {
-    const uncovered = total - covered;
-    const pct = total > 0 ? Math.round((covered / total) * 100) : 0;
-    return (
-      <div className={`bg-white rounded-xl border-2 ${color} p-5`}>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-2xl">{icon}</span>
-          <span className={`text-xs font-bold px-2 py-1 rounded-full ${pct === 100 ? 'bg-green-100 text-green-700' : pct > 50 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>
-            {pct}%
-          </span>
-        </div>
-        <h3 className="font-bold text-gray-800 text-lg">{label}</h3>
-        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-          <div>
-            <div className="text-2xl font-bold text-gray-600">{total}</div>
-            <div className="text-xs text-gray-400">MTO</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-green-600">{covered}</div>
-            <div className="text-xs text-gray-400">In WP</div>
-          </div>
-          <div>
-            <div className="text-2xl font-bold text-red-600">{uncovered}</div>
-            <div className="text-xs text-gray-400">Senza WP</div>
-          </div>
-        </div>
-        {/* Progress bar */}
-        <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }}></div>
-        </div>
-        {uncovered > 0 && (
-          <div className="mt-3 flex gap-2">
-            <button 
-              onClick={() => setShowUncovered(showUncovered === type ? null : type)}
-              className="flex-1 text-xs px-3 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
-            >
-              👁️ Vedi {uncovered} non coperti
-            </button>
-            <button 
-              onClick={() => exportUncovered(type)}
-              className="text-xs px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
-            >
-              📥
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard icon="📦" label="Spools" total={coverageStats.spools.total} covered={coverageStats.spools.covered} color="border-blue-200" type="spools" />
-        <KPICard icon="🔥" label="Saldature" total={coverageStats.welds.total} covered={coverageStats.welds.covered} color="border-orange-200" type="welds" />
-        <KPICard icon="🔩" label="Supporti" total={coverageStats.supports.total} covered={coverageStats.supports.covered} color="border-gray-200" type="supports" />
-        <KPICard icon="⚙️" label="Accopp. Flangiati" total={coverageStats.flanges.total} covered={coverageStats.flanges.covered} color="border-purple-200" type="flanges" />
-      </div>
-
-      {/* Uncovered Items List */}
-      {showUncovered === 'spools' && (
-        <div className="bg-red-50 rounded-xl border border-red-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-red-800">📦 Spools Non Coperti da WP ({coverageStats.uncoveredSpools.length})</h4>
-            <div className="flex gap-2">
-              <button onClick={() => exportUncovered('spools')} className="text-sm px-3 py-1 bg-white border rounded-lg hover:bg-gray-50">📥 Esporta CSV</button>
-              <button onClick={() => setShowUncovered(null)} className="text-red-500 hover:text-red-700">✕</button>
-            </div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white sticky top-0">
-                <tr>
-                  <th className="text-left p-2 border-b">Full Spool No</th>
-                  <th className="text-left p-2 border-b">ISO</th>
-                  <th className="text-center p-2 border-b">Ø</th>
-                  <th className="text-center p-2 border-b">Peso</th>
-                  <th className="text-center p-2 border-b">Stato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coverageStats.uncoveredSpools.map(s => (
-                  <tr key={s.id} className="border-b hover:bg-white/50">
-                    <td className="p-2 font-mono text-xs text-blue-600">{s.full_spool_no}</td>
-                    <td className="p-2 text-xs">{s.iso_number}</td>
-                    <td className="p-2 text-center text-xs">{s.diameter_inch}"</td>
-                    <td className="p-2 text-center text-xs">{s.weight_kg?.toFixed(1)} kg</td>
-                    <td className="p-2 text-center text-xs">{s.site_status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {showUncovered === 'welds' && (
-        <div className="bg-orange-50 rounded-xl border border-orange-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-orange-800">🔥 Saldature Non Coperte da WP ({coverageStats.uncoveredWelds.length})</h4>
-            <div className="flex gap-2">
-              <button onClick={() => exportUncovered('welds')} className="text-sm px-3 py-1 bg-white border rounded-lg hover:bg-gray-50">📥 Esporta CSV</button>
-              <button onClick={() => setShowUncovered(null)} className="text-orange-500 hover:text-orange-700">✕</button>
-            </div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white sticky top-0">
-                <tr>
-                  <th className="text-left p-2 border-b">Weld No</th>
-                  <th className="text-left p-2 border-b">ISO</th>
-                  <th className="text-center p-2 border-b">Spool 1 ↔ 2</th>
-                  <th className="text-center p-2 border-b">Type</th>
-                  <th className="text-center p-2 border-b">Ø × Thick</th>
-                  <th className="text-center p-2 border-b">Dissimilar</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coverageStats.uncoveredWelds.map(w => (
-                  <tr key={w.id} className={`border-b hover:bg-white/50 ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}>
-                    <td className="p-2 font-mono text-xs text-orange-600">{w.weld_no}</td>
-                    <td className="p-2 text-xs">{w.iso_number}</td>
-                    <td className="p-2 text-center text-xs font-mono">{w.full_first_spool?.split('-').pop()} ↔ {w.full_second_spool?.split('-').pop()}</td>
-                    <td className="p-2 text-center text-xs">{w.weld_type}</td>
-                    <td className="p-2 text-center text-xs">{w.diameter_inch}" × {w.thickness_mm}mm</td>
-                    <td className="p-2 text-center">{w.is_dissimilar ? <span className="text-yellow-600">⚠️</span> : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {showUncovered === 'supports' && (
-        <div className="bg-gray-100 rounded-xl border border-gray-300 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-gray-800">🔩 Supporti Non Coperti da WP ({coverageStats.uncoveredSupports.length})</h4>
-            <div className="flex gap-2">
-              <button onClick={() => exportUncovered('supports')} className="text-sm px-3 py-1 bg-white border rounded-lg hover:bg-gray-50">📥 Esporta CSV</button>
-              <button onClick={() => setShowUncovered(null)} className="text-gray-500 hover:text-gray-700">✕</button>
-            </div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white sticky top-0">
-                <tr>
-                  <th className="text-left p-2 border-b">Support Tag</th>
-                  <th className="text-left p-2 border-b">Mark</th>
-                  <th className="text-left p-2 border-b">ISO</th>
-                  <th className="text-left p-2 border-b">Spool</th>
-                  <th className="text-center p-2 border-b">Peso</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coverageStats.uncoveredSupports.map(s => (
-                  <tr key={s.id} className="border-b hover:bg-white/50">
-                    <td className="p-2 font-mono text-xs">{s.support_tag_no}</td>
-                    <td className="p-2 text-xs">{s.support_mark}</td>
-                    <td className="p-2 text-xs">{s.iso_number}</td>
-                    <td className="p-2 text-xs font-mono text-blue-600">{s.full_spool_no?.split('-').pop()}</td>
-                    <td className="p-2 text-center text-xs">{s.weight_kg?.toFixed(2)} kg</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {showUncovered === 'flanges' && (
-        <div className="bg-purple-50 rounded-xl border border-purple-200 p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="font-bold text-purple-800">⚙️ Accopp. Flangiati Non Coperti da WP ({coverageStats.uncoveredFlanges.length})</h4>
-            <div className="flex gap-2">
-              <button onClick={() => exportUncovered('flanges')} className="text-sm px-3 py-1 bg-white border rounded-lg hover:bg-gray-50">📥 Esporta CSV</button>
-              <button onClick={() => setShowUncovered(null)} className="text-purple-500 hover:text-purple-700">✕</button>
-            </div>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-white sticky top-0">
-                <tr>
-                  <th className="text-left p-2 border-b">Flange Tag</th>
-                  <th className="text-left p-2 border-b">ISO</th>
-                  <th className="text-center p-2 border-b">Type</th>
-                  <th className="text-center p-2 border-b">Parts</th>
-                  <th className="text-center p-2 border-b">Ø</th>
-                  <th className="text-left p-2 border-b">Gasket</th>
-                  <th className="text-left p-2 border-b">Bolt</th>
-                </tr>
-              </thead>
-              <tbody>
-                {coverageStats.uncoveredFlanges.map(f => (
-                  <tr key={f.id} className="border-b hover:bg-white/50">
-                    <td className="p-2 font-mono text-xs text-purple-600">{f.flange_tag}</td>
-                    <td className="p-2 text-xs">{f.iso_number}</td>
-                    <td className="p-2 text-center text-xs">{f.flange_type}</td>
-                    <td className="p-2 text-center text-xs font-mono">{f.first_part_code?.split('-').pop()} ↔ {f.second_part_code?.split('-').pop()}</td>
-                    <td className="p-2 text-center text-xs">{f.diameter_inch}"</td>
-                    <td className="p-2 text-xs font-mono">{f.gasket_code}</td>
-                    <td className="p-2 text-xs font-mono">{f.bolt_code}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
