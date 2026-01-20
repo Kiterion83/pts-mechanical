@@ -69,9 +69,10 @@ export default function MTOPiping() {
         fetchFlanges(),
         fetchWelds(),
         fetchSupportSummary(),
-        fetchFlangeMaterialsSummary(),
-        fetchWPCoverage()
+        fetchFlangeMaterialsSummary()
       ]);
+      // Fetch WP coverage separately to handle missing tables
+      await fetchWPCoverage();
     } catch (error) {
       console.error('MTO: Error fetching data:', error);
     } finally {
@@ -80,17 +81,41 @@ export default function MTOPiping() {
   };
 
   const fetchWPCoverage = async () => {
-    // Fetch all WP items to determine coverage
-    const [spoolsRes, weldsRes, supportsRes, flangesRes] = await Promise.all([
-      supabase.from('wp_spools').select('spool_id, work_package_id, work_packages!inner(project_id)').eq('work_packages.project_id', activeProject.id),
-      supabase.from('wp_welds').select('weld_id, work_package_id, work_packages!inner(project_id)').eq('work_packages.project_id', activeProject.id),
-      supabase.from('wp_supports').select('support_id, work_package_id, work_packages!inner(project_id)').eq('work_packages.project_id', activeProject.id),
-      supabase.from('wp_flanges').select('flange_id, work_package_id, work_packages!inner(project_id)').eq('work_packages.project_id', activeProject.id)
-    ]);
-    setWpSpools(spoolsRes.data || []);
-    setWpWelds(weldsRes.data || []);
-    setWpSupports(supportsRes.data || []);
-    setWpFlanges(flangesRes.data || []);
+    // Initialize with empty arrays
+    setWpSpools([]);
+    setWpWelds([]);
+    setWpSupports([]);
+    setWpFlanges([]);
+    
+    try {
+      // Get all work packages for this project first
+      const { data: projectWPs, error: wpError } = await supabase
+        .from('work_packages')
+        .select('id')
+        .eq('project_id', activeProject.id);
+      
+      if (wpError || !projectWPs || projectWPs.length === 0) {
+        return;
+      }
+      
+      const wpIds = projectWPs.map(wp => wp.id);
+      
+      // Fetch WP items - use error handling for each
+      const { data: spoolData } = await supabase.from('wp_spools').select('spool_id, work_package_id').in('work_package_id', wpIds);
+      if (spoolData) setWpSpools(spoolData);
+      
+      const { data: weldData } = await supabase.from('wp_welds').select('weld_id, work_package_id').in('work_package_id', wpIds);
+      if (weldData) setWpWelds(weldData);
+      
+      const { data: supportData } = await supabase.from('wp_supports').select('support_id, work_package_id').in('work_package_id', wpIds);
+      if (supportData) setWpSupports(supportData);
+      
+      const { data: flangeData } = await supabase.from('wp_flanges').select('flange_id, work_package_id').in('work_package_id', wpIds);
+      if (flangeData) setWpFlanges(flangeData);
+      
+    } catch (error) {
+      console.error('Error fetching WP coverage:', error);
+    }
   };
 
   const fetchIsometrics = async () => {
@@ -775,20 +800,30 @@ export default function MTOPiping() {
 
   // Calculate WP coverage stats
   const coverageStats = useMemo(() => {
-    const coveredSpoolIds = new Set(wpSpools.map(w => w.spool_id));
-    const coveredWeldIds = new Set(wpWelds.map(w => w.weld_id));
-    const coveredSupportIds = new Set(wpSupports.map(w => w.support_id));
-    const coveredFlangeIds = new Set(wpFlanges.map(w => w.flange_id));
+    // Safety check for arrays
+    const safeSpools = spools || [];
+    const safeWelds = welds || [];
+    const safeSupports = supports || [];
+    const safeFlanges = flanges || [];
+    const safeWpSpools = wpSpools || [];
+    const safeWpWelds = wpWelds || [];
+    const safeWpSupports = wpSupports || [];
+    const safeWpFlanges = wpFlanges || [];
+    
+    const coveredSpoolIds = new Set(safeWpSpools.map(w => w.spool_id));
+    const coveredWeldIds = new Set(safeWpWelds.map(w => w.weld_id));
+    const coveredSupportIds = new Set(safeWpSupports.map(w => w.support_id));
+    const coveredFlangeIds = new Set(safeWpFlanges.map(w => w.flange_id));
     
     return {
-      spools: { total: spools.length, covered: spools.filter(s => coveredSpoolIds.has(s.id)).length },
-      welds: { total: welds.length, covered: welds.filter(w => coveredWeldIds.has(w.id)).length },
-      supports: { total: supports.length, covered: supports.filter(s => coveredSupportIds.has(s.id)).length },
-      flanges: { total: flanges.length, covered: flanges.filter(f => coveredFlangeIds.has(f.id)).length },
-      uncoveredSpools: spools.filter(s => !coveredSpoolIds.has(s.id)),
-      uncoveredWelds: welds.filter(w => !coveredWeldIds.has(w.id)),
-      uncoveredSupports: supports.filter(s => !coveredSupportIds.has(s.id)),
-      uncoveredFlanges: flanges.filter(f => !coveredFlangeIds.has(f.id))
+      spools: { total: safeSpools.length, covered: safeSpools.filter(s => coveredSpoolIds.has(s.id)).length },
+      welds: { total: safeWelds.length, covered: safeWelds.filter(w => coveredWeldIds.has(w.id)).length },
+      supports: { total: safeSupports.length, covered: safeSupports.filter(s => coveredSupportIds.has(s.id)).length },
+      flanges: { total: safeFlanges.length, covered: safeFlanges.filter(f => coveredFlangeIds.has(f.id)).length },
+      uncoveredSpools: safeSpools.filter(s => !coveredSpoolIds.has(s.id)),
+      uncoveredWelds: safeWelds.filter(w => !coveredWeldIds.has(w.id)),
+      uncoveredSupports: safeSupports.filter(s => !coveredSupportIds.has(s.id)),
+      uncoveredFlanges: safeFlanges.filter(f => !coveredFlangeIds.has(f.id))
     };
   }, [spools, welds, supports, flanges, wpSpools, wpWelds, wpSupports, wpFlanges]);
 
@@ -1702,9 +1737,15 @@ const EditModal = ({ item, type, onSave, onClose }) => {
 const WPCoverageTab = ({ coverageStats }) => {
   const [showUncovered, setShowUncovered] = useState(null);
   
+  // Safety check
+  if (!coverageStats) {
+    return <div className="p-8 text-center text-gray-400">Caricamento dati copertura...</div>;
+  }
+  
   const exportUncovered = (type) => {
-    const items = coverageStats[`uncovered${type.charAt(0).toUpperCase() + type.slice(1)}`];
-    if (!items || items.length === 0) {
+    const key = `uncovered${type.charAt(0).toUpperCase() + type.slice(1)}`;
+    const items = coverageStats[key] || [];
+    if (items.length === 0) {
       alert('Nessun elemento da esportare');
       return;
     }
