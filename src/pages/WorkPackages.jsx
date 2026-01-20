@@ -919,10 +919,13 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     return supports.filter(s => spoolIds.includes(s.spool_id) && !excludedSupports.includes(s.id));
   }, [derivedSpools, supports, excludedSupports]);
 
-  // Derive flanges from derived spools
+  // Derive flanges from derived spools (using both first_part_id and second_part_id)
   const derivedFlanges = useMemo(() => {
     const spoolIds = derivedSpools.map(s => s.id);
-    return flanges.filter(f => (spoolIds.includes(f.part_1_id) || spoolIds.includes(f.first_part_id)) && !excludedFlanges.includes(f.id));
+    return flanges.filter(f => 
+      (spoolIds.includes(f.first_part_id) || spoolIds.includes(f.second_part_id)) && 
+      !excludedFlanges.includes(f.id)
+    );
   }, [derivedSpools, flanges, excludedFlanges]);
 
   // Check support availability
@@ -1150,6 +1153,13 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                   </div>
                 </div>
                 
+                {/* Legend for availability */}
+                <div className="flex gap-4 text-xs bg-gray-50 p-3 rounded-lg">
+                  <span className="font-medium text-gray-600">Fattibilità:</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> Spools disponibili (To Site/Erected)</span>
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-red-500"></span> Spools non ancora disponibili</span>
+                </div>
+                
                 {/* Welds list */}
                 <div className="border rounded-lg divide-y max-h-80 overflow-y-auto bg-white">
                   {filteredWelds.length === 0 ? (
@@ -1158,6 +1168,10 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                     const isSelected = selectedWelds.includes(weld.id);
                     const spool1 = spools.find(s => s.id === weld.spool_1_id);
                     const spool2 = spools.find(s => s.id === weld.spool_2_id);
+                    // Check if weld is feasible (both spools at_site or erected)
+                    const spool1Available = spool1?.site_status === 'at_site' || spool1?.site_status === 'erected';
+                    const spool2Available = spool2?.site_status === 'at_site' || spool2?.site_status === 'erected';
+                    const isFeasible = spool1Available && spool2Available;
                     return (
                       <label key={weld.id} className={`flex items-center gap-3 p-3 cursor-pointer ${weld.is_dissimilar ? 'bg-yellow-50' : isSelected ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
                         <input 
@@ -1169,6 +1183,9 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                           }} 
                           className="w-4 h-4 text-orange-600 rounded" 
                         />
+                        {/* Feasibility indicator */}
+                        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${isFeasible ? 'bg-green-500' : 'bg-red-500'}`} 
+                              title={isFeasible ? 'Saldatura fattibile' : 'Spools non ancora disponibili'}></span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-mono font-medium text-sm text-orange-700">{weld.weld_no}</span>
@@ -1176,8 +1193,22 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                           </div>
                           <div className="text-xs text-gray-500">{weld.iso_number}</div>
                         </div>
+                        {/* Spool info with materials */}
+                        <div className="text-xs text-right min-w-[200px]">
+                          <div className="flex items-center justify-end gap-1">
+                            <span className={`font-mono ${spool1Available ? 'text-green-600' : 'text-gray-500'}`}>
+                              {spool1?.spool_no || '?'}
+                            </span>
+                            <span className="text-gray-300 mx-0.5">↔</span>
+                            <span className={`font-mono ${spool2Available ? 'text-green-600' : 'text-gray-500'}`}>
+                              {spool2?.spool_no || '?'}
+                            </span>
+                          </div>
+                          <div className="text-gray-400">
+                            {weld.first_material_code || spool1?.service_class || '-'} / {weld.second_material_code || spool2?.service_class || '-'}
+                          </div>
+                        </div>
                         <div className="text-xs text-gray-600 text-right">
-                          <div className="font-mono">{spool1?.spool_number || '?'} ↔ {spool2?.spool_number || '?'}</div>
                           <div>{weld.diameter_inch}" × {weld.thickness_mm}mm</div>
                         </div>
                         <span className={`px-2 py-0.5 rounded text-xs ${weld.weld_type === 'BW' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>

@@ -857,7 +857,7 @@ export default function MTOPiping() {
           {activeTab === 'spools' && <SpoolsTable spools={filteredSpools} onEdit={(item) => { setEditingItem(item); setEditingType('spool'); }} onDelete={(id) => handleDelete('spool', id)} />}
           {activeTab === 'supports' && <SupportsTable supports={filteredSupports} onEdit={(item) => { setEditingItem(item); setEditingType('support'); }} onDelete={(id) => handleDelete('support', id)} />}
           {activeTab === 'flanges' && <FlangesTable flanges={filteredFlanges} onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }} onDelete={(id) => handleDelete('flange', id)} />}
-          {activeTab === 'welds' && <WeldsTable welds={filteredWelds} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
+          {activeTab === 'welds' && <WeldsTable welds={filteredWelds} spools={spools} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
           {activeTab === 'summary' && <MaterialsSummary supportSummary={supportSummary} flangeMaterialsSummary={flangeMaterialsSummary} onUpdateInventory={handleUpdateInventory} />}
         </div>
       </div>
@@ -1042,54 +1042,221 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
   </div>
 );
 
-// Welds Table
-const WeldsTable = ({ welds, onEdit, onDelete }) => (
-  <div className="overflow-x-auto border rounded-lg">
-    <table className="w-full text-sm">
-      <thead className="bg-gray-100">
-        <tr>
-          <th className="text-left p-3 font-medium">Weld No</th>
-          <th className="text-left p-3 font-medium">ISO</th>
-          <th className="text-center p-3 font-medium">Spool 1 ↔ Spool 2</th>
-          <th className="text-center p-3 font-medium">Type</th>
-          <th className="text-center p-3 font-medium">Ø</th>
-          <th className="text-center p-3 font-medium">Thick</th>
-          <th className="text-center p-3 font-medium">Dissimilar</th>
-          <th className="text-center p-3 font-medium">Fitup</th>
-          <th className="text-center p-3 font-medium">Weld Date</th>
-          <th className="text-center p-3 font-medium">Azioni</th>
-        </tr>
-      </thead>
-      <tbody>
-        {welds.length === 0 ? (
-          <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nessuna weld trovata</td></tr>
-        ) : welds.map(w => (
-          <tr key={w.id} className={`border-t hover:bg-gray-50 ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}>
-            <td className="p-3 font-mono font-medium text-orange-600">{w.weld_no}</td>
-            <td className="p-3 text-xs text-gray-600">{w.iso_number}</td>
-            <td className="p-3 text-center">
-              <span className="text-blue-600 font-mono text-xs">{w.full_first_spool?.split('-').pop()}</span>
-              <span className="text-gray-400 mx-2">↔</span>
-              <span className="text-blue-600 font-mono text-xs">{w.full_second_spool?.split('-').pop()}</span>
-            </td>
-            <td className="p-3 text-center"><span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">{w.weld_type}</span></td>
-            <td className="p-3 text-center text-xs">{w.diameter_inch}"</td>
-            <td className="p-3 text-center text-xs">{w.thickness_mm}mm</td>
-            <td className="p-3 text-center">
-              {w.is_dissimilar ? <span className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium">⚠️ SI</span> : '—'}
-            </td>
-            <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center">
-              <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
-              <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+// Welds Table with Detail Modal
+const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
+  const [viewingWeld, setViewingWeld] = useState(null);
+  
+  const getSpoolDetails = (fullSpoolNo) => {
+    return spools?.find(s => s.full_spool_no === fullSpoolNo);
+  };
+  
+  const getSpoolStatusBadge = (status) => {
+    const configs = {
+      in_production: { label: 'In Produzione', color: 'bg-gray-100 text-gray-600' },
+      shipped: { label: 'Spedito', color: 'bg-yellow-100 text-yellow-700' },
+      at_laydown: { label: 'Laydown', color: 'bg-blue-100 text-blue-700' },
+      ir_issued: { label: 'IR Emesso', color: 'bg-orange-100 text-orange-700' },
+      at_site: { label: 'Al Sito', color: 'bg-purple-100 text-purple-700' },
+      erected: { label: 'Eretto', color: 'bg-green-100 text-green-700' }
+    };
+    const config = configs[status] || configs.in_production;
+    return <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.color}`}>{config.label}</span>;
+  };
+  
+  return (
+    <>
+      <div className="overflow-x-auto border rounded-lg">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="text-left p-3 font-medium">Weld No</th>
+              <th className="text-left p-3 font-medium">ISO</th>
+              <th className="text-center p-3 font-medium">Spool 1 ↔ Spool 2</th>
+              <th className="text-center p-3 font-medium">Type</th>
+              <th className="text-center p-3 font-medium">Ø</th>
+              <th className="text-center p-3 font-medium">Thick</th>
+              <th className="text-center p-3 font-medium">Dissimilar</th>
+              <th className="text-center p-3 font-medium">Fitup</th>
+              <th className="text-center p-3 font-medium">Weld Date</th>
+              <th className="text-center p-3 font-medium">Azioni</th>
+            </tr>
+          </thead>
+          <tbody>
+            {welds.length === 0 ? (
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Nessuna weld trovata</td></tr>
+            ) : welds.map(w => (
+              <tr key={w.id} className={`border-t hover:bg-gray-50 ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}>
+                <td className="p-3 font-mono font-medium text-orange-600">{w.weld_no}</td>
+                <td className="p-3 text-xs text-gray-600">{w.iso_number}</td>
+                <td className="p-3 text-center">
+                  <span className="text-blue-600 font-mono text-xs">{w.full_first_spool?.split('-').pop()}</span>
+                  <span className="text-gray-400 mx-2">↔</span>
+                  <span className="text-blue-600 font-mono text-xs">{w.full_second_spool?.split('-').pop()}</span>
+                </td>
+                <td className="p-3 text-center"><span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">{w.weld_type}</span></td>
+                <td className="p-3 text-center text-xs">{w.diameter_inch}"</td>
+                <td className="p-3 text-center text-xs">{w.thickness_mm}mm</td>
+                <td className="p-3 text-center">
+                  {w.is_dissimilar ? (
+                    <button 
+                      onClick={() => setViewingWeld(w)}
+                      className="px-2 py-0.5 bg-yellow-200 text-yellow-800 rounded text-xs font-medium hover:bg-yellow-300 inline-flex items-center gap-1"
+                      title="Clicca per vedere i dettagli"
+                    >
+                      ⚠️ SI 🔍
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => setViewingWeld(w)}
+                      className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                      title="Vedi dettagli"
+                    >
+                      🔍
+                    </button>
+                  )}
+                </td>
+                <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✓</span> : '—'}</td>
+                <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✓</span> : '—'}</td>
+                <td className="p-3 text-center">
+                  <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
+                  <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      {/* Weld Detail Modal */}
+      {viewingWeld && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b bg-gradient-to-r from-orange-50 to-yellow-50">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    🔥 Dettagli Saldatura: {viewingWeld.weld_no}
+                    {viewingWeld.is_dissimilar && <span className="text-yellow-600 text-sm bg-yellow-100 px-2 py-0.5 rounded">⚠️ DISSIMILARE</span>}
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">{viewingWeld.full_weld_no}</p>
+                </div>
+                <button onClick={() => setViewingWeld(null)} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Weld Info */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">ISO</div>
+                  <div className="font-mono font-medium">{viewingWeld.iso_number}</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Tipo</div>
+                  <div className="font-medium">{viewingWeld.weld_type} ({viewingWeld.weld_category || '-'})</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Diametro</div>
+                  <div className="font-medium">{viewingWeld.diameter_inch}"</div>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <div className="text-xs text-gray-500">Spessore</div>
+                  <div className="font-medium">{viewingWeld.thickness_mm} mm</div>
+                </div>
+              </div>
+              
+              {/* Materials */}
+              {viewingWeld.is_dissimilar && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <h4 className="font-bold text-yellow-800 mb-3 flex items-center gap-2">⚠️ Materiali Dissimili</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded p-3 border">
+                      <div className="text-xs text-gray-500 mb-1">Materiale Spool 1</div>
+                      <div className="font-mono font-bold text-lg">{viewingWeld.first_material_code || '-'}</div>
+                    </div>
+                    <div className="bg-white rounded p-3 border">
+                      <div className="text-xs text-gray-500 mb-1">Materiale Spool 2</div>
+                      <div className="font-mono font-bold text-lg">{viewingWeld.second_material_code || '-'}</div>
+                    </div>
+                  </div>
+                  <p className="text-sm text-yellow-700 mt-3">⚠️ WPS speciale richiesta per questa saldatura</p>
+                </div>
+              )}
+              
+              {/* Spool 1 Details */}
+              {(() => {
+                const spool1 = getSpoolDetails(viewingWeld.full_first_spool);
+                return spool1 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-blue-50 px-4 py-2 border-b">
+                      <h4 className="font-semibold text-blue-800">📦 Spool 1: {spool1.spool_no || spool1.full_spool_no?.split('-').pop()}</h4>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div><span className="text-gray-500">Full No:</span><br/><span className="font-mono text-xs">{spool1.full_spool_no}</span></div>
+                      <div><span className="text-gray-500">Stato:</span><br/>{getSpoolStatusBadge(spool1.site_status)}</div>
+                      <div><span className="text-gray-500">Diametro:</span><br/><span className="font-medium">{spool1.diameter_inch}"</span></div>
+                      <div><span className="text-gray-500">Peso:</span><br/><span className="font-medium">{spool1.weight_kg?.toFixed(1)} kg</span></div>
+                      <div><span className="text-gray-500">Service Class:</span><br/><span className="font-medium">{spool1.service_class || '-'}</span></div>
+                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{spool1.shipment_date || '-'}</span></div>
+                      <div><span className="text-gray-500">IR:</span><br/><span className="font-medium">{spool1.ir_number || '-'}</span></div>
+                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{spool1.erected || '-'}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg p-4 bg-gray-50 text-gray-500">
+                    📦 Spool 1: {viewingWeld.full_first_spool || '-'} (dettagli non disponibili)
+                  </div>
+                );
+              })()}
+              
+              {/* Spool 2 Details */}
+              {(() => {
+                const spool2 = getSpoolDetails(viewingWeld.full_second_spool);
+                return spool2 ? (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-purple-50 px-4 py-2 border-b">
+                      <h4 className="font-semibold text-purple-800">📦 Spool 2: {spool2.spool_no || spool2.full_spool_no?.split('-').pop()}</h4>
+                    </div>
+                    <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                      <div><span className="text-gray-500">Full No:</span><br/><span className="font-mono text-xs">{spool2.full_spool_no}</span></div>
+                      <div><span className="text-gray-500">Stato:</span><br/>{getSpoolStatusBadge(spool2.site_status)}</div>
+                      <div><span className="text-gray-500">Diametro:</span><br/><span className="font-medium">{spool2.diameter_inch}"</span></div>
+                      <div><span className="text-gray-500">Peso:</span><br/><span className="font-medium">{spool2.weight_kg?.toFixed(1)} kg</span></div>
+                      <div><span className="text-gray-500">Service Class:</span><br/><span className="font-medium">{spool2.service_class || '-'}</span></div>
+                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{spool2.shipment_date || '-'}</span></div>
+                      <div><span className="text-gray-500">IR:</span><br/><span className="font-medium">{spool2.ir_number || '-'}</span></div>
+                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{spool2.erected || '-'}</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="border rounded-lg p-4 bg-gray-50 text-gray-500">
+                    📦 Spool 2: {viewingWeld.full_second_spool || '-'} (dettagli non disponibili)
+                  </div>
+                );
+              })()}
+              
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className={`rounded-lg p-4 border ${viewingWeld.fitup_date ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}>
+                  <div className="text-sm text-gray-500">Fitup Date</div>
+                  <div className="font-medium text-lg">{viewingWeld.fitup_date || 'Non eseguito'}</div>
+                </div>
+                <div className={`rounded-lg p-4 border ${viewingWeld.weld_date ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}>
+                  <div className="text-sm text-gray-500">Weld Date</div>
+                  <div className="font-medium text-lg">{viewingWeld.weld_date || 'Non eseguito'}</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50 flex justify-end">
+              <button onClick={() => setViewingWeld(null)} className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-medium">Chiudi</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
 
 // Materials Summary - Restructured with 5 columns
 const MaterialsSummary = ({ supportSummary, flangeMaterialsSummary, onUpdateInventory }) => (
