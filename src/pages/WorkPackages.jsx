@@ -160,9 +160,10 @@ export default function WorkPackages() {
     
     try {
       const { data: flangeData } = await supabase
-        .from('mto_flanges')
+        .from('mto_flanged_joints')
         .select('*')
-        .eq('project_id', activeProject.id);
+        .eq('project_id', activeProject.id)
+        .is('deleted_at', null);
       setFlanges(flangeData || []);
     } catch (e) { setFlanges([]); }
   };
@@ -919,11 +920,11 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
     return supports.filter(s => spoolIds.includes(s.spool_id) && !excludedSupports.includes(s.id));
   }, [derivedSpools, supports, excludedSupports]);
 
-  // Derive flanges from derived spools (using both first_part_id and second_part_id)
+  // Derive flanges from derived spools (matching first_part_code/second_part_code with full_spool_no)
   const derivedFlanges = useMemo(() => {
-    const spoolIds = derivedSpools.map(s => s.id);
+    const spoolFullNos = derivedSpools.map(s => s.full_spool_no);
     return flanges.filter(f => 
-      (spoolIds.includes(f.first_part_id) || spoolIds.includes(f.second_part_id)) && 
+      (spoolFullNos.includes(f.first_part_code) || spoolFullNos.includes(f.second_part_code)) && 
       !excludedFlanges.includes(f.id)
     );
   }, [derivedSpools, flanges, excludedFlanges]);
@@ -1259,7 +1260,6 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                   {derivedSpools.length === 0 ? (
                     <div className="p-8 text-center text-gray-400">Nessuno spool derivato</div>
                   ) : derivedSpools.map(spool => {
-                    const iso = isometrics.find(i => i.id === spool.isometric_id);
                     const spoolWelds = welds.filter(w => (w.spool_1_id === spool.id || w.spool_2_id === spool.id) && selectedWelds.includes(w.id));
                     return (
                       <div key={spool.id} className="flex items-center gap-3 p-3 hover:bg-gray-50">
@@ -1269,8 +1269,10 @@ const CreateWPPWizard = ({ project, squads, isometrics, spools, welds, supports,
                           title="Escludi"
                         >✕</button>
                         <div className="flex-1 min-w-0">
-                          <div className="font-mono font-medium text-sm">{spool.spool_number}</div>
-                          <div className="text-xs text-gray-500">{iso?.iso_number} • {spool.diameter_inch}" • {spool.weight_kg}kg</div>
+                          <div className="font-mono font-medium text-sm text-blue-700">{spool.full_spool_no}</div>
+                          <div className="text-xs text-gray-500">
+                            {spool.diameter_inch}" • {spool.thickness_mm || '-'}mm • {spool.weight_kg?.toFixed(1) || '-'}kg
+                          </div>
                         </div>
                         <div className="text-xs text-orange-600">{spoolWelds.length} welds</div>
                         <SpoolStatusDot status={spool.site_status} />
