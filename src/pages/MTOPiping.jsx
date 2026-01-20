@@ -23,6 +23,9 @@ export default function MTOPiping() {
   const [flangeMaterialsSummary, setFlangeMaterialsSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // WP Coverage state
+  const [wpCoverage, setWpCoverage] = useState({ spools: 0, welds: 0, supports: 0, flanges: 0 });
+  
   // UI state
   const [activeTab, setActiveTab] = useState('spools');
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,10 +68,57 @@ export default function MTOPiping() {
         fetchSupportSummary(),
         fetchFlangeMaterialsSummary()
       ]);
+      // Fetch WP coverage after main data (non-blocking)
+      fetchWPCoverage();
     } catch (error) {
       console.error('MTO: Error fetching data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchWPCoverage = async () => {
+    try {
+      // Get WP IDs for this project
+      const { data: wps } = await supabase
+        .from('work_packages')
+        .select('id')
+        .eq('project_id', activeProject.id);
+      
+      if (!wps || wps.length === 0) {
+        setWpCoverage({ spools: 0, welds: 0, supports: 0, flanges: 0 });
+        return;
+      }
+      
+      const wpIds = wps.map(w => w.id);
+      
+      // Count covered items (handle missing tables gracefully)
+      let spoolCount = 0, weldCount = 0, supportCount = 0, flangeCount = 0;
+      
+      try {
+        const { data, count } = await supabase.from('wp_spools').select('spool_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        spoolCount = count || 0;
+      } catch (e) { /* table may not exist */ }
+      
+      try {
+        const { data, count } = await supabase.from('wp_welds').select('weld_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        weldCount = count || 0;
+      } catch (e) { /* table may not exist */ }
+      
+      try {
+        const { data, count } = await supabase.from('wp_supports').select('support_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        supportCount = count || 0;
+      } catch (e) { /* table may not exist */ }
+      
+      try {
+        const { data, count } = await supabase.from('wp_flanges').select('flange_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        flangeCount = count || 0;
+      } catch (e) { /* table may not exist */ }
+      
+      setWpCoverage({ spools: spoolCount, welds: weldCount, supports: supportCount, flanges: flangeCount });
+    } catch (error) {
+      console.error('WP Coverage fetch error:', error);
+      setWpCoverage({ spools: 0, welds: 0, supports: 0, flanges: 0 });
     }
   };
 
@@ -794,13 +844,39 @@ export default function MTOPiping() {
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mt-6">
-          <StatCard icon="🔍" bg="bg-blue-50" border="border-blue-200" value={stats.isometrics} label="Isometrici" />
-          <StatCard icon="📦" bg="bg-purple-50" border="border-purple-200" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} eretti`} />
-          <StatCard icon="🔩" bg="bg-gray-50" border="border-gray-200" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} assemblati`} />
-          <StatCard icon="⚙️" bg="bg-amber-50" border="border-amber-200" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} assemblate`} />
-          <StatCard icon="🔥" bg="bg-orange-50" border="border-orange-200" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} completate`} />
+        {/* Compact Stats with WP Coverage */}
+        <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 mt-4">
+          {/* MTO Totals */}
+          <MiniStat icon="🔍" value={stats.isometrics} label="ISO" color="blue" />
+          <MiniStat icon="📦" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} ✓`} color="purple" />
+          <MiniStat icon="🔩" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} ✓`} color="gray" />
+          <MiniStat icon="⚙️" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} ✓`} color="amber" />
+          
+          {/* WP Coverage */}
+          <CoverageStat 
+            icon="📦" 
+            total={stats.spools} 
+            covered={wpCoverage.spools} 
+            label="Spools in WP" 
+          />
+          <CoverageStat 
+            icon="🔥" 
+            total={stats.welds} 
+            covered={wpCoverage.welds} 
+            label="Welds in WP" 
+          />
+          <CoverageStat 
+            icon="🔩" 
+            total={stats.supports} 
+            covered={wpCoverage.supports} 
+            label="Supports in WP" 
+          />
+          <CoverageStat 
+            icon="⚙️" 
+            total={stats.flanges} 
+            covered={wpCoverage.flanges} 
+            label="Flanges in WP" 
+          />
         </div>
       </div>
 
@@ -892,6 +968,45 @@ const StatCard = ({ icon, bg, border, value, label, sub }) => (
     </div>
   </div>
 );
+
+// Compact mini stat for MTO totals
+const MiniStat = ({ icon, value, label, sub, color }) => {
+  const colors = {
+    blue: 'bg-blue-50 border-blue-200',
+    purple: 'bg-purple-50 border-purple-200',
+    gray: 'bg-gray-50 border-gray-200',
+    amber: 'bg-amber-50 border-amber-200',
+    orange: 'bg-orange-50 border-orange-200'
+  };
+  return (
+    <div className={`${colors[color] || colors.gray} rounded-lg p-2 border text-center`}>
+      <div className="text-lg">{icon}</div>
+      <div className="text-xl font-bold text-gray-700">{value}</div>
+      <div className="text-[10px] text-gray-500 truncate">{label}</div>
+      {sub && <div className="text-[10px] text-green-600">{sub}</div>}
+    </div>
+  );
+};
+
+// Coverage stat showing MTO vs WP
+const CoverageStat = ({ icon, total, covered, label }) => {
+  const pct = total > 0 ? Math.round((covered / total) * 100) : 0;
+  const uncovered = total - covered;
+  const bgColor = pct === 100 ? 'bg-green-50 border-green-300' : pct > 50 ? 'bg-yellow-50 border-yellow-300' : 'bg-red-50 border-red-300';
+  const textColor = pct === 100 ? 'text-green-700' : pct > 50 ? 'text-yellow-700' : 'text-red-700';
+  
+  return (
+    <div className={`${bgColor} rounded-lg p-2 border text-center`}>
+      <div className="flex items-center justify-center gap-1">
+        <span className="text-sm">{icon}</span>
+        <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
+      </div>
+      <div className="text-lg font-bold text-gray-700">{covered}<span className="text-gray-400 text-xs">/{total}</span></div>
+      <div className="text-[10px] text-gray-500 truncate">{label}</div>
+      {uncovered > 0 && <div className="text-[10px] text-red-500">-{uncovered} senza WP</div>}
+    </div>
+  );
+};
 
 const SpoolStatusBadge = ({ status }) => {
   const configs = {
