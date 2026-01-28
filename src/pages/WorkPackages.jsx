@@ -1473,6 +1473,14 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   const [activeEditTab, setActiveEditTab] = useState('info');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingChanges, setPendingChanges] = useState(null);
+  const [showCompletionAlert, setShowCompletionAlert] = useState(false);
+  
+  // PHASE B: Material availability state
+  const [materialAvailability, setMaterialAvailability] = useState({
+    supports: [],
+    flangeMaterials: [],
+    loading: true
+  });
   
   // Info form
   const [formData, setFormData] = useState({
@@ -1503,6 +1511,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   useEffect(() => {
     if (wp.wp_type === 'piping') {
       loadWPSpools();
+      loadMaterialAvailability();
     }
   }, [wp.id]);
 
@@ -1512,6 +1521,122 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
       .select('*, spool:mto_spools(*)')
       .eq('work_package_id', wp.id);
     setWpSpools(data || []);
+  };
+
+  // PHASE B: Load material availability for WP flanges and supports
+  const loadMaterialAvailability = async () => {
+    setMaterialAvailability(prev => ({ ...prev, loading: true }));
+    try {
+      // Get WP flanges and supports
+      const { data: wpFlangesData } = await supabase
+        .from('wp_flanges')
+        .select('flange_id')
+        .eq('work_package_id', wp.id);
+      
+      const { data: wpSupportsData } = await supabase
+        .from('wp_supports')
+        .select('support_id')
+        .eq('work_package_id', wp.id);
+      
+      const wpFlangeIds = wpFlangesData?.map(f => f.flange_id) || [];
+      const wpSupportIds = wpSupportsData?.map(s => s.support_id) || [];
+      
+      // Get flange details with material info
+      let flangeDetails = [];
+      if (wpFlangeIds.length > 0) {
+        const { data: flangesInfo } = await supabase
+          .from('mto_flanged_joints')
+          .select('*')
+          .in('id', wpFlangeIds);
+        flangeDetails = flangesInfo || [];
+      }
+      
+      // Get support details
+      let supportDetails = [];
+      if (wpSupportIds.length > 0) {
+        const { data: supportsInfo } = await supabase
+          .from('mto_supports')
+          .select('*')
+          .in('id', wpSupportIds);
+        supportDetails = supportsInfo || [];
+      }
+      
+      // Get support inventory summary
+      const { data: supportSummary } = await supabase
+        .from('v_mto_support_summary')
+        .select('*')
+        .eq('project_id', wp.project_id);
+      
+      // Get flange materials inventory summary
+      const { data: flangeMaterialsSummary } = await supabase
+        .from('v_mto_flange_materials_summary')
+        .select('*')
+        .eq('project_id', wp.project_id);
+      
+      // Calculate availability per flange
+      const flangesWithAvailability = flangeDetails.map(flange => {
+        const gasketAvail = flangeMaterialsSummary?.find(m => 
+          m.material_code === flange.gasket_code && m.material_type === 'gasket'
+        );
+        const boltAvail = flangeMaterialsSummary?.find(m => 
+          m.material_code === flange.bolt_code && m.material_type === 'bolt'
+        );
+        const insulAvail = flange.insulation_code ? flangeMaterialsSummary?.find(m => 
+          m.material_code === flange.insulation_code && m.material_type === 'insulation'
+        ) : null;
+        
+        return {
+          ...flange,
+          gasket: {
+            code: flange.gasket_code,
+            qty_needed: flange.gasket_qty || 1,
+            available: (gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0),
+            status: !flange.gasket_code ? 'na' : 
+                    ((gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0)) >= (flange.gasket_qty || 1) ? 'ok' : 'missing'
+          },
+          bolt: {
+            code: flange.bolt_code,
+            qty_needed: flange.bolt_qty || 0,
+            available: (boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0),
+            status: !flange.bolt_code || flange.bolt_qty === 0 ? 'na' : 
+                    ((boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0)) >= (flange.bolt_qty || 0) ? 'ok' : 'missing'
+          },
+          insulation: {
+            code: flange.insulation_code,
+            qty_needed: flange.insulation_qty || 0,
+            available: insulAvail ? (insulAvail.qty_warehouse || 0) - (insulAvail.qty_delivered || 0) : 0,
+            status: !flange.insulation_code ? 'na' : 
+                    ((insulAvail?.qty_warehouse || 0) - (insulAvail?.qty_delivered || 0)) >= (flange.insulation_qty || 0) ? 'ok' : 'missing'
+          }
+        };
+      });
+      
+      // Calculate availability per support
+      const supportsWithAvailability = supportDetails.map(support => {
+        const markAvail = supportSummary?.find(s => s.support_mark === support.support_mark);
+        const available = (markAvail?.qty_warehouse || 0) - (markAvail?.qty_delivered || 0);
+        const needed = 1; // Each support needs 1 from its mark
+        
+        return {
+          ...support,
+          availability: {
+            available,
+            needed,
+            total_mark_needed: markAvail?.qty_necessary || 0,
+            status: available >= needed ? 'ok' : 'missing'
+          }
+        };
+      });
+      
+      setMaterialAvailability({
+        supports: supportsWithAvailability,
+        flanges: flangesWithAvailability,
+        loading: false
+      });
+    } catch (error) {
+      console.error('Error loading material availability:', error);
+      setMaterialAvailability(prev => ({ ...prev, loading: false }));
+    }
   };
 
   // Check conflitti quando cambia squadra
@@ -1587,7 +1712,17 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
         });
       }
       
-      onSuccess();
+      // PHASE B: Show completion alert if status changed to completed
+      if (formData.status === 'completed' && wp.status !== 'completed') {
+        setShowCompletionAlert(true);
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          setShowCompletionAlert(false);
+          onSuccess();
+        }, 3000);
+      } else {
+        onSuccess();
+      }
     } catch (error) { 
       alert('Errore: ' + error.message); 
     } finally { 
@@ -1710,25 +1845,37 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
             <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
           </div>
           
-          {/* Tabs - FIX #3: Aggiunti tab per Contenuto e Documenti */}
-          <div className="flex border-b">
+          {/* Tabs - FIX #3: Aggiunti tab per Contenuto e Documenti + PHASE B: Materiali */}
+          <div className="flex border-b overflow-x-auto">
             <button 
               onClick={() => setActiveEditTab('info')} 
-              className={`px-6 py-3 text-sm font-medium ${activeEditTab === 'info' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
+              className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'info' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
             >
               📝 Info
             </button>
             {isPiping && (
               <button 
                 onClick={() => setActiveEditTab('content')} 
-                className={`px-6 py-3 text-sm font-medium ${activeEditTab === 'content' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'content' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
               >
                 📦 Contenuto {contentChanged && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
               </button>
             )}
+            {isPiping && (
+              <button 
+                onClick={() => setActiveEditTab('materials')} 
+                className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'materials' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                📊 Materiali
+                {!materialAvailability.loading && (
+                  materialAvailability.flanges?.some(f => f.gasket.status === 'missing' || f.bolt.status === 'missing' || f.insulation.status === 'missing') ||
+                  materialAvailability.supports?.some(s => s.availability.status === 'missing')
+                ) && <span className="ml-1 w-2 h-2 bg-red-500 rounded-full inline-block"></span>}
+              </button>
+            )}
             <button 
               onClick={() => setActiveEditTab('documents')} 
-              className={`px-6 py-3 text-sm font-medium ${activeEditTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
+              className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
             >
               📎 Documenti
             </button>
@@ -1879,6 +2026,14 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
               </div>
             )}
             
+            {/* PHASE B: Tab Materiali - Disponibilità materiali */}
+            {activeEditTab === 'materials' && isPiping && (
+              <MaterialAvailabilityTab 
+                materialAvailability={materialAvailability}
+                onRefresh={loadMaterialAvailability}
+              />
+            )}
+            
             {/* Tab Documenti */}
             {activeEditTab === 'documents' && (
               <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
@@ -1934,6 +2089,36 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                 {saving ? 'Salvando...' : 'Conferma'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* PHASE B: Completion Alert */}
+      {showCompletionAlert && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8 text-center animate-pulse">
+            <div className="text-6xl mb-4">🎉</div>
+            <h3 className="text-2xl font-bold text-emerald-600 mb-2">WP Completato!</h3>
+            <p className="text-gray-600 mb-4">
+              <span className="font-mono font-bold text-lg">{wp.code}</span> è stato completato con successo.
+            </p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-emerald-600 text-2xl">✓</span>
+                <span className="text-emerald-700 font-medium">100% Completato</span>
+              </div>
+              {wp.created_at && (
+                <p className="text-sm text-emerald-600 mt-2">
+                  Durata totale: {calculateDaysBetween(wp.created_at, new Date().toISOString())} giorni
+                </p>
+              )}
+            </div>
+            <button 
+              onClick={() => { setShowCompletionAlert(false); onSuccess(); }}
+              className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
+            >
+              Chiudi
+            </button>
           </div>
         </div>
       )}
@@ -2028,6 +2213,230 @@ const AddSpoolsModal = ({ availableSpools, onAdd, onClose }) => {
           </div>
         </div>
       </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// PHASE B: MATERIAL AVAILABILITY TAB
+// ============================================================================
+
+const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
+  const { flanges = [], supports = [], loading } = materialAvailability;
+  
+  // Calculate summary stats
+  const flangeStats = {
+    total: flanges.length,
+    gasketMissing: flanges.filter(f => f.gasket.status === 'missing').length,
+    boltMissing: flanges.filter(f => f.bolt.status === 'missing').length,
+    insulationMissing: flanges.filter(f => f.insulation.status === 'missing').length
+  };
+  
+  const supportStats = {
+    total: supports.length,
+    missing: supports.filter(s => s.availability.status === 'missing').length
+  };
+  
+  const hasMissingMaterials = flangeStats.gasketMissing > 0 || flangeStats.boltMissing > 0 || 
+                              flangeStats.insulationMissing > 0 || supportStats.missing > 0;
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+  
+  const MaterialStatusIcon = ({ status }) => {
+    if (status === 'ok') return <span className="text-emerald-600">✓</span>;
+    if (status === 'missing') return <span className="text-red-600">✗</span>;
+    return <span className="text-gray-400">-</span>;
+  };
+  
+  return (
+    <div className="space-y-6">
+      {/* Summary Alert */}
+      {hasMissingMaterials ? (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">⚠️</span>
+            <div>
+              <p className="font-semibold text-red-800">Materiali Mancanti</p>
+              <p className="text-sm text-red-600">
+                Alcuni materiali non sono disponibili in magazzino. 
+                Verifica la disponibilità prima di procedere.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <p className="font-semibold text-emerald-800">Materiali Disponibili</p>
+              <p className="text-sm text-emerald-600">
+                Tutti i materiali necessari sono disponibili in magazzino.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Refresh button */}
+      <div className="flex justify-end">
+        <button onClick={onRefresh} className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
+          🔄 Aggiorna dati
+        </button>
+      </div>
+      
+      {/* Flanges Section */}
+      {flanges.length > 0 && (
+        <div>
+          <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            ⚙️ Flangie ({flanges.length})
+            {(flangeStats.gasketMissing > 0 || flangeStats.boltMissing > 0 || flangeStats.insulationMissing > 0) && (
+              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                Mancanti: {flangeStats.gasketMissing + flangeStats.boltMissing + flangeStats.insulationMissing}
+              </span>
+            )}
+          </h4>
+          
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-3 font-medium">Flange Tag</th>
+                  <th className="text-center p-3 font-medium">Gasket</th>
+                  <th className="text-center p-3 font-medium">Bolt</th>
+                  <th className="text-center p-3 font-medium">Insulation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {flanges.map(flange => (
+                  <tr key={flange.id} className="border-t hover:bg-gray-50">
+                    <td className="p-3">
+                      <div className="font-mono text-amber-700">{flange.flange_tag}</div>
+                      <div className="text-xs text-gray-500">{flange.flange_type} • Ø{flange.diameter_inch}"</div>
+                    </td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <MaterialStatusIcon status={flange.gasket.status} />
+                        {flange.gasket.code && (
+                          <span className={`text-xs ${flange.gasket.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
+                            {flange.gasket.code}
+                          </span>
+                        )}
+                      </div>
+                      {flange.gasket.status === 'missing' && flange.gasket.code && (
+                        <div className="text-xs text-red-500 mt-1">
+                          Disp: {flange.gasket.available}/{flange.gasket.qty_needed}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <MaterialStatusIcon status={flange.bolt.status} />
+                        {flange.bolt.code && (
+                          <span className={`text-xs ${flange.bolt.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
+                            {flange.bolt.code} ×{flange.bolt.qty_needed}
+                          </span>
+                        )}
+                      </div>
+                      {flange.bolt.status === 'missing' && flange.bolt.code && (
+                        <div className="text-xs text-red-500 mt-1">
+                          Disp: {flange.bolt.available}/{flange.bolt.qty_needed}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-3 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <MaterialStatusIcon status={flange.insulation.status} />
+                        {flange.insulation.code && (
+                          <span className={`text-xs ${flange.insulation.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
+                            {flange.insulation.code}
+                          </span>
+                        )}
+                      </div>
+                      {flange.insulation.status === 'missing' && flange.insulation.code && (
+                        <div className="text-xs text-red-500 mt-1">
+                          Disp: {flange.insulation.available}/{flange.insulation.qty_needed}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Legend */}
+          <div className="flex gap-4 text-xs text-gray-500 mt-2">
+            <span className="flex items-center gap-1"><span className="text-emerald-600">✓</span> Disponibile</span>
+            <span className="flex items-center gap-1"><span className="text-red-600">✗</span> Mancante</span>
+            <span className="flex items-center gap-1"><span className="text-gray-400">-</span> Non richiesto</span>
+          </div>
+        </div>
+      )}
+      
+      {/* Supports Section */}
+      {supports.length > 0 && (
+        <div>
+          <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            🔩 Supporti ({supports.length})
+            {supportStats.missing > 0 && (
+              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                Mancanti: {supportStats.missing}
+              </span>
+            )}
+          </h4>
+          
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left p-3 font-medium">Support Tag</th>
+                  <th className="text-left p-3 font-medium">Mark</th>
+                  <th className="text-center p-3 font-medium">Disponibilità</th>
+                  <th className="text-center p-3 font-medium">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supports.map(support => (
+                  <tr key={support.id} className={`border-t hover:bg-gray-50 ${support.availability.status === 'missing' ? 'bg-red-50' : ''}`}>
+                    <td className="p-3 font-mono text-xs">{support.support_tag_no}</td>
+                    <td className="p-3">
+                      <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{support.support_mark}</span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className={`text-sm ${support.availability.available > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {support.availability.available} disponibili
+                      </span>
+                      <div className="text-xs text-gray-400">
+                        (Tot. necessari: {support.availability.total_mark_needed})
+                      </div>
+                    </td>
+                    <td className="p-3 text-center">
+                      {support.availability.status === 'ok' ? (
+                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">✓ OK</span>
+                      ) : (
+                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">✗ Mancante</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      
+      {flanges.length === 0 && supports.length === 0 && (
+        <div className="text-center py-8 text-gray-400">
+          <p>Nessuna flangia o supporto nel WP</p>
+        </div>
+      )}
     </div>
   );
 };
