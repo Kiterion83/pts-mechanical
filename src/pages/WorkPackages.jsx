@@ -407,7 +407,7 @@ export default function WorkPackages() {
 
         {activeTab === 'gantt' && (
           <div className="p-4">
-            <WorkPackagesGantt workPackages={filteredWPs} squads={squads} />
+            <WorkPackagesGantt workPackages={filteredWPs || []} squads={squads || []} />
           </div>
         )}
       </div>
@@ -513,10 +513,10 @@ const AvailabilityDot = ({ available }) => (
   <span className={`w-3 h-3 rounded-full ${available ? 'bg-green-500' : 'bg-red-500'}`} title={available ? 'Disponibile' : 'Non disponibile'}></span>
 );
 
-// Badge revisione
+// Badge revisione - FIX #3: Mostra sempre Rev.X incluso Rev.0
 const RevisionBadge = ({ revision }) => {
-  if (!revision || revision === 0) return null;
-  return <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 text-xs rounded font-medium">Rev.{revision}</span>;
+  const rev = revision ?? 0;
+  return <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 text-xs rounded font-medium">Rev.{rev}</span>;
 };
 
 // FIX #9: Badge giorni - mostra durata
@@ -982,6 +982,17 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           quantity_completed: 0,
           item_ids: selectedSupports
         });
+        
+        // FIX #2: Save to wp_supports for material availability tracking
+        const supportsToInsert = selectedSupports.map(supportId => {
+          const support = supports.find(s => s.id === supportId);
+          return {
+            work_package_id: wpData.id,
+            support_id: supportId,
+            support_tag: support?.support_tag_no
+          };
+        });
+        await supabase.from('wp_supports').insert(supportsToInsert);
       }
 
       // Create activities for flanges
@@ -993,6 +1004,17 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           quantity_completed: 0,
           item_ids: selectedFlanges
         });
+        
+        // FIX #2: Save to wp_flanges for material availability tracking
+        const flangesToInsert = selectedFlanges.map(flangeId => {
+          const flange = flanges.find(f => f.id === flangeId);
+          return {
+            work_package_id: wpData.id,
+            flange_id: flangeId,
+            flange_tag: flange?.flange_tag
+          };
+        });
+        await supabase.from('wp_flanges').insert(flangesToInsert);
       }
 
       // Log revision
@@ -1886,9 +1908,28 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
             {/* Tab Info */}
             {activeEditTab === 'info' && (
               <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Codice</label>
-                  <input type="text" value={wp.code} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+                {/* FIX #4: Info header with code, creation date and current squad */}
+                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Codice WP</label>
+                      <div className="font-mono text-lg font-bold text-gray-800">{wp.code}</div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Creato il</label>
+                      <div className="text-gray-800">{wp.created_at ? new Date(wp.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</div>
+                    </div>
+                  </div>
+                  {wp.squad_id && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Squadra Attuale</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-purple-600 font-medium">
+                          {squads.find(s => s.id === wp.squad_id)?.name || `Squadra ${squads.find(s => s.id === wp.squad_id)?.squad_number || ''}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div>
