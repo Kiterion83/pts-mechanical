@@ -36,6 +36,8 @@ export default function MTOPiping() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewType, setPreviewType] = useState(null);
   const [addingType, setAddingType] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editingType, setEditingType] = useState(null);
@@ -830,6 +832,18 @@ export default function MTOPiping() {
             <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
               📥 Importa Excel
             </button>
+            {/* Preview Struttura Excel */}
+            <div className="relative group">
+              <button className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center gap-2 text-sm font-medium">
+                📋 Preview Struttura ▼
+              </button>
+              <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg hidden group-hover:block z-10">
+                <button onClick={() => { setPreviewType('spools'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
+                <button onClick={() => { setPreviewType('supports'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
+                <button onClick={() => { setPreviewType('flanges'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
+                <button onClick={() => { setPreviewType('welds'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
+              </div>
+            </div>
             <div className="relative group">
               <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium">
                 📤 Esporta Template ▼
@@ -948,6 +962,7 @@ export default function MTOPiping() {
         else if (editingType === 'flange') handleUpdateFlange(editingItem.id, updates);
         else if (editingType === 'weld') handleUpdateWeld(editingItem.id, updates);
       }} onClose={() => setEditingItem(null)} />}
+      {showPreviewModal && <ExcelPreviewModal type={previewType} onClose={() => setShowPreviewModal(false)} onDownload={exportTemplate} />}
     </div>
   );
 }
@@ -1765,6 +1780,230 @@ const EditModal = ({ item, type, onSave, onClose }) => {
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
           <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
+// Excel Preview Modal - Mostra struttura colonne richieste
+// ============================================================================
+
+const ExcelPreviewModal = ({ type, onClose, onDownload }) => {
+  const structures = {
+    spools: {
+      title: '📦 Struttura Excel - Spools',
+      description: 'Importa gli spools con tracking delle fasi di produzione e consegna.',
+      columns: [
+        { name: 'Spool_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
+        { name: 'Full_Spool_No', required: true, description: 'Codice completo spool', example: 'PRJ-ISO001-SP001' },
+        { name: 'ISO_Number', required: true, description: 'Numero isometrico', example: 'PRJ-ISO001' },
+        { name: 'Spool_No', required: true, description: 'Numero spool breve', example: 'SP001' },
+        { name: 'Service_class', required: false, description: 'Classe di servizio', example: 'HC' },
+        { name: 'Service_Cat', required: false, description: 'Categoria servizio', example: 'CAT1' },
+        { name: 'Spool_diameter', required: false, description: 'Diametro in pollici', example: '4' },
+        { name: 'Spool_Weight', required: false, description: 'Peso in kg', example: '25.5' },
+        { name: 'Spool_Length', required: false, description: 'Lunghezza in metri', example: '2.5' },
+        { name: 'SHIPMENT_DATE', required: false, description: 'Data spedizione', example: '2025-01-15' },
+        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-001' },
+        { name: 'IR_Number_Date', required: false, description: 'Data emissione IR', example: '2025-01-16' },
+        { name: 'LAYDOWN_ARRIVAL', required: false, description: 'Arrivo in laydown', example: '2025-01-18' },
+        { name: 'TO_SITE', required: false, description: 'Arrivo in cantiere', example: '2025-01-20' },
+        { name: 'ERECTED', required: false, description: 'Data montaggio', example: '2025-01-25' },
+        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
+      ]
+    },
+    supports: {
+      title: '🔩 Struttura Excel - Supports',
+      description: 'Importa i supporti con tracking consegna e montaggio.',
+      columns: [
+        { name: 'Support_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
+        { name: 'Support_Tag_No', required: true, description: 'Tag supporto univoco', example: 'SUP-001' },
+        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
+        { name: 'FullTagNo', required: false, description: 'Tag completo', example: 'PRJ-SUP-001' },
+        { name: 'Support_Name', required: false, description: 'Nome descrittivo', example: 'Spring Hanger' },
+        { name: 'Support_Mark', required: true, description: 'Codice tipo supporto (per inventario)', example: 'MG02-B' },
+        { name: 'Full_Spool_No', required: false, description: 'Spool collegato', example: 'PRJ-ISO001-SP001' },
+        { name: 'Weight', required: false, description: 'Peso in kg', example: '5.5' },
+        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-002' },
+        { name: 'IR_Number_Date', required: false, description: 'Data IR', example: '2025-01-16' },
+        { name: 'Delivered to Site', required: false, description: 'Data consegna', example: '2025-01-20' },
+        { name: 'Delivered to', required: false, description: 'Destinatario', example: 'Area 100' },
+        { name: 'Assembly_Date', required: false, description: 'Data montaggio', example: '2025-01-25' },
+        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
+      ]
+    },
+    flanges: {
+      title: '⚙️ Struttura Excel - Flanged Joints',
+      description: 'Importa i giunti flangiati con materiali associati (guarnizioni, bulloni, isolamento).',
+      columns: [
+        { name: 'Flange_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
+        { name: 'Flange_Tag', required: true, description: 'Tag flangia univoco', example: 'HF109901' },
+        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
+        { name: 'Flange_Type', required: false, description: 'Tipo: SP/SM/SE/SV/SI', example: 'SP' },
+        { name: 'First_Part_Code', required: false, description: 'Codice primo componente', example: 'PRJ-ISO001-SP001' },
+        { name: 'Second_Part_Code', required: false, description: 'Codice secondo componente', example: 'PRJ-ISO001-SP002' },
+        { name: 'Flange_Diameter', required: false, description: 'Diametro in pollici', example: '8' },
+        { name: 'Pressure_Rating', required: false, description: 'Classe pressione', example: '150#' },
+        { name: 'Critical_Flange', required: false, description: 'Classe critica (L1/L2)', example: 'L1' },
+        { name: 'Gasket_Code', required: false, description: 'Codice guarnizione', example: 'GSK-001' },
+        { name: 'Gasket_Qty', required: false, description: 'Quantità guarnizioni', example: '1' },
+        { name: 'Bolt_Code', required: false, description: 'Codice bulloneria', example: 'BLT-001' },
+        { name: 'Bolt_Qty', required: false, description: 'Quantità bulloni', example: '8' },
+        { name: 'Insulation_Code', required: false, description: 'Codice isolamento', example: 'INS-001' },
+        { name: 'Insulation_Qty', required: false, description: 'Quantità isolamento', example: '1.5' },
+        { name: 'Insulation_Alt_Code', required: false, description: 'Codice isolamento alternativo', example: 'INS-002' },
+        { name: 'Insulation_Alt_Qty', required: false, description: 'Quantità alt.', example: '0.5' },
+        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-003' },
+        { name: 'IR_Number_Date', required: false, description: 'Data IR', example: '2025-01-16' },
+        { name: 'Delivered to Site', required: false, description: 'Data consegna', example: '2025-01-20' },
+        { name: 'Delivered to', required: false, description: 'Destinatario', example: 'Area 100' },
+        { name: 'Assembly_Date', required: false, description: 'Data assemblaggio', example: '2025-01-25' },
+        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
+      ]
+    },
+    welds: {
+      title: '🔥 Struttura Excel - Welds',
+      description: 'Importa le saldature con collegamento agli spools e tracking fitup/saldatura.',
+      columns: [
+        { name: 'Full_Weld_No', required: true, description: 'Codice completo saldatura', example: 'PRJ-ISO001-W001' },
+        { name: 'Weld_No', required: true, description: 'Numero saldatura breve', example: 'W001' },
+        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
+        { name: 'First_Material_Code', required: false, description: 'Materiale primo componente', example: 'A106-B' },
+        { name: 'Second_Material_Code', required: false, description: 'Materiale secondo componente', example: 'A106-B' },
+        { name: 'Full_First_Spool', required: false, description: 'Primo spool', example: 'PRJ-ISO001-SP001' },
+        { name: 'Full_Second_Spool', required: false, description: 'Secondo spool', example: 'PRJ-ISO001-SP002' },
+        { name: 'Weld_Type', required: false, description: 'Tipo: BW/SW/FW', example: 'BW' },
+        { name: 'Weld_Cat', required: false, description: 'Categoria saldatura', example: 'CAT1' },
+        { name: 'Dia_Inch', required: false, description: 'Diametro in pollici', example: '4' },
+        { name: 'Thickness', required: false, description: 'Spessore in mm', example: '6.02' },
+        { name: 'Dissimilar Joint', required: false, description: 'Giunto dissimile (Yes/No)', example: 'No' },
+        { name: 'Fitup_Date', required: false, description: 'Data fitup', example: '2025-01-22' },
+        { name: 'Weld_Date', required: false, description: 'Data saldatura', example: '2025-01-23' },
+        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
+      ]
+    }
+  };
+
+  const structure = structures[type];
+  if (!structure) return null;
+
+  const requiredColumns = structure.columns.filter(c => c.required);
+  const optionalColumns = structure.columns.filter(c => !c.required);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="p-6 border-b bg-gradient-to-r from-amber-50 to-amber-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">{structure.title}</h2>
+              <p className="text-sm text-gray-600 mt-1">{structure.description}</p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-xl">✕</button>
+          </div>
+        </div>
+        
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {/* Legend */}
+          <div className="flex gap-4 mb-4 text-sm">
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 bg-red-500 rounded-full"></span>
+              Obbligatorio
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-3 h-3 bg-gray-300 rounded-full"></span>
+              Opzionale
+            </span>
+          </div>
+          
+          {/* Required Columns */}
+          {requiredColumns.length > 0 && (
+            <div className="mb-6">
+              <h3 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
+                ⚠️ Colonne Obbligatorie ({requiredColumns.length})
+              </h3>
+              <div className="border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-red-50">
+                    <tr>
+                      <th className="text-left p-3 font-medium">Nome Colonna Excel</th>
+                      <th className="text-left p-3 font-medium">Descrizione</th>
+                      <th className="text-left p-3 font-medium">Esempio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {requiredColumns.map((col, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td className="p-3 font-mono font-medium text-red-700">{col.name}</td>
+                        <td className="p-3 text-gray-600">{col.description}</td>
+                        <td className="p-3 font-mono text-xs bg-gray-50">{col.example}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          
+          {/* Optional Columns */}
+          <div>
+            <h3 className="font-semibold text-gray-700 mb-3">
+              📋 Colonne Opzionali ({optionalColumns.length})
+            </h3>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left p-3 font-medium">Nome Colonna Excel</th>
+                    <th className="text-left p-3 font-medium">Descrizione</th>
+                    <th className="text-left p-3 font-medium">Esempio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {optionalColumns.map((col, idx) => (
+                    <tr key={idx} className="border-t hover:bg-gray-50">
+                      <td className="p-3 font-mono text-gray-700">{col.name}</td>
+                      <td className="p-3 text-gray-600">{col.description}</td>
+                      <td className="p-3 font-mono text-xs bg-gray-50">{col.example}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          
+          {/* Tips */}
+          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-800 mb-2">💡 Suggerimenti</h4>
+            <ul className="text-sm text-blue-700 space-y-1">
+              <li>• Le date devono essere nel formato <code className="bg-white px-1 rounded">YYYY-MM-DD</code> o come date Excel</li>
+              <li>• I numeri decimali usano il punto come separatore (es: 25.5)</li>
+              <li>• Le colonne possono essere in qualsiasi ordine</li>
+              <li>• Le colonne extra nel file verranno ignorate</li>
+            </ul>
+          </div>
+        </div>
+        
+        {/* Footer */}
+        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
+          <p className="text-sm text-gray-500">
+            Scarica il template per avere un file Excel pronto da compilare
+          </p>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">
+              Chiudi
+            </button>
+            <button 
+              onClick={() => { onDownload(type); }}
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+            >
+              📥 Scarica Template
+            </button>
+          </div>
         </div>
       </div>
     </div>
