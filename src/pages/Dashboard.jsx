@@ -26,6 +26,7 @@ export default function Dashboard() {
     totalWP: 0,
     wpInProgress: 0,
     wpCompleted: 0,
+    wpPlanned: 0,
     pendingMR: 0,
     totalAreas: 0
   })
@@ -60,13 +61,16 @@ export default function Dashboard() {
         .select('*', { count: 'exact', head: true })
         .eq('project_id', activeProject.id)
 
+      // FIX BUG #5: Aggiunto filtro .is('deleted_at', null) per escludere WP eliminati
       const { data: wpData } = await supabase
         .from('work_packages')
         .select('status')
         .eq('project_id', activeProject.id)
+        .is('deleted_at', null)  // <-- FIX: esclude WP soft-deleted
 
       const wpInProgress = wpData?.filter(wp => wp.status === 'in_progress').length || 0
       const wpCompleted = wpData?.filter(wp => wp.status === 'completed').length || 0
+      const wpPlanned = wpData?.filter(wp => wp.status === 'planned' || wp.status === 'not_assigned').length || 0
 
       const { count: mrCount } = await supabase
         .from('material_requests')
@@ -80,6 +84,7 @@ export default function Dashboard() {
         totalWP: wpData?.length || 0,
         wpInProgress,
         wpCompleted,
+        wpPlanned,
         pendingMR: mrCount || 0,
         totalAreas: areasCount || 0
       })
@@ -201,7 +206,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatusCard label={t('status.completed')} value={loading ? '...' : stats.wpCompleted} icon={CheckCircle2} className="bg-success-light text-success" />
           <StatusCard label={t('status.inProgress')} value={loading ? '...' : stats.wpInProgress} icon={Activity} className="bg-info-light text-info" />
-          <StatusCard label={t('status.planned')} value={loading ? '...' : Math.max(0, stats.totalWP - stats.wpInProgress - stats.wpCompleted)} icon={Clock} className="bg-warning-light text-yellow-700" />
+          <StatusCard label={t('status.planned')} value={loading ? '...' : stats.wpPlanned} icon={Clock} className="bg-warning-light text-yellow-700" />
           <StatusCard label={t('common.total')} value={loading ? '...' : stats.totalWP} icon={Wrench} className="bg-gray-100 text-gray-700" />
         </div>
       </div>
