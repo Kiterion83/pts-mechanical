@@ -17,6 +17,7 @@
     "dailyReports": "Rapportini",
     "materialRequests": "Richieste Materiale",
     "mezzi": "Mezzi"
+    "gantt": "Gantt WP"
   },
   "auth": {
     "login": "Accedi",
