@@ -4,7 +4,7 @@ import { useProject } from '../contexts/ProjectContext';
 
 // ============================================================================
 // WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
-// FASE A: Fix bugs + Semplificazioni UI + Sistema Revisioni
+// VERSION 8 - FIX: Salvataggio welds/supports/flanges + Esclusività elementi
 // ============================================================================
 
 // Utility: Check conflitti squadra
@@ -844,16 +844,51 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
   // All existing WP codes (including deleted ones for unique constraint)
   const [allExistingCodes, setAllExistingCodes] = useState([]);
   
+  // Already assigned items (from dedicated tables for proper exclusivity)
+  const [assignedWeldIds, setAssignedWeldIds] = useState(new Set());
+  const [assignedSpoolIds, setAssignedSpoolIds] = useState(new Set());
+  const [assignedSupportIds, setAssignedSupportIds] = useState(new Set());
+  const [assignedFlangeIds, setAssignedFlangeIds] = useState(new Set());
+  
   useEffect(() => {
-    const fetchAllCodes = async () => {
-      const { data } = await supabase
+    const fetchAllCodesAndAssignments = async () => {
+      // Fetch all WP codes
+      const { data: codes } = await supabase
         .from('work_packages')
         .select('code')
         .eq('project_id', projectId);
-      setAllExistingCodes(data?.map(wp => wp.code) || []);
+      setAllExistingCodes(codes?.map(wp => wp.code) || []);
+      
+      // Fetch all assigned welds from wp_welds table
+      const { data: assignedWelds } = await supabase
+        .from('wp_welds')
+        .select('weld_id, work_package_id')
+        .in('work_package_id', workPackages.map(wp => wp.id));
+      setAssignedWeldIds(new Set(assignedWelds?.map(w => w.weld_id) || []));
+      
+      // Fetch all assigned spools from wp_spools table
+      const { data: assignedSpools } = await supabase
+        .from('wp_spools')
+        .select('spool_id, work_package_id')
+        .in('work_package_id', workPackages.map(wp => wp.id));
+      setAssignedSpoolIds(new Set(assignedSpools?.map(s => s.spool_id) || []));
+      
+      // Fetch all assigned supports from wp_supports table
+      const { data: assignedSupports } = await supabase
+        .from('wp_supports')
+        .select('support_id, work_package_id')
+        .in('work_package_id', workPackages.map(wp => wp.id));
+      setAssignedSupportIds(new Set(assignedSupports?.map(s => s.support_id) || []));
+      
+      // Fetch all assigned flanges from wp_flanges table
+      const { data: assignedFlanges } = await supabase
+        .from('wp_flanges')
+        .select('flange_id, work_package_id')
+        .in('work_package_id', workPackages.map(wp => wp.id));
+      setAssignedFlangeIds(new Set(assignedFlanges?.map(f => f.flange_id) || []));
     };
-    fetchAllCodes();
-  }, [projectId]);
+    fetchAllCodesAndAssignments();
+  }, [projectId, workPackages]);
 
   // Generate next code (considering ALL existing codes including deleted)
   const nextCode = useMemo(() => {
@@ -866,20 +901,6 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
   }, [allExistingCodes]);
 
   // Filter available welds (not assigned to other WPs)
-  const assignedWeldIds = useMemo(() => {
-    const ids = new Set();
-    workPackages.forEach(wp => {
-      if (wp.activities) {
-        wp.activities.forEach(a => {
-          if (a.category === 'welding' && a.item_ids) {
-            a.item_ids.forEach(id => ids.add(id));
-          }
-        });
-      }
-    });
-    return ids;
-  }, [workPackages]);
-
   const availableWelds = useMemo(() => {
     return welds.filter(w => !assignedWeldIds.has(w.id));
   }, [welds, assignedWeldIds]);
@@ -900,40 +921,54 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
     });
   }, [availableWelds, weldFilterIso, weldSearch, isometrics]);
 
-  // Auto-derive spools from selected welds
+  // Auto-derive spools from selected welds (excluding already assigned spools)
   useEffect(() => {
     if (selectedWelds.length > 0) {
       const spoolIds = new Set();
       selectedWelds.forEach(weldId => {
         const weld = welds.find(w => w.id === weldId);
         if (weld) {
-          if (weld.spool_1_id) spoolIds.add(weld.spool_1_id);
-          if (weld.spool_2_id) spoolIds.add(weld.spool_2_id);
+          // Only add spools that are NOT already assigned to other WPs
+          if (weld.spool_1_id && !assignedSpoolIds.has(weld.spool_1_id)) {
+            spoolIds.add(weld.spool_1_id);
+          }
+          if (weld.spool_2_id && !assignedSpoolIds.has(weld.spool_2_id)) {
+            spoolIds.add(weld.spool_2_id);
+          }
         }
       });
       setSelectedSpools([...spoolIds]);
+    } else {
+      setSelectedSpools([]);
     }
-  }, [selectedWelds, welds]);
+  }, [selectedWelds, welds, assignedSpoolIds]);
 
-  // Auto-derive supports from selected spools
+  // Auto-derive supports from selected spools (excluding already assigned supports)
   useEffect(() => {
     if (selectedSpools.length > 0) {
       const supportIds = supports
-        .filter(s => selectedSpools.includes(s.spool_id))
+        .filter(s => selectedSpools.includes(s.spool_id) && !assignedSupportIds.has(s.id))
         .map(s => s.id);
       setSelectedSupports(supportIds);
+    } else {
+      setSelectedSupports([]);
     }
-  }, [selectedSpools, supports]);
+  }, [selectedSpools, supports, assignedSupportIds]);
 
-  // Auto-derive flanges from selected spools
+  // Auto-derive flanges from selected spools (excluding already assigned flanges)
   useEffect(() => {
     if (selectedSpools.length > 0) {
       const flangeIds = flanges
-        .filter(f => selectedSpools.includes(f.first_part_id) || selectedSpools.includes(f.second_part_id))
+        .filter(f => 
+          (selectedSpools.includes(f.first_part_id) || selectedSpools.includes(f.second_part_id)) && 
+          !assignedFlangeIds.has(f.id)
+        )
         .map(f => f.id);
       setSelectedFlanges(flangeIds);
+    } else {
+      setSelectedFlanges([]);
     }
-  }, [selectedSpools, flanges]);
+  }, [selectedSpools, flanges, assignedFlangeIds]);
 
   const handleToggleWeld = (weldId) => {
     setSelectedWelds(prev => 
@@ -981,11 +1016,20 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
             spool_number: spool?.spool_no || spool?.full_spool_no
           };
         });
-        await supabase.from('wp_spools').insert(spoolsToInsert);
+        const { error: spoolErr } = await supabase.from('wp_spools').insert(spoolsToInsert);
+        if (spoolErr) console.error('Error saving spools:', spoolErr);
       }
 
-      // Create activities for welds
+      // Save wp_welds - FIX: was completely missing!
       if (selectedWelds.length > 0) {
+        const weldsToInsert = selectedWelds.map(weldId => ({
+          work_package_id: wpData.id,
+          weld_id: weldId
+        }));
+        const { error: weldErr } = await supabase.from('wp_welds').insert(weldsToInsert);
+        if (weldErr) console.error('Error saving welds:', weldErr);
+        
+        // Also save to wp_activities for progress tracking
         await supabase.from('wp_activities').insert({
           work_package_id: wpData.id,
           category: 'welding',
@@ -995,8 +1039,16 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         });
       }
 
-      // Create activities for supports
+      // Save wp_supports - FIX: removed invalid support_tag column
       if (selectedSupports.length > 0) {
+        const supportsToInsert = selectedSupports.map(supportId => ({
+          work_package_id: wpData.id,
+          support_id: supportId
+        }));
+        const { error: suppErr } = await supabase.from('wp_supports').insert(supportsToInsert);
+        if (suppErr) console.error('Error saving supports:', suppErr);
+        
+        // Also save to wp_activities for progress tracking
         await supabase.from('wp_activities').insert({
           work_package_id: wpData.id,
           category: 'support',
@@ -1004,21 +1056,18 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           quantity_completed: 0,
           item_ids: selectedSupports
         });
-        
-        // FIX #2: Save to wp_supports for material availability tracking
-        const supportsToInsert = selectedSupports.map(supportId => {
-          const support = supports.find(s => s.id === supportId);
-          return {
-            work_package_id: wpData.id,
-            support_id: supportId,
-            support_tag: support?.support_tag_no
-          };
-        });
-        await supabase.from('wp_supports').insert(supportsToInsert);
       }
 
-      // Create activities for flanges
+      // Save wp_flanges - FIX: removed invalid flange_tag column
       if (selectedFlanges.length > 0) {
+        const flangesToInsert = selectedFlanges.map(flangeId => ({
+          work_package_id: wpData.id,
+          flange_id: flangeId
+        }));
+        const { error: flangeErr } = await supabase.from('wp_flanges').insert(flangesToInsert);
+        if (flangeErr) console.error('Error saving flanges:', flangeErr);
+        
+        // Also save to wp_activities for progress tracking
         await supabase.from('wp_activities').insert({
           work_package_id: wpData.id,
           category: 'flange',
@@ -1026,17 +1075,6 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           quantity_completed: 0,
           item_ids: selectedFlanges
         });
-        
-        // FIX #2: Save to wp_flanges for material availability tracking
-        const flangesToInsert = selectedFlanges.map(flangeId => {
-          const flange = flanges.find(f => f.id === flangeId);
-          return {
-            work_package_id: wpData.id,
-            flange_id: flangeId,
-            flange_tag: flange?.flange_tag
-          };
-        });
-        await supabase.from('wp_flanges').insert(flangesToInsert);
       }
 
       // Log revision
