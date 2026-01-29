@@ -1154,6 +1154,15 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                 </div>
               </div>
               
+              {/* Legenda stati spool */}
+              <div className="flex gap-4 text-xs text-gray-500 bg-gray-100 p-2 rounded-lg">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-yellow-500"></span> Under IR</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> At Site</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span> Erection</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500"></span> Erected</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-gray-400"></span> Other</span>
+              </div>
+              
               {/* Welds table */}
               <div className="border rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
                 <table className="w-full text-sm">
@@ -1162,6 +1171,7 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                       <th className="w-10 p-2"></th>
                       <th className="text-left p-2">Weld No</th>
                       <th className="text-left p-2">ISO</th>
+                      <th className="text-center p-2">Spool 1 ↔ Spool 2</th>
                       <th className="text-center p-2">Ø</th>
                       <th className="text-center p-2">Tipo</th>
                       <th className="text-center p-2">Dissimile</th>
@@ -1169,28 +1179,50 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                   </thead>
                   <tbody>
                     {filteredWelds.length === 0 ? (
-                      <tr><td colSpan={6} className="p-4 text-center text-gray-400">Nessuna saldatura disponibile</td></tr>
-                    ) : filteredWelds.map(w => (
-                      <tr 
-                        key={w.id} 
-                        onClick={() => handleToggleWeld(w.id)}
-                        className={`border-t cursor-pointer hover:bg-gray-50 ${selectedWelds.includes(w.id) ? 'bg-orange-50' : ''} ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}
-                      >
-                        <td className="p-2 text-center">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedWelds.includes(w.id)} 
-                            onChange={() => {}}
-                            className="w-4 h-4 text-orange-600 rounded"
-                          />
-                        </td>
-                        <td className="p-2 font-mono text-orange-600">{w.weld_no}</td>
-                        <td className="p-2 text-gray-600 text-xs">{w.iso_number}</td>
-                        <td className="p-2 text-center">{w.diameter_inch}"</td>
-                        <td className="p-2 text-center"><span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">{w.weld_type}</span></td>
-                        <td className="p-2 text-center">{w.is_dissimilar ? <span className="text-yellow-600">⚠️</span> : '-'}</td>
-                      </tr>
-                    ))}
+                      <tr><td colSpan={7} className="p-4 text-center text-gray-400">Nessuna saldatura disponibile</td></tr>
+                    ) : filteredWelds.map(w => {
+                      const spool1 = spools.find(s => s.id === w.spool_1_id);
+                      const spool2 = spools.find(s => s.id === w.spool_2_id);
+                      const getSpoolDotColor = (status) => {
+                        switch(status) {
+                          case 'ir_issued': return 'bg-yellow-500';
+                          case 'at_site': return 'bg-blue-500';
+                          case 'erection_ongoing': return 'bg-orange-500';
+                          case 'erected': return 'bg-green-500';
+                          default: return 'bg-gray-400';
+                        }
+                      };
+                      return (
+                        <tr 
+                          key={w.id} 
+                          onClick={() => handleToggleWeld(w.id)}
+                          className={`border-t cursor-pointer hover:bg-gray-50 ${selectedWelds.includes(w.id) ? 'bg-orange-50' : ''} ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}
+                        >
+                          <td className="p-2 text-center">
+                            <input 
+                              type="checkbox" 
+                              checked={selectedWelds.includes(w.id)} 
+                              onChange={() => {}}
+                              className="w-4 h-4 text-orange-600 rounded"
+                            />
+                          </td>
+                          <td className="p-2 font-mono text-orange-600">{w.weld_no}</td>
+                          <td className="p-2 text-gray-600 text-xs">{w.iso_number}</td>
+                          <td className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <span className={`w-2.5 h-2.5 rounded-full ${getSpoolDotColor(spool1?.site_status)}`} title={spool1?.site_status || 'N/A'}></span>
+                              <span className="font-mono text-xs text-blue-600">{spool1?.spool_no || w.full_first_spool?.split('-').pop() || '-'}</span>
+                              <span className="text-gray-400 mx-1">↔</span>
+                              <span className={`w-2.5 h-2.5 rounded-full ${getSpoolDotColor(spool2?.site_status)}`} title={spool2?.site_status || 'N/A'}></span>
+                              <span className="font-mono text-xs text-blue-600">{spool2?.spool_no || w.full_second_spool?.split('-').pop() || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="p-2 text-center">{w.diameter_inch}"</td>
+                          <td className="p-2 text-center"><span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">{w.weld_type}</span></td>
+                          <td className="p-2 text-center">{w.is_dissimilar ? <span className="text-yellow-600">⚠️</span> : '-'}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1235,28 +1267,53 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           {step === 4 && (
             <div className="space-y-4">
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p className="text-sm text-gray-800">🔩 <strong>Supporti derivati automaticamente</strong> dagli spools.</p>
+                <p className="text-sm text-gray-800">🔩 <strong>Supporti derivati automaticamente</strong> dagli spools. Puoi escludere singoli supporti cliccando ✕</p>
               </div>
               
-              <h4 className="font-medium text-gray-700">Supporti ({selectedSupports.length})</h4>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                {selectedSupports.map(supportId => {
-                  const support = supports.find(s => s.id === supportId);
-                  if (!support) return null;
-                  return (
-                    <div key={supportId} className="bg-white border rounded-lg p-3">
-                      <div className="font-mono text-gray-700">{support.support_tag_no}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{support.support_mark}</span>
-                        <span className="text-xs text-gray-500">{support.weight_kg}kg</span>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium text-gray-700">Supporti ({selectedSupports.length})</h4>
               </div>
               
-              {selectedSupports.length === 0 && (
+              {selectedSupports.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="w-10 p-2"></th>
+                        <th className="text-left p-2 font-medium">TAG</th>
+                        <th className="text-left p-2 font-medium">Support Mark</th>
+                        <th className="text-left p-2 font-medium">ISO</th>
+                        <th className="text-center p-2 font-medium">Peso (kg)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedSupports.map(supportId => {
+                        const support = supports.find(s => s.id === supportId);
+                        if (!support) return null;
+                        return (
+                          <tr key={supportId} className="border-t hover:bg-gray-50">
+                            <td className="p-2 text-center">
+                              <button 
+                                onClick={() => setSelectedSupports(prev => prev.filter(id => id !== supportId))}
+                                className="p-1 hover:bg-red-100 rounded text-red-500 text-xs"
+                                title="Escludi supporto"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                            <td className="p-2 font-mono text-xs text-gray-700">{support.support_tag_no}</td>
+                            <td className="p-2">
+                              <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{support.support_mark}</span>
+                            </td>
+                            <td className="p-2 text-xs text-gray-600">{support.iso_number}</td>
+                            <td className="p-2 text-center text-xs">{support.weight_kg?.toFixed(2) || '-'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
                 <div className="text-center py-8 text-gray-400">
                   <p>Nessun supporto trovato per gli spools selezionati.</p>
                 </div>
@@ -1268,29 +1325,77 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           {step === 5 && (
             <div className="space-y-4">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-800">⚙️ <strong>Flangie derivate automaticamente</strong> dagli spools.</p>
+                <p className="text-sm text-amber-800">⚙️ <strong>Flangie derivate automaticamente</strong> dagli spools. Puoi escludere singole flangie cliccando ✕</p>
               </div>
               
-              <h4 className="font-medium text-gray-700">Flangie ({selectedFlanges.length})</h4>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                {selectedFlanges.map(flangeId => {
-                  const flange = flanges.find(f => f.id === flangeId);
-                  if (!flange) return null;
-                  return (
-                    <div key={flangeId} className="bg-white border rounded-lg p-3">
-                      <div className="font-mono text-amber-700">{flange.flange_tag}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">{flange.flange_type}</span>
-                        <span className="text-xs text-gray-500">Ø{flange.diameter_inch}" {flange.pressure_rating}</span>
-                      </div>
-                      {flange.is_critical && <span className="text-xs text-red-600 font-medium mt-1 block">⚠️ Critica</span>}
-                    </div>
-                  );
-                })}
+              <div className="flex items-center justify-between">
+                <h4 className="font-medium text-gray-700">Flangie ({selectedFlanges.length})</h4>
               </div>
               
-              {selectedFlanges.length === 0 && (
+              {selectedFlanges.length > 0 ? (
+                <div className="border rounded-lg overflow-hidden max-h-[350px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="w-10 p-2"></th>
+                        <th className="text-left p-2 font-medium">Tag</th>
+                        <th className="text-left p-2 font-medium">ISO</th>
+                        <th className="text-center p-2 font-medium">Type</th>
+                        <th className="text-center p-2 font-medium">Ø / Rating</th>
+                        <th className="text-center p-2 font-medium bg-purple-50">Gasket</th>
+                        <th className="text-center p-2 font-medium bg-gray-50">Bolts</th>
+                        <th className="text-center p-2 font-medium bg-amber-50">Ind.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedFlanges.map(flangeId => {
+                        const flange = flanges.find(f => f.id === flangeId);
+                        if (!flange) return null;
+                        const typeColor = flange.flange_type === 'SI' ? 'bg-amber-100 text-amber-700' : 
+                                          flange.flange_type === 'SE' ? 'bg-green-100 text-green-700' : 
+                                          flange.flange_type === 'SV' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700';
+                        return (
+                          <tr key={flangeId} className={`border-t hover:bg-gray-50 ${flange.is_critical ? 'bg-red-50' : ''}`}>
+                            <td className="p-2 text-center">
+                              <button 
+                                onClick={() => setSelectedFlanges(prev => prev.filter(id => id !== flangeId))}
+                                className="p-1 hover:bg-red-100 rounded text-red-500 text-xs"
+                                title="Escludi flangia"
+                              >
+                                ✕
+                              </button>
+                            </td>
+                            <td className="p-2">
+                              <div className="font-mono text-amber-700 text-xs">{flange.flange_tag}</div>
+                              {flange.is_critical && <span className="text-xs text-red-600 font-medium">⚠️ {flange.critical_class}</span>}
+                            </td>
+                            <td className="p-2 text-xs text-gray-600">{flange.iso_number}</td>
+                            <td className="p-2 text-center">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${typeColor}`}>{flange.flange_type}</span>
+                            </td>
+                            <td className="p-2 text-center text-xs">{flange.diameter_inch}" / {flange.pressure_rating}</td>
+                            <td className="p-2 text-center bg-purple-50">
+                              {flange.gasket_code ? (
+                                <span className="font-mono text-xs text-purple-700">{flange.gasket_code}</span>
+                              ) : '-'}
+                            </td>
+                            <td className="p-2 text-center bg-gray-50">
+                              {flange.bolt_code ? (
+                                <span className="font-mono text-xs">{flange.bolt_code} <span className="text-gray-400">×{flange.bolt_qty}</span></span>
+                              ) : '-'}
+                            </td>
+                            <td className="p-2 text-center bg-amber-50">
+                              {flange.insulation_code ? (
+                                <span className="font-mono text-xs text-amber-700">{flange.insulation_code}</span>
+                              ) : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
                 <div className="text-center py-8 text-gray-400">
                   <p>Nessuna flangia trovata per gli spools selezionati.</p>
                 </div>
