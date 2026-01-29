@@ -2515,12 +2515,74 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
         })
         .eq('id', wp.id);
       
-      // Log revision - include manual removals
+      // Prepare detailed change info with names
+      // Spools added - get names and ISO
+      const addedSpoolsDetails = spoolsToAdd.map(id => {
+        const spool = spools.find(s => s.id === id);
+        return {
+          spool_no: spool?.spool_no || spool?.full_spool_no || 'N/A',
+          iso: spool?.iso_number || 'N/A'
+        };
+      });
+      
+      // Spools removed - get names and ISO
+      const removedSpoolsDetails = wpSpools
+        .filter(ws => spoolsToRemove.includes(ws.spool_id))
+        .map(ws => ({
+          spool_no: ws.spool_number || ws.spool?.spool_no || ws.spool?.full_spool_no || 'N/A',
+          iso: ws.spool?.iso_number || 'N/A'
+        }));
+      
+      // Calculate cascade removals for logging
+      const removedSpoolNos = wpSpools
+        .filter(ws => spoolsToRemove.includes(ws.spool_id))
+        .map(ws => ws.spool?.full_spool_no);
+      
+      const cascadeWeldsRemoved = welds.filter(w => 
+        removedSpoolNos.includes(w.full_first_spool) || removedSpoolNos.includes(w.full_second_spool)
+      ).map(w => w.weld_no || w.full_weld_no);
+      
+      const cascadeSupportsRemoved = supports.filter(s => 
+        removedSpoolNos.includes(s.full_spool_no)
+      ).map(s => s.support_tag_no?.split('-').pop() || s.support_tag_no);
+      
+      const cascadeFlangesRemoved = flanges.filter(f => 
+        removedSpoolNos.includes(f.first_part_code) || removedSpoolNos.includes(f.second_part_code)
+      ).map(f => f.flange_tag);
+      
+      // Manual supports removed - get names
+      const manualSupportsDetails = manualSupportsToRemove.map(id => {
+        const support = supports.find(s => s.id === id);
+        return {
+          tag: support?.support_tag_no?.split('-').pop() || support?.support_tag_no || 'N/A',
+          mark: support?.support_mark || 'N/A',
+          iso: support?.iso_number || 'N/A'
+        };
+      });
+      
+      // Manual flanges removed - get names
+      const manualFlangesDetails = manualFlangesToRemove.map(id => {
+        const flange = flanges.find(f => f.id === id);
+        return {
+          tag: flange?.flange_tag || 'N/A',
+          iso: flange?.iso_number || 'N/A'
+        };
+      });
+      
+      // Build summary with names
       const changeSummary = [];
-      if (spoolsToAdd.length > 0) changeSummary.push(`+${spoolsToAdd.length} spools`);
-      if (spoolsToRemove.length > 0) changeSummary.push(`-${spoolsToRemove.length} spools`);
-      if (manualSupportsToRemove.length > 0) changeSummary.push(`-${manualSupportsToRemove.length} supporti`);
-      if (manualFlangesToRemove.length > 0) changeSummary.push(`-${manualFlangesToRemove.length} flangie`);
+      if (spoolsToAdd.length > 0) {
+        changeSummary.push(`+${spoolsToAdd.length} spools (${addedSpoolsDetails.map(s => s.spool_no).join(', ')})`);
+      }
+      if (spoolsToRemove.length > 0) {
+        changeSummary.push(`-${spoolsToRemove.length} spools (${removedSpoolsDetails.map(s => s.spool_no).join(', ')})`);
+      }
+      if (manualSupportsToRemove.length > 0) {
+        changeSummary.push(`-${manualSupportsToRemove.length} supporti (${manualSupportsDetails.map(s => s.tag).join(', ')})`);
+      }
+      if (manualFlangesToRemove.length > 0) {
+        changeSummary.push(`-${manualFlangesToRemove.length} flangie (${manualFlangesDetails.map(f => f.tag).join(', ')})`);
+      }
       
       await supabase.from('wp_revision_log').insert({
         project_id: wp.project_id,
@@ -2531,10 +2593,16 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
         user_email: user?.email,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
         changes: {
-          spools_aggiunti: spoolsToAdd.length,
-          spools_rimossi: spoolsToRemove.length,
-          supporti_rimossi_manualmente: manualSupportsToRemove.length,
-          flangie_rimosse_manualmente: manualFlangesToRemove.length
+          // Spools
+          spools_aggiunti: addedSpoolsDetails.length > 0 ? addedSpoolsDetails : null,
+          spools_rimossi: removedSpoolsDetails.length > 0 ? removedSpoolsDetails : null,
+          // Cascade removals (automatic)
+          cascade_welds_rimossi: cascadeWeldsRemoved.length > 0 ? cascadeWeldsRemoved : null,
+          cascade_supporti_rimossi: cascadeSupportsRemoved.length > 0 ? cascadeSupportsRemoved : null,
+          cascade_flangie_rimosse: cascadeFlangesRemoved.length > 0 ? cascadeFlangesRemoved : null,
+          // Manual removals
+          supporti_rimossi_manualmente: manualSupportsDetails.length > 0 ? manualSupportsDetails : null,
+          flangie_rimosse_manualmente: manualFlangesDetails.length > 0 ? manualFlangesDetails : null
         },
         summary: `Contenuto modificato: ${changeSummary.join(', ')}`
       });
@@ -3631,14 +3699,137 @@ const WPRevisionLogTab = ({ workPackageId, projectId, wpCode }) => {
 
   const formatChanges = (changes) => {
     if (!changes) return null;
-    return Object.entries(changes).map(([field, change]) => (
-      <div key={field} className="text-xs text-gray-600">
-        <span className="font-medium">{field}:</span> 
-        <span className="text-red-500 line-through mx-1">{change.old || '(vuoto)'}</span>
-        →
-        <span className="text-green-600 mx-1">{change.new || '(vuoto)'}</span>
-      </div>
-    ));
+    
+    const sections = [];
+    
+    // Spools aggiunti
+    if (changes.spools_aggiunti && Array.isArray(changes.spools_aggiunti) && changes.spools_aggiunti.length > 0) {
+      sections.push(
+        <div key="spools_add" className="bg-green-50 border border-green-200 rounded p-2 mb-2">
+          <p className="text-xs font-medium text-green-700 mb-1">➕ Spools Aggiunti:</p>
+          <div className="flex flex-wrap gap-1">
+            {changes.spools_aggiunti.map((s, i) => (
+              <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs">
+                <span className="font-mono font-medium">{s.spool_no}</span>
+                <span className="text-green-600 ml-1">({s.iso})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    // Spools rimossi
+    if (changes.spools_rimossi && Array.isArray(changes.spools_rimossi) && changes.spools_rimossi.length > 0) {
+      sections.push(
+        <div key="spools_rem" className="bg-red-50 border border-red-200 rounded p-2 mb-2">
+          <p className="text-xs font-medium text-red-700 mb-1">🗑️ Spools Rimossi:</p>
+          <div className="flex flex-wrap gap-1">
+            {changes.spools_rimossi.map((s, i) => (
+              <span key={i} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
+                <span className="font-mono font-medium">{s.spool_no}</span>
+                <span className="text-red-600 ml-1">({s.iso})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    // Cascade welds rimossi
+    if (changes.cascade_welds_rimossi && Array.isArray(changes.cascade_welds_rimossi) && changes.cascade_welds_rimossi.length > 0) {
+      sections.push(
+        <div key="cascade_welds" className="text-xs text-gray-600 mb-1">
+          <span className="font-medium">⚡ Saldature rimosse (cascade):</span> 
+          <span className="font-mono ml-1">{changes.cascade_welds_rimossi.join(', ')}</span>
+        </div>
+      );
+    }
+    
+    // Cascade supports rimossi
+    if (changes.cascade_supporti_rimossi && Array.isArray(changes.cascade_supporti_rimossi) && changes.cascade_supporti_rimossi.length > 0) {
+      sections.push(
+        <div key="cascade_sup" className="text-xs text-gray-600 mb-1">
+          <span className="font-medium">⚡ Supporti rimossi (cascade):</span> 
+          <span className="font-mono ml-1">{changes.cascade_supporti_rimossi.join(', ')}</span>
+        </div>
+      );
+    }
+    
+    // Cascade flanges rimosse
+    if (changes.cascade_flangie_rimosse && Array.isArray(changes.cascade_flangie_rimosse) && changes.cascade_flangie_rimosse.length > 0) {
+      sections.push(
+        <div key="cascade_fl" className="text-xs text-gray-600 mb-1">
+          <span className="font-medium">⚡ Flangie rimosse (cascade):</span> 
+          <span className="font-mono ml-1">{changes.cascade_flangie_rimosse.join(', ')}</span>
+        </div>
+      );
+    }
+    
+    // Supporti rimossi manualmente
+    if (changes.supporti_rimossi_manualmente && Array.isArray(changes.supporti_rimossi_manualmente) && changes.supporti_rimossi_manualmente.length > 0) {
+      sections.push(
+        <div key="sup_man" className="bg-orange-50 border border-orange-200 rounded p-2 mb-2">
+          <p className="text-xs font-medium text-orange-700 mb-1">🔩 Supporti Rimossi (manuale):</p>
+          <div className="flex flex-wrap gap-1">
+            {changes.supporti_rimossi_manualmente.map((s, i) => (
+              <span key={i} className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">
+                <span className="font-mono font-medium">{s.tag}</span>
+                <span className="text-orange-600 ml-1">[{s.mark}]</span>
+                <span className="text-orange-500 ml-1">({s.iso})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    // Flangie rimosse manualmente
+    if (changes.flangie_rimosse_manualmente && Array.isArray(changes.flangie_rimosse_manualmente) && changes.flangie_rimosse_manualmente.length > 0) {
+      sections.push(
+        <div key="fl_man" className="bg-orange-50 border border-orange-200 rounded p-2 mb-2">
+          <p className="text-xs font-medium text-orange-700 mb-1">⚙️ Flangie Rimosse (manuale):</p>
+          <div className="flex flex-wrap gap-1">
+            {changes.flangie_rimosse_manualmente.map((f, i) => (
+              <span key={i} className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">
+                <span className="font-mono font-medium">{f.tag}</span>
+                <span className="text-orange-600 ml-1">({f.iso})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    
+    // Fallback for old format or other changes (status, squad, etc)
+    if (sections.length === 0) {
+      return Object.entries(changes).map(([field, value]) => {
+        // Skip null values
+        if (value === null) return null;
+        
+        // Handle old format with {old, new}
+        if (value && typeof value === 'object' && ('old' in value || 'new' in value)) {
+          return (
+            <div key={field} className="text-xs text-gray-600">
+              <span className="font-medium">{field}:</span> 
+              <span className="text-red-500 line-through mx-1">{value.old || '(vuoto)'}</span>
+              →
+              <span className="text-green-600 mx-1">{value.new || '(vuoto)'}</span>
+            </div>
+          );
+        }
+        
+        // Handle simple values
+        return (
+          <div key={field} className="text-xs text-gray-600">
+            <span className="font-medium">{field}:</span> 
+            <span className="ml-1">{JSON.stringify(value)}</span>
+          </div>
+        );
+      }).filter(Boolean);
+    }
+    
+    return sections;
   };
 
   if (loading) {
