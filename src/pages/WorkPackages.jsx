@@ -2888,20 +2888,6 @@ const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
           </div>
         </div>
       )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Legend */}
-          <div className="flex gap-4 text-xs text-gray-500 mt-2">
-            <span className="flex items-center gap-1"><span className="text-emerald-600">✓</span> Disponibile</span>
-            <span className="flex items-center gap-1"><span className="text-red-600">✗</span> Mancante</span>
-            <span className="flex items-center gap-1"><span className="text-gray-400">-</span> Non richiesto</span>
-          </div>
-        </div>
-      )}
       
       {/* Supports Section */}
       {supports.length > 0 && (
