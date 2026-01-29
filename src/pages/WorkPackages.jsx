@@ -659,55 +659,95 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
       
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t bg-gray-50 p-4">
-          <div className="grid md:grid-cols-3 gap-4">
-            {/* Welds progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">🔥 Saldature</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.welds.total > 0 ? (quantities.welds.completed / quantities.welds.total) * 100 : 0} size="small" color="bg-orange-500" />
-                <span className="text-xs text-gray-600">{quantities.welds.completed}/{quantities.welds.total}</span>
-              </div>
-            </div>
-            
-            {/* Supports progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">🔩 Supporti</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.supports.total > 0 ? (quantities.supports.completed / quantities.supports.total) * 100 : 0} size="small" color="bg-gray-500" />
-                <span className="text-xs text-gray-600">{quantities.supports.completed}/{quantities.supports.total}</span>
-              </div>
-            </div>
-            
-            {/* Flanges progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">⚙️ Flangie</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.flanges.total > 0 ? (quantities.flanges.completed / quantities.flanges.total) * 100 : 0} size="small" color="bg-amber-500" />
-                <span className="text-xs text-gray-600">{quantities.flanges.completed}/{quantities.flanges.total}</span>
-              </div>
-            </div>
-          </div>
-          
+        <div className="border-t bg-gray-50 p-4 space-y-4">
           {/* Spools list */}
           {wpSpoolData.length > 0 && (
-            <div className="mt-4">
+            <div>
               <h4 className="font-medium text-sm text-gray-700 mb-2">📦 Spools ({quantities.spools.completed}/{quantities.spools.total})</h4>
               <div className="flex flex-wrap gap-2">
-                {wpSpoolData.slice(0, 10).map((ws, idx) => (
+                {wpSpoolData.map((ws, idx) => (
                   <div key={idx} className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-xs">
                     <span className="font-mono">{ws.spool_number}</span>
                     <SiteStatusBadge status={ws.site_status} />
                   </div>
                 ))}
-                {wpSpoolData.length > 10 && <span className="text-xs text-gray-500">+{wpSpoolData.length - 10} altri</span>}
+              </div>
+            </div>
+          )}
+          
+          {/* Welds list with status */}
+          {wp.wp_welds?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">🔥 Saldature ({quantities.welds.completed}/{quantities.welds.total})</h4>
+              <div className="flex flex-wrap gap-2">
+                {wp.wp_welds.map((ww, idx) => {
+                  const weld = welds.find(w => w.id === ww.weld_id);
+                  const isCompleted = weld?.weld_date;
+                  return (
+                    <div key={idx} className={`flex items-center gap-1 border rounded px-2 py-1 text-xs ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
+                      <span className="font-mono">{weld?.weld_no || 'W?'}</span>
+                      {isCompleted ? (
+                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">✓ Fatto</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">Pending</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Supports list with status */}
+          {wp.wp_supports?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">🔩 Supporti ({quantities.supports.completed}/{quantities.supports.total})</h4>
+              <div className="flex flex-wrap gap-2">
+                {wp.wp_supports.map((ws, idx) => {
+                  const support = supports.find(s => s.id === ws.support_id);
+                  const isCompleted = support?.assembly_date;
+                  return (
+                    <div key={idx} className={`flex items-center gap-1 border rounded px-2 py-1 text-xs ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
+                      <span className="font-mono text-[10px]">{support?.support_tag_no?.split('-').pop() || 'S?'}</span>
+                      <span className="text-gray-400 text-[9px]">{support?.support_mark}</span>
+                      {isCompleted ? (
+                        <span className="px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[9px]">✓</span>
+                      ) : (
+                        <span className="px-1 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px]">⏳</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Flanges list with status */}
+          {wp.wp_flanges?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">⚙️ Flangie ({quantities.flanges.completed}/{quantities.flanges.total})</h4>
+              <div className="flex flex-wrap gap-2">
+                {wp.wp_flanges.map((wf, idx) => {
+                  const flange = flanges.find(f => f.id === wf.flange_id);
+                  const isCompleted = flange?.assembly_date;
+                  return (
+                    <div key={idx} className={`flex items-center gap-1 border rounded px-2 py-1 text-xs ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
+                      <span className="font-mono">{flange?.flange_tag || 'F?'}</span>
+                      {isCompleted ? (
+                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px]">✓ Fatto</span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px]">Pending</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
           
           {/* Dates */}
           {(wp.planned_start || wp.planned_end) && (
-            <div className="mt-4 flex gap-4 text-sm text-gray-600">
+            <div className="flex gap-4 text-sm text-gray-600 pt-2 border-t">
               {wp.planned_start && <span>📅 Inizio: {new Date(wp.planned_start).toLocaleDateString('it-IT')}</span>}
               {wp.planned_end && <span>📅 Fine: {new Date(wp.planned_end).toLocaleDateString('it-IT')}</span>}
             </div>
@@ -1109,19 +1149,23 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         if (flangeErr) console.error('Error saving flanges:', flangeErr);
       }
 
-      // Log revision
-      await supabase.from('wp_revisions').insert({
+      // Log revision - creation
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('wp_revision_log').insert({
         project_id: projectId,
         work_package_id: wpData.id,
         revision_number: 0,
-        change_type: 'created',
-        changes_summary: `WP creato con ${selectedWelds.length} saldature, ${selectedSpools.length} spools, ${selectedSupports.length} supporti, ${selectedFlanges.length} flangie`,
-        new_values: {
-          welds: selectedWelds.length,
+        action_type: 'created',
+        user_id: user?.id,
+        user_email: user?.email,
+        user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+        changes: {
           spools: selectedSpools.length,
+          welds: selectedWelds.length,
           supports: selectedSupports.length,
           flanges: selectedFlanges.length
-        }
+        },
+        summary: `WP creato con ${selectedSpools.length} spools, ${selectedWelds.length} saldature, ${selectedSupports.length} supporti, ${selectedFlanges.length} flangie`
       });
 
       onSuccess();
@@ -1874,13 +1918,17 @@ const CreateWPAModal = ({ workPackages, squads, projectId, onClose, onSuccess })
       
       if (error) throw error;
 
-      // Log revision
-      await supabase.from('wp_revisions').insert({
+      // Log revision - creation
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('wp_revision_log').insert({
         project_id: projectId,
         work_package_id: wpData.id,
         revision_number: 0,
-        change_type: 'created',
-        changes_summary: `WP-A creato: ${formData.description}`
+        action_type: 'created',
+        user_id: user?.id,
+        user_email: user?.email,
+        user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+        summary: `WP-A creato: ${formData.description}`
       });
 
       onSuccess();
@@ -2181,6 +2229,9 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
     
     setSaving(true);
     try {
+      // Get current user for logging
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const updateData = {
         description: formData.description || null,
         area: formData.area || null,
@@ -2198,40 +2249,54 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
         updateData.estimated_hours = formData.estimated_hours ? Number(formData.estimated_hours) : null;
       }
       
-      // Check what changed for revision log
-      const changes = [];
-      if (formData.squad_id !== wp.squad_id) changes.push('squadra');
-      if (formData.status !== wp.status) changes.push('stato');
-      if (formData.planned_start !== wp.planned_start || formData.planned_end !== wp.planned_end) changes.push('date');
-      if (formData.description !== wp.description || formData.notes !== wp.notes) changes.push('info');
+      // Build changes object for logging
+      const changes = {};
+      const summaryParts = [];
+      
+      if (formData.squad_id !== wp.squad_id) {
+        const oldSquad = squads.find(s => s.id === wp.squad_id);
+        const newSquad = squads.find(s => s.id === formData.squad_id);
+        changes.squadra = { old: oldSquad?.name || 'Non assegnato', new: newSquad?.name || 'Non assegnato' };
+        summaryParts.push('squadra cambiata');
+      }
+      if (formData.status !== wp.status) {
+        changes.stato = { old: wp.status, new: formData.status };
+        summaryParts.push(`stato: ${wp.status} → ${formData.status}`);
+      }
+      if (formData.planned_start !== wp.planned_start) {
+        changes.data_inizio = { old: wp.planned_start || '(vuoto)', new: formData.planned_start || '(vuoto)' };
+        summaryParts.push('date modificate');
+      }
+      if (formData.planned_end !== wp.planned_end) {
+        changes.data_fine = { old: wp.planned_end || '(vuoto)', new: formData.planned_end || '(vuoto)' };
+      }
+      if (formData.description !== wp.description) {
+        changes.descrizione = { old: wp.description || '(vuoto)', new: formData.description || '(vuoto)' };
+        summaryParts.push('descrizione modificata');
+      }
+      if (formData.notes !== wp.notes) {
+        changes.note = { old: wp.notes || '(vuoto)', new: formData.notes || '(vuoto)' };
+        summaryParts.push('note modificate');
+      }
       
       const { error } = await supabase.from('work_packages').update(updateData).eq('id', wp.id);
       if (error) throw error;
       
       // Log revision if anything changed
-      if (changes.length > 0) {
-        const changeType = changes.includes('squadra') ? 'assignment_changed' : 
-                          changes.includes('stato') ? 'status_changed' :
-                          changes.includes('date') ? 'dates_changed' : 'info_updated';
+      if (Object.keys(changes).length > 0) {
+        const actionType = changes.squadra ? 'squad_changed' : 
+                          changes.stato ? 'status_changed' : 'info_updated';
         
-        await supabase.from('wp_revisions').insert({
+        await supabase.from('wp_revision_log').insert({
           project_id: wp.project_id,
           work_package_id: wp.id,
-          revision_number: (wp.revision || 0) + 1,
-          change_type: changeType,
-          changes_summary: `Modifiche: ${changes.join(', ')}`,
-          old_values: {
-            squad_id: wp.squad_id,
-            status: wp.status,
-            planned_start: wp.planned_start,
-            planned_end: wp.planned_end
-          },
-          new_values: {
-            squad_id: formData.squad_id,
-            status: formData.status,
-            planned_start: formData.planned_start,
-            planned_end: formData.planned_end
-          }
+          revision_number: wp.revision || 0,
+          action_type: actionType,
+          user_id: user?.id,
+          user_email: user?.email,
+          user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+          changes: changes,
+          summary: summaryParts.join(', ')
         });
       }
       
@@ -2278,6 +2343,9 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   const confirmContentChanges = async () => {
     setSaving(true);
     try {
+      // Get current user for logging
+      const { data: { user } } = await supabase.auth.getUser();
+      
       // Remove spools
       if (spoolsToRemove.length > 0) {
         await supabase
@@ -2285,6 +2353,38 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
           .delete()
           .eq('work_package_id', wp.id)
           .in('spool_id', spoolsToRemove);
+          
+        // Also remove related welds, supports, flanges when spools are removed
+        // Get the full_spool_no for removed spools
+        const removedSpoolNos = wpSpools
+          .filter(ws => spoolsToRemove.includes(ws.spool_id))
+          .map(ws => ws.spool?.full_spool_no);
+        
+        if (removedSpoolNos.length > 0) {
+          // Remove welds connected to these spools
+          const weldsToRemove = welds.filter(w => 
+            removedSpoolNos.includes(w.full_first_spool) || removedSpoolNos.includes(w.full_second_spool)
+          ).map(w => w.id);
+          if (weldsToRemove.length > 0) {
+            await supabase.from('wp_welds').delete().eq('work_package_id', wp.id).in('weld_id', weldsToRemove);
+          }
+          
+          // Remove supports connected to these spools
+          const supportsToRemove = supports.filter(s => 
+            removedSpoolNos.includes(s.full_spool_no)
+          ).map(s => s.id);
+          if (supportsToRemove.length > 0) {
+            await supabase.from('wp_supports').delete().eq('work_package_id', wp.id).in('support_id', supportsToRemove);
+          }
+          
+          // Remove flanges connected to these spools
+          const flangesToRemove = flanges.filter(f => 
+            removedSpoolNos.includes(f.first_part_code) || removedSpoolNos.includes(f.second_part_code)
+          ).map(f => f.id);
+          if (flangesToRemove.length > 0) {
+            await supabase.from('wp_flanges').delete().eq('work_package_id', wp.id).in('flange_id', flangesToRemove);
+          }
+        }
       }
       
       // Add spools
@@ -2298,29 +2398,80 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
           };
         });
         await supabase.from('wp_spools').insert(spoolsToInsert);
+        
+        // Also add related welds, supports, flanges for new spools
+        const addedSpoolNos = spoolsToAdd.map(id => {
+          const spool = spools.find(s => s.id === id);
+          return spool?.full_spool_no;
+        }).filter(Boolean);
+        
+        if (addedSpoolNos.length > 0) {
+          // Add welds connected to these spools
+          const weldsToAdd = welds.filter(w => 
+            addedSpoolNos.includes(w.full_first_spool) || addedSpoolNos.includes(w.full_second_spool)
+          );
+          if (weldsToAdd.length > 0) {
+            const existingWeldIds = (wp.wp_welds || []).map(ww => ww.weld_id);
+            const newWelds = weldsToAdd.filter(w => !existingWeldIds.includes(w.id));
+            if (newWelds.length > 0) {
+              await supabase.from('wp_welds').insert(
+                newWelds.map(w => ({ work_package_id: wp.id, weld_id: w.id }))
+              );
+            }
+          }
+          
+          // Add supports connected to these spools
+          const supportsToAdd = supports.filter(s => addedSpoolNos.includes(s.full_spool_no));
+          if (supportsToAdd.length > 0) {
+            const existingSupportIds = (wp.wp_supports || []).map(ws => ws.support_id);
+            const newSupports = supportsToAdd.filter(s => !existingSupportIds.includes(s.id));
+            if (newSupports.length > 0) {
+              await supabase.from('wp_supports').insert(
+                newSupports.map(s => ({ work_package_id: wp.id, support_id: s.id }))
+              );
+            }
+          }
+          
+          // Add flanges connected to these spools
+          const flangesToAdd = flanges.filter(f => 
+            addedSpoolNos.includes(f.first_part_code) || addedSpoolNos.includes(f.second_part_code)
+          );
+          if (flangesToAdd.length > 0) {
+            const existingFlangeIds = (wp.wp_flanges || []).map(wf => wf.flange_id);
+            const newFlanges = flangesToAdd.filter(f => !existingFlangeIds.includes(f.id));
+            if (newFlanges.length > 0) {
+              await supabase.from('wp_flanges').insert(
+                newFlanges.map(f => ({ work_package_id: wp.id, flange_id: f.id }))
+              );
+            }
+          }
+        }
       }
       
-      // Recalculate activities based on new spools
-      // ... (complex logic to update welds/supports/flanges counts)
-      
       // Increment revision
+      const newRevision = (wp.revision || 0) + 1;
       await supabase
         .from('work_packages')
         .update({ 
-          revision: (wp.revision || 0) + 1,
+          revision: newRevision,
           updated_at: new Date().toISOString()
         })
         .eq('id', wp.id);
       
       // Log revision
-      await supabase.from('wp_revisions').insert({
+      await supabase.from('wp_revision_log').insert({
         project_id: wp.project_id,
         work_package_id: wp.id,
-        revision_number: (wp.revision || 0) + 1,
-        change_type: 'content_modified',
-        changes_summary: `Modificato contenuto: +${spoolsToAdd.length} spools, -${spoolsToRemove.length} spools`,
-        old_values: { spool_count: wpSpools.length },
-        new_values: { spool_count: wpSpools.length + spoolsToAdd.length - spoolsToRemove.length }
+        revision_number: newRevision,
+        action_type: 'content_updated',
+        user_id: user?.id,
+        user_email: user?.email,
+        user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0],
+        changes: {
+          spools_aggiunti: spoolsToAdd.length,
+          spools_rimossi: spoolsToRemove.length
+        },
+        summary: `Contenuto modificato: ${spoolsToAdd.length > 0 ? '+' + spoolsToAdd.length + ' spools' : ''}${spoolsToAdd.length > 0 && spoolsToRemove.length > 0 ? ', ' : ''}${spoolsToRemove.length > 0 ? '-' + spoolsToRemove.length + ' spools' : ''}`
       });
       
       setShowConfirmModal(false);
@@ -2352,7 +2503,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
           {/* Header */}
           <div className={`flex items-center justify-between p-4 border-b bg-gradient-to-r ${headerColor}`}>
             <div className="flex items-center gap-3">
@@ -2368,7 +2519,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
             <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
           </div>
           
-          {/* Tabs - FIX #3: Aggiunti tab per Contenuto e Documenti + PHASE B: Materiali */}
+          {/* Tabs - FIX #3: Aggiunti tab per Contenuto e Documenti + PHASE B: Materiali + LOG */}
           <div className="flex border-b overflow-x-auto">
             <button 
               onClick={() => setActiveEditTab('info')} 
@@ -2401,6 +2552,12 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
               className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
             >
               📎 Documenti
+            </button>
+            <button 
+              onClick={() => setActiveEditTab('log')} 
+              className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'log' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
+            >
+              📋 Log
             </button>
           </div>
           
@@ -2495,23 +2652,23 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
               </div>
             )}
             
-            {/* Tab Contenuto (WP-P only) - FIX #3 */}
+            {/* Tab Contenuto (WP-P only) - FIX #3 + EXTENDED */}
             {activeEditTab === 'content' && isPiping && (
               <div className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800">📦 <strong>Gestione Spools</strong> - Aggiungi o rimuovi spools dal WP. Le saldature, supporti e flangie verranno ricalcolate automaticamente.</p>
+                  <p className="text-sm text-blue-800">📦 <strong>Gestione Contenuto WP</strong> - Gli spools sono l'elemento principale. Saldature, supporti e flangie vengono aggiunti/rimossi automaticamente in base agli spools.</p>
                 </div>
                 
                 {/* Current spools */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-700">Spools nel WP ({wpSpools.length - spoolsToRemove.length + spoolsToAdd.length})</h4>
+                    <h4 className="font-semibold text-gray-700">📦 Spools ({wpSpools.length - spoolsToRemove.length + spoolsToAdd.length})</h4>
                     <button onClick={() => setAddingSpools(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
                       ➕ Aggiungi Spools
                     </button>
                   </div>
                   
-                  <div className="border rounded-lg max-h-[300px] overflow-y-auto">
+                  <div className="border rounded-lg max-h-[200px] overflow-y-auto">
                     {wpSpools.filter(ws => !spoolsToRemove.includes(ws.spool_id)).map(ws => (
                       <div key={ws.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50">
                         <div className="flex items-center gap-3">
@@ -2521,7 +2678,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                         <button 
                           onClick={() => handleRemoveSpool(ws.spool_id)} 
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                          title="Rimuovi spool"
+                          title="Rimuovi spool (e relativi welds/supports/flanges)"
                         >
                           🗑️
                         </button>
@@ -2555,13 +2712,85 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                   </div>
                 </div>
                 
+                {/* Linked elements (read-only, calculated from spools) */}
+                <div className="grid md:grid-cols-3 gap-4">
+                  {/* Welds */}
+                  <div className="border rounded-lg p-3">
+                    <h4 className="font-medium text-sm text-gray-700 mb-2 flex items-center gap-2">
+                      🔥 Saldature 
+                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{wp.wp_welds?.length || 0}</span>
+                    </h4>
+                    <div className="max-h-[120px] overflow-y-auto space-y-1">
+                      {(wp.wp_welds || []).map(ww => {
+                        const weld = welds.find(w => w.id === ww.weld_id);
+                        const isCompleted = weld?.weld_date;
+                        return (
+                          <div key={ww.id} className={`text-xs px-2 py-1 rounded flex items-center justify-between ${isCompleted ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-600'}`}>
+                            <span className="font-mono">{weld?.weld_no || 'W?'}</span>
+                            {isCompleted ? <span>✓</span> : <span className="text-gray-400">⏳</span>}
+                          </div>
+                        );
+                      })}
+                      {(!wp.wp_welds || wp.wp_welds.length === 0) && (
+                        <p className="text-xs text-gray-400 text-center">Nessuna</p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Supports */}
+                  <div className="border rounded-lg p-3">
+                    <h4 className="font-medium text-sm text-gray-700 mb-2 flex items-center gap-2">
+                      🔩 Supporti 
+                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{wp.wp_supports?.length || 0}</span>
+                    </h4>
+                    <div className="max-h-[120px] overflow-y-auto space-y-1">
+                      {(wp.wp_supports || []).map(ws => {
+                        const support = supports.find(s => s.id === ws.support_id);
+                        const isCompleted = support?.assembly_date;
+                        return (
+                          <div key={ws.id} className={`text-xs px-2 py-1 rounded flex items-center justify-between ${isCompleted ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-600'}`}>
+                            <span className="font-mono truncate">{support?.support_tag_no?.split('-').pop() || 'S?'}</span>
+                            {isCompleted ? <span>✓</span> : <span className="text-gray-400">⏳</span>}
+                          </div>
+                        );
+                      })}
+                      {(!wp.wp_supports || wp.wp_supports.length === 0) && (
+                        <p className="text-xs text-gray-400 text-center">Nessuno</p>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Flanges */}
+                  <div className="border rounded-lg p-3">
+                    <h4 className="font-medium text-sm text-gray-700 mb-2 flex items-center gap-2">
+                      ⚙️ Flangie 
+                      <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{wp.wp_flanges?.length || 0}</span>
+                    </h4>
+                    <div className="max-h-[120px] overflow-y-auto space-y-1">
+                      {(wp.wp_flanges || []).map(wf => {
+                        const flange = flanges.find(f => f.id === wf.flange_id);
+                        const isCompleted = flange?.assembly_date;
+                        return (
+                          <div key={wf.id} className={`text-xs px-2 py-1 rounded flex items-center justify-between ${isCompleted ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-50 text-gray-600'}`}>
+                            <span className="font-mono">{flange?.flange_tag || 'F?'}</span>
+                            {isCompleted ? <span>✓</span> : <span className="text-gray-400">⏳</span>}
+                          </div>
+                        );
+                      })}
+                      {(!wp.wp_flanges || wp.wp_flanges.length === 0) && (
+                        <p className="text-xs text-gray-400 text-center">Nessuna</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
                 {/* Changes summary */}
                 {contentChanged && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                     <p className="text-sm text-amber-800 font-medium">⚠️ Modifiche in sospeso:</p>
                     <ul className="text-sm text-amber-700 mt-1">
-                      {spoolsToAdd.length > 0 && <li>• {spoolsToAdd.length} spools da aggiungere</li>}
-                      {spoolsToRemove.length > 0 && <li>• {spoolsToRemove.length} spools da rimuovere</li>}
+                      {spoolsToAdd.length > 0 && <li>• {spoolsToAdd.length} spools da aggiungere (con relativi welds/supports/flanges)</li>}
+                      {spoolsToRemove.length > 0 && <li>• {spoolsToRemove.length} spools da rimuovere (con relativi welds/supports/flanges)</li>}
                     </ul>
                   </div>
                 )}
@@ -2579,6 +2808,11 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
             {/* Tab Documenti */}
             {activeEditTab === 'documents' && (
               <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
+            )}
+            
+            {/* Tab Log - Storico Revisioni */}
+            {activeEditTab === 'log' && (
+              <WPRevisionLogTab workPackageId={wp.id} projectId={wp.project_id} wpCode={wp.code} />
             )}
           </div>
           
@@ -3120,6 +3354,165 @@ const WPDocuments = ({ workPackageId, projectId }) => {
                   🗑️
                 </button>
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
+// WP REVISION LOG TAB - Storico Modifiche
+// ============================================================================
+
+const WPRevisionLogTab = ({ workPackageId, projectId, wpCode }) => {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState({ search: '', action: 'all' });
+
+  useEffect(() => {
+    loadLogs();
+  }, [workPackageId]);
+
+  const loadLogs = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('wp_revision_log')
+      .select('*')
+      .eq('work_package_id', workPackageId)
+      .order('created_at', { ascending: false });
+    
+    if (!error) {
+      setLogs(data || []);
+    }
+    setLoading(false);
+  };
+
+  const filteredLogs = logs.filter(log => {
+    if (filter.action !== 'all' && log.action_type !== filter.action) return false;
+    if (filter.search) {
+      const search = filter.search.toLowerCase();
+      if (!log.summary?.toLowerCase().includes(search) &&
+          !log.user_name?.toLowerCase().includes(search) &&
+          !log.user_email?.toLowerCase().includes(search)) return false;
+    }
+    return true;
+  });
+
+  const getActionBadge = (action) => {
+    const configs = {
+      'created': { label: 'Creato', bg: 'bg-green-100 text-green-700', icon: '➕' },
+      'info_updated': { label: 'Info Modificate', bg: 'bg-blue-100 text-blue-700', icon: '📝' },
+      'content_updated': { label: 'Contenuto Modificato', bg: 'bg-amber-100 text-amber-700', icon: '📦' },
+      'squad_changed': { label: 'Squadra Cambiata', bg: 'bg-purple-100 text-purple-700', icon: '👥' },
+      'status_changed': { label: 'Stato Cambiato', bg: 'bg-cyan-100 text-cyan-700', icon: '🔄' },
+      'deleted': { label: 'Eliminato', bg: 'bg-red-100 text-red-700', icon: '🗑️' }
+    };
+    const config = configs[action] || { label: action, bg: 'bg-gray-100 text-gray-700', icon: '📋' };
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.bg}`}>
+        {config.icon} {config.label}
+      </span>
+    );
+  };
+
+  const formatChanges = (changes) => {
+    if (!changes) return null;
+    return Object.entries(changes).map(([field, change]) => (
+      <div key={field} className="text-xs text-gray-600">
+        <span className="font-medium">{field}:</span> 
+        <span className="text-red-500 line-through mx-1">{change.old || '(vuoto)'}</span>
+        →
+        <span className="text-green-600 mx-1">{change.new || '(vuoto)'}</span>
+      </div>
+    ));
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="bg-gray-50 rounded-lg p-4">
+        <h4 className="font-semibold text-gray-700 mb-3">📋 Storico Revisioni - {wpCode}</h4>
+        
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3">
+          <input
+            type="text"
+            placeholder="Cerca per utente o descrizione..."
+            value={filter.search}
+            onChange={(e) => setFilter({ ...filter, search: e.target.value })}
+            className="flex-1 min-w-[200px] px-3 py-2 border rounded-lg text-sm"
+          />
+          <select
+            value={filter.action}
+            onChange={(e) => setFilter({ ...filter, action: e.target.value })}
+            className="px-3 py-2 border rounded-lg text-sm"
+          >
+            <option value="all">Tutte le azioni</option>
+            <option value="created">Creazione</option>
+            <option value="info_updated">Info Modificate</option>
+            <option value="content_updated">Contenuto Modificato</option>
+            <option value="squad_changed">Squadra Cambiata</option>
+            <option value="status_changed">Stato Cambiato</option>
+          </select>
+        </div>
+      </div>
+      
+      {/* Log entries */}
+      {filteredLogs.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          <div className="text-4xl mb-2">📋</div>
+          <p>Nessuna revisione trovata</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredLogs.map(log => (
+            <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
+              <div className="flex items-start justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  {getActionBadge(log.action_type)}
+                  <span className="text-sm font-medium text-gray-700">
+                    Rev. {log.revision_number}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {new Date(log.created_at).toLocaleString('it-IT')}
+                </span>
+              </div>
+              
+              {/* User info */}
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center text-xs">
+                  {log.user_name?.[0]?.toUpperCase() || '?'}
+                </div>
+                <span className="text-sm text-gray-600">
+                  {log.user_name || log.user_email || 'Utente sconosciuto'}
+                </span>
+              </div>
+              
+              {/* Summary */}
+              {log.summary && (
+                <p className="text-sm text-gray-700 bg-gray-100 rounded p-2 mb-2">
+                  {log.summary}
+                </p>
+              )}
+              
+              {/* Detailed changes */}
+              {log.changes && Object.keys(log.changes).length > 0 && (
+                <div className="mt-2 border-t pt-2">
+                  <p className="text-xs font-medium text-gray-500 mb-1">Dettagli:</p>
+                  {formatChanges(log.changes)}
+                </div>
+              )}
             </div>
           ))}
         </div>
