@@ -165,48 +165,115 @@ export default function WorkPackages() {
   const calculateWPProgress = (wp) => {
     if (wp.wp_type === 'action') return wp.manual_progress || 0;
     
-    // Use dedicated tables instead of wp_activities
-    const weldingTotal = wp.wp_welds?.length || 0;
-    const supportTotal = wp.wp_supports?.length || 0;
-    const flangeTotal = wp.wp_flanges?.length || 0;
+    // Get counts from dedicated tables
+    const spoolsTotal = wp.wp_spools?.length || 0;
+    const weldsTotal = wp.wp_welds?.length || 0;
+    const supportsTotal = wp.wp_supports?.length || 0;
+    const flangesTotal = wp.wp_flanges?.length || 0;
     
-    // For now, completed count comes from manual_progress or we need to implement completion tracking
-    // TODO: Add completion tracking to dedicated tables
-    const weldingCompleted = 0; // Will be implemented with completion feature
-    const supportCompleted = 0;
-    const flangeCompleted = 0;
+    const totalComponents = spoolsTotal + weldsTotal + supportsTotal + flangesTotal;
+    if (totalComponents === 0) return 0;
     
-    let categoriesPresent = 0;
-    if (weldingTotal > 0) categoriesPresent++;
-    if (supportTotal > 0) categoriesPresent++;
-    if (flangeTotal > 0) categoriesPresent++;
+    // Count completed items - need to check against MTO data
+    // Spools: erected = completed
+    // Welds: weld_date not null = completed
+    // Supports: assembly_date not null = completed
+    // Flanges: assembly_date not null = completed
     
-    if (categoriesPresent === 0) return wp.manual_progress || 0;
+    let completedCount = 0;
     
-    const weight = 100 / categoriesPresent;
-    let total = 0;
+    // Count erected spools
+    if (wp.wp_spools) {
+      wp.wp_spools.forEach(ws => {
+        const spool = spools.find(s => s.id === ws.spool_id);
+        if (spool?.site_status === 'erected') completedCount++;
+      });
+    }
     
-    if (weldingTotal > 0) total += (weldingCompleted / weldingTotal) * weight;
-    if (supportTotal > 0) total += (supportCompleted / supportTotal) * weight;
-    if (flangeTotal > 0) total += (flangeCompleted / flangeTotal) * weight;
+    // Count completed welds
+    if (wp.wp_welds) {
+      wp.wp_welds.forEach(ww => {
+        const weld = welds.find(w => w.id === ww.weld_id);
+        if (weld?.weld_date) completedCount++;
+      });
+    }
     
-    return Math.round(total);
+    // Count assembled supports
+    if (wp.wp_supports) {
+      wp.wp_supports.forEach(ws => {
+        const support = supports.find(s => s.id === ws.support_id);
+        if (support?.assembly_date) completedCount++;
+      });
+    }
+    
+    // Count assembled flanges
+    if (wp.wp_flanges) {
+      wp.wp_flanges.forEach(wf => {
+        const flange = flanges.find(f => f.id === wf.flange_id);
+        if (flange?.assembly_date) completedCount++;
+      });
+    }
+    
+    return Math.round((completedCount / totalComponents) * 100);
   };
 
   const getWPQuantities = (wp) => {
-    // Use dedicated tables instead of wp_activities
+    // Get counts from dedicated tables
+    const spoolsTotal = wp.wp_spools?.length || 0;
+    const weldsTotal = wp.wp_welds?.length || 0;
+    const supportsTotal = wp.wp_supports?.length || 0;
+    const flangesTotal = wp.wp_flanges?.length || 0;
+    
+    // Count completed items
+    let spoolsCompleted = 0;
+    let weldsCompleted = 0;
+    let supportsCompleted = 0;
+    let flangesCompleted = 0;
+    
+    if (wp.wp_spools) {
+      wp.wp_spools.forEach(ws => {
+        const spool = spools.find(s => s.id === ws.spool_id);
+        if (spool?.site_status === 'erected') spoolsCompleted++;
+      });
+    }
+    
+    if (wp.wp_welds) {
+      wp.wp_welds.forEach(ww => {
+        const weld = welds.find(w => w.id === ww.weld_id);
+        if (weld?.weld_date) weldsCompleted++;
+      });
+    }
+    
+    if (wp.wp_supports) {
+      wp.wp_supports.forEach(ws => {
+        const support = supports.find(s => s.id === ws.support_id);
+        if (support?.assembly_date) supportsCompleted++;
+      });
+    }
+    
+    if (wp.wp_flanges) {
+      wp.wp_flanges.forEach(wf => {
+        const flange = flanges.find(f => f.id === wf.flange_id);
+        if (flange?.assembly_date) flangesCompleted++;
+      });
+    }
+    
     return {
+      spools: {
+        total: spoolsTotal,
+        completed: spoolsCompleted
+      },
       welds: {
-        total: wp.wp_welds?.length || 0,
-        completed: 0 // TODO: implement completion tracking
+        total: weldsTotal,
+        completed: weldsCompleted
       },
       supports: {
-        total: wp.wp_supports?.length || 0,
-        completed: 0
+        total: supportsTotal,
+        completed: supportsCompleted
       },
       flanges: {
-        total: wp.wp_flanges?.length || 0,
-        completed: 0
+        total: flangesTotal,
+        completed: flangesCompleted
       }
     };
   };
@@ -533,7 +600,16 @@ const DaysBadge = ({ wp }) => {
 const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgress, getQuantities, spools, supports, flanges }) => {
   const progress = calculateProgress(wp);
   const quantities = getQuantities(wp);
-  const wpSpoolNos = wp.wp_spools?.map(s => s.spool_number) || [];
+  
+  // Get spool numbers - handle both spool_number from wp_spools and lookup from spools array
+  const wpSpoolData = wp.wp_spools?.map(ws => {
+    const spool = spools.find(s => s.id === ws.spool_id);
+    return {
+      spool_id: ws.spool_id,
+      spool_number: ws.spool_number || spool?.spool_no || spool?.full_spool_no?.split('-').pop() || 'N/A',
+      site_status: spool?.site_status || 'in_production'
+    };
+  }) || [];
   
   return (
     <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
@@ -561,7 +637,7 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
           </div>
           <div className="text-center">
             <p className="text-xs text-gray-500">Spools</p>
-            <p className="font-medium text-sm">{wpSpoolNos.length}</p>
+            <p className="font-medium text-sm">{quantities.spools.completed}/{quantities.spools.total}</p>
           </div>
           <div className="text-center">
             <p className="text-xs text-gray-500">Saldature</p>
@@ -614,20 +690,17 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
           </div>
           
           {/* Spools list */}
-          {wpSpoolNos.length > 0 && (
+          {wpSpoolData.length > 0 && (
             <div className="mt-4">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">📦 Spools ({wpSpoolNos.length})</h4>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">📦 Spools ({quantities.spools.completed}/{quantities.spools.total})</h4>
               <div className="flex flex-wrap gap-2">
-                {wpSpoolNos.slice(0, 10).map((sn, idx) => {
-                  const spoolData = spools.find(s => s.spool_no === sn || s.full_spool_no?.endsWith(sn));
-                  return (
-                    <div key={idx} className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-xs">
-                      <span className="font-mono">{sn}</span>
-                      {spoolData && <SiteStatusBadge status={spoolData.site_status} />}
-                    </div>
-                  );
-                })}
-                {wpSpoolNos.length > 10 && <span className="text-xs text-gray-500">+{wpSpoolNos.length - 10} altri</span>}
+                {wpSpoolData.slice(0, 10).map((ws, idx) => (
+                  <div key={idx} className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-xs">
+                    <span className="font-mono">{ws.spool_number}</span>
+                    <SiteStatusBadge status={ws.site_status} />
+                  </div>
+                ))}
+                {wpSpoolData.length > 10 && <span className="text-xs text-gray-500">+{wpSpoolData.length - 10} altri</span>}
               </div>
             </div>
           )}
@@ -1929,13 +2002,38 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   const [conflicts, setConflicts] = useState([]);
   const [originalSquadId] = useState(wp.squad_id);
 
-  // Load current WP spools
+  // Load current WP spools - use data already loaded from join OR fetch fresh
   useEffect(() => {
     if (wp.wp_type === 'piping') {
-      loadWPSpools();
+      // If we have wp_spools from the join, use them directly
+      if (wp.wp_spools && wp.wp_spools.length > 0) {
+        // Need to fetch full spool details for each
+        loadWPSpoolsWithDetails();
+      } else {
+        loadWPSpools();
+      }
       loadMaterialAvailability();
     }
   }, [wp.id]);
+
+  const loadWPSpoolsWithDetails = async () => {
+    // Get spool IDs from wp_spools
+    const spoolIds = wp.wp_spools.map(ws => ws.spool_id);
+    
+    // Fetch full spool details
+    const { data: spoolDetails } = await supabase
+      .from('mto_spools')
+      .select('*')
+      .in('id', spoolIds);
+    
+    // Merge wp_spools with spool details
+    const merged = wp.wp_spools.map(ws => ({
+      ...ws,
+      spool: spoolDetails?.find(s => s.id === ws.spool_id) || null
+    }));
+    
+    setWpSpools(merged);
+  };
 
   const loadWPSpools = async () => {
     const { data } = await supabase
@@ -2011,7 +2109,8 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
           ...flange,
           gasket: {
             code: flange.gasket_code,
-            qty_needed: flange.gasket_qty || 1,
+            qtyNeeded: flange.gasket_qty || 1,
+            qtyWarehouse: gasketAvail?.qty_warehouse || 0,
             available: (gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0),
             status: !flange.gasket_code ? 'na' : 
                     ((gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0)) >= (flange.gasket_qty || 1) ? 'ok' : 'missing'
@@ -2019,13 +2118,15 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
           bolt: {
             code: flange.bolt_code,
             qty_needed: flange.bolt_qty || 0,
+            warehouse: boltAvail?.qty_warehouse || 0,
             available: (boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0),
             status: !flange.bolt_code || flange.bolt_qty === 0 ? 'na' : 
                     ((boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0)) >= (flange.bolt_qty || 0) ? 'ok' : 'missing'
           },
           insulation: {
             code: flange.insulation_code,
-            qty_needed: flange.insulation_qty || 0,
+            qtyNeeded: flange.insulation_qty || 0,
+            qtyWarehouse: insulAvail?.qty_warehouse || 0,
             available: insulAvail ? (insulAvail.qty_warehouse || 0) - (insulAvail.qty_delivered || 0) : 0,
             status: !flange.insulation_code ? 'na' : 
                     ((insulAvail?.qty_warehouse || 0) - (insulAvail?.qty_delivered || 0)) >= (flange.insulation_qty || 0) ? 'ok' : 'missing'
@@ -2414,13 +2515,13 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                     {wpSpools.filter(ws => !spoolsToRemove.includes(ws.spool_id)).map(ws => (
                       <div key={ws.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50">
                         <div className="flex items-center gap-3">
-                          <span className="font-mono text-blue-600">{ws.spool_number}</span>
+                          <span className="font-mono text-blue-600">{ws.spool_number || ws.spool?.spool_no || ws.spool?.full_spool_no || 'N/A'}</span>
                           {ws.spool && <SiteStatusBadge status={ws.spool.site_status} />}
                         </div>
                         <button 
                           onClick={() => handleRemoveSpool(ws.spool_id)} 
                           className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                          title="Rimuovi dallo spool"
+                          title="Rimuovi spool"
                         >
                           🗑️
                         </button>
@@ -2689,10 +2790,20 @@ const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
     );
   }
   
-  const MaterialStatusIcon = ({ status }) => {
-    if (status === 'ok') return <span className="text-emerald-600">✓</span>;
-    if (status === 'missing') return <span className="text-red-600">✗</span>;
-    return <span className="text-gray-400">-</span>;
+  const MaterialCell = ({ code, qtyNeeded, qtyWarehouse, available, status }) => {
+    if (!code) return <span className="text-gray-300">-</span>;
+    
+    const isOk = status === 'ok';
+    return (
+      <div className="text-left">
+        <div className={`font-mono text-xs ${isOk ? 'text-gray-700' : 'text-red-600 font-medium'}`}>
+          {code} {qtyNeeded > 1 && `×${qtyNeeded}`}
+        </div>
+        <div className="text-[10px] text-gray-500 mt-0.5">
+          Mag: {qtyWarehouse || 0} | Disp: <span className={isOk ? 'text-emerald-600' : 'text-red-500'}>{available}</span>
+        </div>
+      </div>
+    );
   };
   
   return (
@@ -2727,7 +2838,7 @@ const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
       
       {/* Refresh button */}
       <div className="flex justify-end">
-        <button onClick={onRefresh} className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
+        <button onClick={onRefresh} className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg flex items-center gap-1">
           🔄 Aggiorna dati
         </button>
       </div>
@@ -2744,68 +2855,39 @@ const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
             )}
           </h4>
           
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="border rounded-lg overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-3 font-medium">Flange Tag</th>
-                  <th className="text-center p-3 font-medium">Gasket</th>
-                  <th className="text-center p-3 font-medium">Bolt</th>
-                  <th className="text-center p-3 font-medium">Insulation</th>
+                  <th className="text-left p-2 font-medium w-24">Flange</th>
+                  <th className="text-left p-2 font-medium">Gasket</th>
+                  <th className="text-left p-2 font-medium">Bolt</th>
+                  <th className="text-left p-2 font-medium">Insulation</th>
                 </tr>
               </thead>
               <tbody>
                 {flanges.map(flange => (
-                  <tr key={flange.id} className="border-t hover:bg-gray-50">
-                    <td className="p-3">
-                      <div className="font-mono text-amber-700">{flange.flange_tag}</div>
-                      <div className="text-xs text-gray-500">{flange.flange_type} • Ø{flange.diameter_inch}"</div>
+                  <tr key={flange.id} className={`border-t ${flange.gasket.status === 'missing' || flange.bolt.status === 'missing' || flange.insulation.status === 'missing' ? 'bg-red-50' : 'hover:bg-gray-50'}`}>
+                    <td className="p-2">
+                      <div className="font-mono text-xs text-amber-700">{flange.flange_tag}</div>
+                      <div className="text-[10px] text-gray-500">{flange.flange_type} • Ø{flange.diameter_inch}"</div>
                     </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.gasket.status} />
-                        {flange.gasket.code && (
-                          <span className={`text-xs ${flange.gasket.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.gasket.code}
-                          </span>
-                        )}
-                      </div>
-                      {flange.gasket.status === 'missing' && flange.gasket.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.gasket.available}/{flange.gasket.qty_needed}
-                        </div>
-                      )}
+                    <td className="p-2">
+                      <MaterialCell {...flange.gasket} />
                     </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.bolt.status} />
-                        {flange.bolt.code && (
-                          <span className={`text-xs ${flange.bolt.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.bolt.code} ×{flange.bolt.qty_needed}
-                          </span>
-                        )}
-                      </div>
-                      {flange.bolt.status === 'missing' && flange.bolt.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.bolt.available}/{flange.bolt.qty_needed}
-                        </div>
-                      )}
+                    <td className="p-2">
+                      <MaterialCell code={flange.bolt.code} qtyNeeded={flange.bolt.qty_needed} qtyWarehouse={flange.bolt.warehouse} available={flange.bolt.available} status={flange.bolt.status} />
                     </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.insulation.status} />
-                        {flange.insulation.code && (
-                          <span className={`text-xs ${flange.insulation.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.insulation.code}
-                          </span>
-                        )}
-                      </div>
-                      {flange.insulation.status === 'missing' && flange.insulation.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.insulation.available}/{flange.insulation.qty_needed}
-                        </div>
-                      )}
+                    <td className="p-2">
+                      <MaterialCell {...flange.insulation} />
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
                   </tr>
                 ))}
               </tbody>
