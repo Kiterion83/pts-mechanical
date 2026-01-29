@@ -2356,10 +2356,23 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   const handleSaveContent = () => {
     if (!contentChanged) return;
     
+    // Prepare removed spools info with names
+    const removedSpoolsInfo = wpSpools
+      .filter(ws => spoolsToRemove.includes(ws.spool_id))
+      .map(ws => ws.spool_number || ws.spool?.spool_no || ws.spool?.full_spool_no || 'N/A');
+    
+    // Prepare added spools info with names
+    const addedSpoolsInfo = spoolsToAdd.map(id => {
+      const spool = spools.find(s => s.id === id);
+      return spool?.spool_no || spool?.full_spool_no || 'N/A';
+    });
+    
     // Show confirmation modal
     setPendingChanges({
       added: spoolsToAdd.length,
+      addedNames: addedSpoolsInfo,
       removed: spoolsToRemove.length,
+      removedNames: removedSpoolsInfo,
       supportsRemoved: manualSupportsToRemove.length,
       flangesRemoved: manualFlangesToRemove.length
     });
@@ -2721,6 +2734,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                   </div>
                   
                   <div className="border rounded-lg max-h-[200px] overflow-y-auto">
+                    {/* Active spools */}
                     {wpSpools.filter(ws => !spoolsToRemove.includes(ws.spool_id)).map(ws => (
                       <div key={ws.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50">
                         <div className="flex items-center gap-3">
@@ -2733,6 +2747,23 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                           title="Rimuovi spool (e relativi welds/supports/flanges)"
                         >
                           🗑️
+                        </button>
+                      </div>
+                    ))}
+                    
+                    {/* Spools marked for removal (shown in red) */}
+                    {wpSpools.filter(ws => spoolsToRemove.includes(ws.spool_id)).map(ws => (
+                      <div key={ws.id} className="flex items-center justify-between p-3 border-b last:border-b-0 bg-red-50">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-red-600 line-through">{ws.spool_number || ws.spool?.spool_no || ws.spool?.full_spool_no || 'N/A'}</span>
+                          <span className="text-xs text-red-600 font-medium">🗑️ Da rimuovere</span>
+                        </div>
+                        <button 
+                          onClick={() => setSpoolsToRemove(spoolsToRemove.filter(id => id !== ws.spool_id))} 
+                          className="p-1.5 text-gray-500 hover:bg-gray-100 rounded text-xs"
+                          title="Annulla rimozione"
+                        >
+                          ↩️ Annulla
                         </button>
                       </div>
                     ))}
@@ -2874,12 +2905,82 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                 {contentChanged && (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                     <p className="text-sm text-amber-800 font-medium">⚠️ Modifiche in sospeso:</p>
-                    <ul className="text-sm text-amber-700 mt-1">
-                      {spoolsToAdd.length > 0 && <li>• {spoolsToAdd.length} spools da aggiungere (con relativi welds/supports/flanges)</li>}
-                      {spoolsToRemove.length > 0 && <li>• {spoolsToRemove.length} spools da rimuovere (con relativi welds/supports/flanges)</li>}
-                      {manualSupportsToRemove.length > 0 && <li>• {manualSupportsToRemove.length} supporti da rimuovere manualmente</li>}
-                      {manualFlangesToRemove.length > 0 && <li>• {manualFlangesToRemove.length} flangie da rimuovere manualmente</li>}
-                    </ul>
+                    <div className="text-sm text-amber-700 mt-2 space-y-2">
+                      {/* Spools to add */}
+                      {spoolsToAdd.length > 0 && (
+                        <div className="bg-green-50 border border-green-200 rounded p-2">
+                          <p className="font-medium text-green-700">➕ Spools da aggiungere ({spoolsToAdd.length}):</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {spoolsToAdd.map(id => {
+                              const spool = spools.find(s => s.id === id);
+                              return <span key={id} className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-mono">{spool?.spool_no || spool?.full_spool_no}</span>;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Spools to remove with cascade info */}
+                      {spoolsToRemove.length > 0 && (() => {
+                        const removedSpoolNos = wpSpools
+                          .filter(ws => spoolsToRemove.includes(ws.spool_id))
+                          .map(ws => ws.spool?.full_spool_no);
+                        const cascadeWelds = welds.filter(w => 
+                          removedSpoolNos.includes(w.full_first_spool) || removedSpoolNos.includes(w.full_second_spool)
+                        );
+                        const cascadeSupports = supports.filter(s => removedSpoolNos.includes(s.full_spool_no));
+                        const cascadeFlanges = flanges.filter(f => 
+                          removedSpoolNos.includes(f.first_part_code) || removedSpoolNos.includes(f.second_part_code)
+                        );
+                        
+                        return (
+                          <div className="bg-red-50 border border-red-200 rounded p-2">
+                            <p className="font-medium text-red-700">🗑️ Spools da rimuovere ({spoolsToRemove.length}):</p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {wpSpools.filter(ws => spoolsToRemove.includes(ws.spool_id)).map(ws => (
+                                <span key={ws.spool_id} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-mono">
+                                  {ws.spool_number || ws.spool?.spool_no || ws.spool?.full_spool_no}
+                                </span>
+                              ))}
+                            </div>
+                            {(cascadeWelds.length > 0 || cascadeSupports.length > 0 || cascadeFlanges.length > 0) && (
+                              <p className="text-xs text-red-600 mt-2">
+                                ⚡ Cascade: {cascadeWelds.length > 0 && `${cascadeWelds.length} saldature`}
+                                {cascadeWelds.length > 0 && cascadeSupports.length > 0 && ', '}
+                                {cascadeSupports.length > 0 && `${cascadeSupports.length} supporti`}
+                                {(cascadeWelds.length > 0 || cascadeSupports.length > 0) && cascadeFlanges.length > 0 && ', '}
+                                {cascadeFlanges.length > 0 && `${cascadeFlanges.length} flangie`}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      
+                      {/* Manual supports removal */}
+                      {manualSupportsToRemove.length > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 rounded p-2">
+                          <p className="font-medium text-orange-700">🔩 Supporti da rimuovere ({manualSupportsToRemove.length}):</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {manualSupportsToRemove.map(id => {
+                              const support = supports.find(s => s.id === id);
+                              return <span key={id} className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-mono">{support?.support_tag_no?.split('-').pop()}</span>;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Manual flanges removal */}
+                      {manualFlangesToRemove.length > 0 && (
+                        <div className="bg-orange-50 border border-orange-200 rounded p-2">
+                          <p className="font-medium text-orange-700">⚙️ Flangie da rimuovere ({manualFlangesToRemove.length}):</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {manualFlangesToRemove.map(id => {
+                              const flange = flanges.find(f => f.id === id);
+                              return <span key={id} className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-mono">{flange?.flange_tag}</span>;
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -2935,17 +3036,33 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
       {/* Confirm Changes Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">⚠️ Conferma Modifiche</h3>
             <p className="text-gray-600 mb-4">
               Stai per modificare il contenuto del WP. Questa azione incrementerà il numero di revisione.
             </p>
-            <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-1">
+            <div className="bg-gray-50 rounded-lg p-3 mb-4 space-y-3 max-h-[300px] overflow-y-auto">
               {pendingChanges?.added > 0 && (
-                <p className="text-sm"><span className="text-green-600">+{pendingChanges.added} spools</span> (con welds/supports/flanges collegati)</p>
+                <div className="bg-green-50 border border-green-200 rounded p-2">
+                  <p className="text-sm font-medium text-green-700">➕ {pendingChanges.added} spools da aggiungere:</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {pendingChanges.addedNames?.map((name, idx) => (
+                      <span key={idx} className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-mono">{name}</span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-green-600 mt-1">+ welds/supports/flanges collegati</p>
+                </div>
               )}
               {pendingChanges?.removed > 0 && (
-                <p className="text-sm"><span className="text-red-600">-{pendingChanges.removed} spools</span> (con welds/supports/flanges collegati)</p>
+                <div className="bg-red-50 border border-red-200 rounded p-2">
+                  <p className="text-sm font-medium text-red-700">🗑️ {pendingChanges.removed} spools da rimuovere:</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {pendingChanges.removedNames?.map((name, idx) => (
+                      <span key={idx} className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs font-mono">{name}</span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-red-600 mt-1">+ welds/supports/flanges collegati</p>
+                </div>
               )}
               {pendingChanges?.supportsRemoved > 0 && (
                 <p className="text-sm"><span className="text-orange-600">-{pendingChanges.supportsRemoved} supporti</span> (rimozione manuale)</p>
