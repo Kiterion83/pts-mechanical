@@ -16,7 +16,7 @@
     "workPackages": "Work Packages",
     "dailyReports": "Rapportini",
     "materialRequests": "Richieste Materiale",
-    "mezzi": "Mezzi"
+    "mezzi": "Mezzi",
     "gantt": "Gantt WP"
   },
   "auth": {
