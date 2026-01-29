@@ -16,14 +16,14 @@ import ProjectDetail from './pages/ProjectDetail'
 import Companies from './pages/Companies'
 import Personnel from './pages/Personnel'
 import Squads from './pages/Squads'
-import Mezzi from './pages/Mezzi'
+import Equipment from './pages/Equipment'
 
 // Pages - Work
 import WorkPackages from './pages/WorkPackages'
+import WorkPackagesGanttPage from './pages/WorkPackagesGanttPage'  // FIX #5: Gantt separato
 import DailyReports from './pages/DailyReports'
 import MaterialRequests from './pages/MaterialRequests'
-import MTOPiping from './pages/MTOPiping'
-import ProjectEquipment from './pages/ProjectEquipment'
+import MTO from './pages/MTO'
 
 // Components
 import Layout from './components/Layout'
@@ -73,9 +73,9 @@ function App() {
                   <Routes>
                     {/* Main Menu - Everyone */}
                     <Route path="/" element={<Dashboard />} />
-                    <Route path="/mto-piping" element={<MTOPiping />} />
-                    <Route path="/project-equipment" element={<ProjectEquipment />} />
+                    <Route path="/mto" element={<MTO />} />
                     <Route path="/work-packages" element={<WorkPackages />} />
+                    <Route path="/work-packages/gantt" element={<WorkPackagesGanttPage />} />  {/* FIX #5: Gantt separato */}
                     <Route path="/daily-reports" element={<DailyReports />} />
                     <Route path="/material-requests" element={<MaterialRequests />} />
                     
@@ -105,19 +105,18 @@ function App() {
                         <Squads />
                       </ProtectedRoute>
                     } />
-                    <Route path="/settings/mezzi" element={
+                    <Route path="/settings/equipment" element={
                       <ProtectedRoute requiredPermission="canAccessSettings">
-                        <Mezzi />
+                        <Equipment />
                       </ProtectedRoute>
                     } />
 
                     {/* Legacy routes redirect to new structure */}
-                    <Route path="/mto" element={<Navigate to="/mto-piping" replace />} />
                     <Route path="/projects" element={<Navigate to="/settings/projects" replace />} />
                     <Route path="/projects/:id" element={<Navigate to="/settings/projects/:id" replace />} />
                     <Route path="/personnel" element={<Navigate to="/settings/personnel" replace />} />
                     <Route path="/squads" element={<Navigate to="/settings/squads" replace />} />
-                    <Route path="/equipment" element={<Navigate to="/settings/mezzi" replace />} />
+                    <Route path="/equipment" element={<Navigate to="/settings/equipment" replace />} />
                     
                     {/* 404 */}
                     <Route path="*" element={<NotFound />} />
