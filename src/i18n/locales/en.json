@@ -16,7 +16,7 @@
     "workPackages": "Work Packages",
     "dailyReports": "Daily Reports",
     "materialRequests": "Material Requests",
-    "mezzi": "Site Equipment"
+    "mezzi": "Site Equipment",
     "gantt": "WP Gantt"
   },
   "auth": {
