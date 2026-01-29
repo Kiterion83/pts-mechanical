@@ -101,25 +101,16 @@ export default function WorkPackages() {
       .select(`
         *,
         squad:squads(id, squad_number, name),
-        wp_spools(id, spool_id, spool_number)
+        wp_spools(id, spool_id, spool_number),
+        wp_welds(id, weld_id),
+        wp_supports(id, support_id),
+        wp_flanges(id, flange_id)
       `)
       .eq('project_id', activeProject.id)
       .is('deleted_at', null)
       .order('code');
     
     if (error) throw error;
-    
-    const wpIds = data?.map(wp => wp.id) || [];
-    if (wpIds.length > 0) {
-      const { data: activities } = await supabase
-        .from('wp_activities')
-        .select('*')
-        .in('work_package_id', wpIds);
-      
-      data.forEach(wp => {
-        wp.activities = activities?.filter(a => a.work_package_id === wp.id) || [];
-      });
-    }
     
     setWorkPackages(data || []);
   };
@@ -174,24 +165,23 @@ export default function WorkPackages() {
   const calculateWPProgress = (wp) => {
     if (wp.wp_type === 'action') return wp.manual_progress || 0;
     
-    const activities = wp.activities || [];
-    const welding = activities.filter(a => a.category === 'welding');
-    const support = activities.filter(a => a.category === 'support');
-    const flange = activities.filter(a => a.category === 'flange');
+    // Use dedicated tables instead of wp_activities
+    const weldingTotal = wp.wp_welds?.length || 0;
+    const supportTotal = wp.wp_supports?.length || 0;
+    const flangeTotal = wp.wp_flanges?.length || 0;
     
-    const weldingTotal = welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const weldingCompleted = welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
-    const supportTotal = support.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const supportCompleted = support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
-    const flangeTotal = flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const flangeCompleted = flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
+    // For now, completed count comes from manual_progress or we need to implement completion tracking
+    // TODO: Add completion tracking to dedicated tables
+    const weldingCompleted = 0; // Will be implemented with completion feature
+    const supportCompleted = 0;
+    const flangeCompleted = 0;
     
     let categoriesPresent = 0;
     if (weldingTotal > 0) categoriesPresent++;
     if (supportTotal > 0) categoriesPresent++;
     if (flangeTotal > 0) categoriesPresent++;
     
-    if (categoriesPresent === 0) return 0;
+    if (categoriesPresent === 0) return wp.manual_progress || 0;
     
     const weight = 100 / categoriesPresent;
     let total = 0;
@@ -204,23 +194,19 @@ export default function WorkPackages() {
   };
 
   const getWPQuantities = (wp) => {
-    const activities = wp.activities || [];
-    const welding = activities.filter(a => a.category === 'welding');
-    const support = activities.filter(a => a.category === 'support');
-    const flange = activities.filter(a => a.category === 'flange');
-    
+    // Use dedicated tables instead of wp_activities
     return {
       welds: {
-        total: welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
+        total: wp.wp_welds?.length || 0,
+        completed: 0 // TODO: implement completion tracking
       },
       supports: {
-        total: support.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
+        total: wp.wp_supports?.length || 0,
+        completed: 0
       },
       flanges: {
-        total: flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
+        total: wp.wp_flanges?.length || 0,
+        completed: 0
       }
     };
   };
@@ -1020,7 +1006,7 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         if (spoolErr) console.error('Error saving spools:', spoolErr);
       }
 
-      // Save wp_welds - FIX: was completely missing!
+      // Save wp_welds
       if (selectedWelds.length > 0) {
         const weldsToInsert = selectedWelds.map(weldId => ({
           work_package_id: wpData.id,
@@ -1028,18 +1014,9 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         }));
         const { error: weldErr } = await supabase.from('wp_welds').insert(weldsToInsert);
         if (weldErr) console.error('Error saving welds:', weldErr);
-        
-        // Also save to wp_activities for progress tracking
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'welding',
-          quantity_total: selectedWelds.length,
-          quantity_completed: 0,
-          item_ids: selectedWelds
-        });
       }
 
-      // Save wp_supports - FIX: removed invalid support_tag column
+      // Save wp_supports
       if (selectedSupports.length > 0) {
         const supportsToInsert = selectedSupports.map(supportId => ({
           work_package_id: wpData.id,
@@ -1047,18 +1024,9 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         }));
         const { error: suppErr } = await supabase.from('wp_supports').insert(supportsToInsert);
         if (suppErr) console.error('Error saving supports:', suppErr);
-        
-        // Also save to wp_activities for progress tracking
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'support',
-          quantity_total: selectedSupports.length,
-          quantity_completed: 0,
-          item_ids: selectedSupports
-        });
       }
 
-      // Save wp_flanges - FIX: removed invalid flange_tag column
+      // Save wp_flanges
       if (selectedFlanges.length > 0) {
         const flangesToInsert = selectedFlanges.map(flangeId => ({
           work_package_id: wpData.id,
@@ -1066,15 +1034,6 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         }));
         const { error: flangeErr } = await supabase.from('wp_flanges').insert(flangesToInsert);
         if (flangeErr) console.error('Error saving flanges:', flangeErr);
-        
-        // Also save to wp_activities for progress tracking
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'flange',
-          quantity_total: selectedFlanges.length,
-          quantity_completed: 0,
-          item_ids: selectedFlanges
-        });
       }
 
       // Log revision
