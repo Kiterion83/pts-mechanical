@@ -437,6 +437,7 @@ export default function WorkPackages() {
                           calculateProgress={calculateWPProgress}
                           getQuantities={getWPQuantities}
                           spools={spools}
+                          welds={welds}
                           supports={supports}
                           flanges={flanges}
                         />
@@ -597,7 +598,7 @@ const DaysBadge = ({ wp }) => {
 // WP PIPING CARD
 // ============================================================================
 
-const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgress, getQuantities, spools, supports, flanges }) => {
+const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgress, getQuantities, spools, welds, supports, flanges }) => {
   const progress = calculateProgress(wp);
   const quantities = getQuantities(wp);
   
@@ -630,20 +631,28 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
           <p className="text-sm text-gray-600 truncate mt-1">{wp.description || 'Nessuna descrizione'}</p>
         </div>
         
-        <div className="hidden md:flex items-center gap-6">
-          <div className="text-center">
+        <div className="hidden md:flex items-center gap-4">
+          <div className="text-center min-w-[50px]">
             <p className="text-xs text-gray-500">Squadra</p>
             <p className="font-medium text-sm">{wp.squad?.squad_number ? `SQ${wp.squad.squad_number}` : '-'}</p>
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-[50px]">
             <p className="text-xs text-gray-500">Spools</p>
             <p className="font-medium text-sm">{quantities.spools.completed}/{quantities.spools.total}</p>
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-[50px]">
             <p className="text-xs text-gray-500">Saldature</p>
             <p className="font-medium text-sm">{quantities.welds.completed}/{quantities.welds.total}</p>
           </div>
-          <div className="w-24">
+          <div className="text-center min-w-[50px]">
+            <p className="text-xs text-gray-500">Supporti</p>
+            <p className="font-medium text-sm">{quantities.supports.completed}/{quantities.supports.total}</p>
+          </div>
+          <div className="text-center min-w-[50px]">
+            <p className="text-xs text-gray-500">Flangie</p>
+            <p className="font-medium text-sm">{quantities.flanges.completed}/{quantities.flanges.total}</p>
+          </div>
+          <div className="w-20">
             <div className="flex items-center gap-2">
               <ProgressBar percent={progress} size="small" />
               <span className="text-xs font-medium text-gray-600">{progress}%</span>
