@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
 import { useTranslation } from 'react-i18next';
@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 
 // ============================================================================
 // MTO PIPING - Material Take Off Piping
-// Gestione Spools, Supports, Flanges, Welds con Import Excel E Inserimento Manuale
+// V2 - Con WP Coverage, Date Display, Nuovi Campi, Autocomplete, Click Dropdown
 // ============================================================================
 
 export default function MTOPiping() {
@@ -31,13 +31,13 @@ export default function MTOPiping() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterIso, setFilterIso] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef(null);
   
   // Modal state
   const [showImportModal, setShowImportModal] = useState(false);
   const [showDiffModal, setShowDiffModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [previewType, setPreviewType] = useState(null);
   const [addingType, setAddingType] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [editingType, setEditingType] = useState(null);
@@ -47,6 +47,39 @@ export default function MTOPiping() {
   const [importDiffs, setImportDiffs] = useState([]);
   const [selectedDiffs, setSelectedDiffs] = useState({});
   const [importing, setImporting] = useState(false);
+
+  // ============================================================================
+  // UTILITY: FORMAT DATE
+  // ============================================================================
+  
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '—';
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date)) return '—';
+      const day = date.getDate().toString().padStart(2, '0');
+      const month = (date.getMonth() + 1).toString().padStart(2, '0');
+      const year = date.getFullYear().toString().slice(-2);
+      return `${day}/${month}/${year}`;
+    } catch {
+      return '—';
+    }
+  };
+
+  // ============================================================================
+  // CLICK OUTSIDE HANDLER FOR EXPORT MENU
+  // ============================================================================
+  
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // ============================================================================
   // DATA FETCHING
@@ -98,22 +131,22 @@ export default function MTOPiping() {
       let spoolCount = 0, weldCount = 0, supportCount = 0, flangeCount = 0;
       
       try {
-        const { data, count } = await supabase.from('wp_spools').select('spool_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        const { count } = await supabase.from('wp_spools').select('spool_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
         spoolCount = count || 0;
       } catch (e) { /* table may not exist */ }
       
       try {
-        const { data, count } = await supabase.from('wp_welds').select('weld_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        const { count } = await supabase.from('wp_welds').select('weld_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
         weldCount = count || 0;
       } catch (e) { /* table may not exist */ }
       
       try {
-        const { data, count } = await supabase.from('wp_supports').select('support_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        const { count } = await supabase.from('wp_supports').select('support_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
         supportCount = count || 0;
       } catch (e) { /* table may not exist */ }
       
       try {
-        const { data, count } = await supabase.from('wp_flanges').select('flange_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
+        const { count } = await supabase.from('wp_flanges').select('flange_id', { count: 'exact', head: true }).in('work_package_id', wpIds);
         flangeCount = count || 0;
       } catch (e) { /* table may not exist */ }
       
@@ -201,6 +234,7 @@ export default function MTOPiping() {
     flanges: flanges.length,
     welds: welds.length,
     spoolsErected: spools.filter(s => s.site_status === 'erected').length,
+    spoolsOngoing: spools.filter(s => s.site_status === 'erected_ongoing').length,
     weldsCompleted: welds.filter(w => w.weld_date).length,
     supportsAssembled: supports.filter(s => s.assembly_date).length,
     flangesAssembled: flanges.filter(f => f.assembly_date).length
@@ -564,7 +598,9 @@ export default function MTOPiping() {
         return [
           { dbField: 'weight_kg', excelField: 'Spool_Weight' },
           { dbField: 'length_m', excelField: 'Spool_Length' },
-          { dbField: 'diameter_inch', excelField: 'Spool_diameter' }
+          { dbField: 'diameter_inch', excelField: 'Spool_diameter' },
+          { dbField: 'thickness_mm', excelField: 'Thickness' },
+          { dbField: 'material_code', excelField: 'Material_Code' }
         ];
       case 'supports':
         return [
@@ -575,7 +611,11 @@ export default function MTOPiping() {
         return [
           { dbField: 'gasket_code', excelField: 'Gasket_Code' },
           { dbField: 'bolt_code', excelField: 'Bolt_Code' },
-          { dbField: 'bolt_qty', excelField: 'Bolt_Qty' }
+          { dbField: 'bolt_qty', excelField: 'Bolt_Qty' },
+          { dbField: 'ident_code_1', excelField: 'Ident_Code_1' },
+          { dbField: 'ident_qty_1', excelField: 'Ident_Qty_1' },
+          { dbField: 'ident_code_2', excelField: 'Ident_Code_2' },
+          { dbField: 'ident_qty_2', excelField: 'Ident_Qty_2' }
         ];
       case 'welds':
         return [
@@ -674,6 +714,8 @@ export default function MTOPiping() {
           service_class: data.Service_class,
           service_category: data.Service_Cat,
           diameter_inch: parseFloat(data.Spool_diameter) || null,
+          thickness_mm: parseFloat(data.Thickness) || null,
+          material_code: data.Material_Code || null,
           weight_kg: parseFloat(data.Spool_Weight) || null,
           length_m: parseFloat(data.Spool_Length) || null,
           shipment_date: parseExcelDate(data.SHIPMENT_DATE),
@@ -682,6 +724,7 @@ export default function MTOPiping() {
           laydown_arrival: parseExcelDate(data.LAYDOWN_ARRIVAL),
           to_site: parseExcelDate(data.TO_SITE),
           erected: parseExcelDate(data.ERECTED),
+          erected_ongoing: parseExcelDate(data.ERECTED_ONGOING),
           week_plan: data.Week_Plan
         };
       case 'supports':
@@ -721,6 +764,10 @@ export default function MTOPiping() {
           insulation_qty: parseFloat(data.Insulation_Qty) || null,
           insulation_alt_code: data.Insulation_Alt_Code || null,
           insulation_alt_qty: parseFloat(data.Insulation_Alt_Qty) || null,
+          ident_code_1: data.Ident_Code_1 || null,
+          ident_qty_1: parseInt(data.Ident_Qty_1) || null,
+          ident_code_2: data.Ident_Code_2 || null,
+          ident_qty_2: parseInt(data.Ident_Qty_2) || null,
           ir_number: data.IR_Number,
           ir_date: parseExcelDate(data.IR_Number_Date),
           delivered_to_site: parseExcelDate(data['Delivered to Site']),
@@ -758,16 +805,16 @@ export default function MTOPiping() {
   const exportTemplate = (type) => {
     const templates = {
       spools: {
-        columns: ['Spool_ID', 'Full_Spool_No', 'ISO_Number', 'Spool_No', 'Service_class', 'Service_Cat', 'Spool_diameter', 'Spool_Weight', 'Spool_Length', 'SHIPMENT_DATE', 'IR_Number', 'IR_Number_Date', 'LAYDOWN_ARRIVAL', 'TO_SITE', 'ERECTED', 'Week_Plan'],
-        example: { Spool_ID: 1, Full_Spool_No: 'PRJ-ISO001-SP001', ISO_Number: 'PRJ-ISO001', Spool_No: 'SP001', Spool_diameter: 4, Spool_Weight: 25.5, Spool_Length: 2.5 }
+        columns: ['Spool_ID', 'Full_Spool_No', 'ISO_Number', 'Spool_No', 'Service_class', 'Service_Cat', 'Spool_diameter', 'Thickness', 'Material_Code', 'Spool_Weight', 'Spool_Length', 'SHIPMENT_DATE', 'IR_Number', 'IR_Number_Date', 'LAYDOWN_ARRIVAL', 'TO_SITE', 'ERECTED', 'ERECTED_ONGOING', 'Week_Plan'],
+        example: { Spool_ID: 1, Full_Spool_No: 'PRJ-ISO001-SP001', ISO_Number: 'PRJ-ISO001', Spool_No: 'SP001', Spool_diameter: 4, Thickness: 6.02, Material_Code: 'A106-B', Spool_Weight: 25.5, Spool_Length: 2.5 }
       },
       supports: {
         columns: ['Support_ID', 'Support_Tag_No', 'ISO_Number', 'FullTagNo', 'Support_Name', 'Support_Mark', 'Full_Spool_No', 'Weight', 'IR_Number', 'IR_Number_Date', 'Delivered to Site', 'Delivered to', 'Assembly_Date', 'Week_Plan'],
         example: { Support_ID: 1, Support_Tag_No: 'SUP-001', ISO_Number: 'PRJ-ISO001', Support_Mark: 'MG02-B', Full_Spool_No: 'PRJ-ISO001-SP001', Weight: 5.5 }
       },
       flanges: {
-        columns: ['Flange_ID', 'Flange_Tag', 'ISO_Number', 'Flange_Type', 'First_Part_Code', 'Second_Part_Code', 'Flange_Diameter', 'Pressure_Rating', 'Critical_Flange', 'Gasket_Code', 'Gasket_Qty', 'Bolt_Code', 'Bolt_Qty', 'Insulation_Code', 'Insulation_Qty', 'Insulation_Alt_Code', 'Insulation_Alt_Qty', 'IR_Number', 'IR_Number_Date', 'Delivered to Site', 'Delivered to', 'Assembly_Date', 'Week_Plan'],
-        example: { Flange_ID: 1, Flange_Tag: 'HF100001', ISO_Number: 'PRJ-ISO001', Flange_Type: 'SP', Gasket_Code: 'GSK001', Bolt_Code: 'BLT001', Bolt_Qty: 8 }
+        columns: ['Flange_ID', 'Flange_Tag', 'ISO_Number', 'Flange_Type', 'First_Part_Code', 'Second_Part_Code', 'Flange_Diameter', 'Pressure_Rating', 'Critical_Flange', 'Gasket_Code', 'Gasket_Qty', 'Bolt_Code', 'Bolt_Qty', 'Insulation_Code', 'Insulation_Qty', 'Insulation_Alt_Code', 'Insulation_Alt_Qty', 'Ident_Code_1', 'Ident_Qty_1', 'Ident_Code_2', 'Ident_Qty_2', 'IR_Number', 'IR_Number_Date', 'Delivered to Site', 'Delivered to', 'Assembly_Date', 'Week_Plan'],
+        example: { Flange_ID: 1, Flange_Tag: 'HF100001', ISO_Number: 'PRJ-ISO001', Flange_Type: 'SP', Gasket_Code: 'GSK001', Bolt_Code: 'BLT001', Bolt_Qty: 8, Ident_Code_1: 'ID001', Ident_Qty_1: 2 }
       },
       welds: {
         columns: ['Full_Weld_No', 'Weld_No', 'ISO_Number', 'First_Material_Code', 'Second_Material_Code', 'Full_First_Spool', 'Full_Second_Spool', 'Weld_Type', 'Weld_Cat', 'Dia_Inch', 'Thickness', 'Dissimilar Joint', 'Fitup_Date', 'Weld_Date', 'Week_Plan'],
@@ -782,6 +829,7 @@ export default function MTOPiping() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, type.charAt(0).toUpperCase() + type.slice(1));
     XLSX.writeFile(wb, `MTO_Template_${type}.xlsx`);
+    setExportMenuOpen(false);
   };
 
   // ============================================================================
@@ -832,28 +880,21 @@ export default function MTOPiping() {
             <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
               📥 Importa Excel
             </button>
-            {/* Preview Struttura Excel */}
-            <div className="relative group">
-              <button className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 flex items-center gap-2 text-sm font-medium">
-                📋 Preview Struttura ▼
-              </button>
-              <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg hidden group-hover:block z-10">
-                <button onClick={() => { setPreviewType('spools'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
-                <button onClick={() => { setPreviewType('supports'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
-                <button onClick={() => { setPreviewType('flanges'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
-                <button onClick={() => { setPreviewType('welds'); setShowPreviewModal(true); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
-              </div>
-            </div>
-            <div className="relative group">
-              <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium">
+            <div className="relative" ref={exportMenuRef}>
+              <button 
+                onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium"
+              >
                 📤 Esporta Template ▼
               </button>
-              <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg hidden group-hover:block z-10">
-                <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
-                <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
-                <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
-                <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
-              </div>
+              {exportMenuOpen && (
+                <div className="absolute right-0 mt-1 w-48 bg-white border rounded-lg shadow-lg z-10">
+                  <button onClick={() => exportTemplate('spools')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">📦 Spools</button>
+                  <button onClick={() => exportTemplate('supports')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔩 Supports</button>
+                  <button onClick={() => exportTemplate('flanges')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">⚙️ Flanges</button>
+                  <button onClick={() => exportTemplate('welds')} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">🔥 Welds</button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -862,35 +903,15 @@ export default function MTOPiping() {
         <div className="grid grid-cols-4 lg:grid-cols-8 gap-2 mt-4">
           {/* MTO Totals */}
           <MiniStat icon="🔍" value={stats.isometrics} label="ISO" color="blue" />
-          <MiniStat icon="📦" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} ✓`} color="purple" />
-          <MiniStat icon="🔩" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} ✓`} color="gray" />
-          <MiniStat icon="⚙️" value={stats.flanges} label="Flanges" sub={`${stats.flangesAssembled} ✓`} color="amber" />
+          <MiniStat icon="📦" value={stats.spools} label="Spools" sub={`${stats.spoolsErected} eretti`} color="purple" />
+          <MiniStat icon="🔩" value={stats.supports} label="Supports" sub={`${stats.supportsAssembled} ass.`} color="gray" />
+          <MiniStat icon="🔥" value={stats.welds} label="Welds" sub={`${stats.weldsCompleted} compl.`} color="orange" />
           
           {/* WP Coverage */}
-          <CoverageStat 
-            icon="📦" 
-            total={stats.spools} 
-            covered={wpCoverage.spools} 
-            label="Spools in WP" 
-          />
-          <CoverageStat 
-            icon="🔥" 
-            total={stats.welds} 
-            covered={wpCoverage.welds} 
-            label="Welds in WP" 
-          />
-          <CoverageStat 
-            icon="🔩" 
-            total={stats.supports} 
-            covered={wpCoverage.supports} 
-            label="Supports in WP" 
-          />
-          <CoverageStat 
-            icon="⚙️" 
-            total={stats.flanges} 
-            covered={wpCoverage.flanges} 
-            label="Flanges in WP" 
-          />
+          <CoverageStat icon="📦" total={stats.spools} covered={wpCoverage.spools} label="Spools in WP" />
+          <CoverageStat icon="🔥" total={stats.welds} covered={wpCoverage.welds} label="Welds in WP" />
+          <CoverageStat icon="🔩" total={stats.supports} covered={wpCoverage.supports} label="Supports in WP" />
+          <CoverageStat icon="⚙️" total={stats.flanges} covered={wpCoverage.flanges} label="Flanges in WP" />
         </div>
       </div>
 
@@ -930,6 +951,7 @@ export default function MTOPiping() {
                 <option value="ir_issued">IR Emesso</option>
                 <option value="at_laydown">Laydown</option>
                 <option value="at_site">Al Sito</option>
+                <option value="erected_ongoing">In Erezione</option>
                 <option value="erected">Eretto</option>
               </select>
             )}
@@ -944,10 +966,10 @@ export default function MTOPiping() {
 
         {/* Tab Content */}
         <div className="p-6">
-          {activeTab === 'spools' && <SpoolsTable spools={filteredSpools} onEdit={(item) => { setEditingItem(item); setEditingType('spool'); }} onDelete={(id) => handleDelete('spool', id)} />}
-          {activeTab === 'supports' && <SupportsTable supports={filteredSupports} onEdit={(item) => { setEditingItem(item); setEditingType('support'); }} onDelete={(id) => handleDelete('support', id)} />}
-          {activeTab === 'flanges' && <FlangesTable flanges={filteredFlanges} onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }} onDelete={(id) => handleDelete('flange', id)} />}
-          {activeTab === 'welds' && <WeldsTable welds={filteredWelds} spools={spools} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
+          {activeTab === 'spools' && <SpoolsTable spools={filteredSpools} formatDate={formatDate} onEdit={(item) => { setEditingItem(item); setEditingType('spool'); }} onDelete={(id) => handleDelete('spool', id)} />}
+          {activeTab === 'supports' && <SupportsTable supports={filteredSupports} formatDate={formatDate} onEdit={(item) => { setEditingItem(item); setEditingType('support'); }} onDelete={(id) => handleDelete('support', id)} />}
+          {activeTab === 'flanges' && <FlangesTable flanges={filteredFlanges} formatDate={formatDate} onEdit={(item) => { setEditingItem(item); setEditingType('flange'); }} onDelete={(id) => handleDelete('flange', id)} />}
+          {activeTab === 'welds' && <WeldsTable welds={filteredWelds} spools={spools} formatDate={formatDate} onEdit={(item) => { setEditingItem(item); setEditingType('weld'); }} onDelete={(id) => handleDelete('weld', id)} />}
           {activeTab === 'summary' && <MaterialsSummary supportSummary={supportSummary} flangeMaterialsSummary={flangeMaterialsSummary} onUpdateInventory={handleUpdateInventory} />}
         </div>
       </div>
@@ -962,7 +984,6 @@ export default function MTOPiping() {
         else if (editingType === 'flange') handleUpdateFlange(editingItem.id, updates);
         else if (editingType === 'weld') handleUpdateWeld(editingItem.id, updates);
       }} onClose={() => setEditingItem(null)} />}
-      {showPreviewModal && <ExcelPreviewModal type={previewType} onClose={() => setShowPreviewModal(false)} onDownload={exportTemplate} />}
     </div>
   );
 }
@@ -970,19 +991,6 @@ export default function MTOPiping() {
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
-
-const StatCard = ({ icon, bg, border, value, label, sub }) => (
-  <div className={`${bg} rounded-lg p-4 border ${border}`}>
-    <div className="flex items-center gap-2">
-      <span className="text-xl">{icon}</span>
-      <div>
-        <div className="text-2xl font-bold text-gray-700">{value}</div>
-        <div className="text-xs text-gray-600">{label}</div>
-        {sub && <div className="text-xs text-gray-400">{sub}</div>}
-      </div>
-    </div>
-  </div>
-);
 
 // Compact mini stat for MTO totals
 const MiniStat = ({ icon, value, label, sub, color }) => {
@@ -1030,14 +1038,15 @@ const SpoolStatusBadge = ({ status }) => {
     ir_issued: { label: 'IR Emesso', color: 'bg-amber-100 text-amber-700' },
     at_laydown: { label: 'Laydown', color: 'bg-cyan-100 text-cyan-700' },
     at_site: { label: 'Al Sito', color: 'bg-blue-100 text-blue-700' },
+    erected_ongoing: { label: 'In Erezione', color: 'bg-lime-100 text-lime-700' },
     erected: { label: 'Eretto', color: 'bg-emerald-100 text-emerald-700' }
   };
   const config = configs[status] || configs.in_production;
   return <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>{config.label}</span>;
 };
 
-// Spools Table
-const SpoolsTable = ({ spools, onEdit, onDelete }) => (
+// Spools Table - with date display
+const SpoolsTable = ({ spools, formatDate, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1045,10 +1054,11 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
           <th className="text-left p-3 font-medium">Spool</th>
           <th className="text-left p-3 font-medium">ISO</th>
           <th className="text-center p-3 font-medium">Ø</th>
+          <th className="text-center p-3 font-medium">Spess.</th>
+          <th className="text-center p-3 font-medium">Mat.</th>
           <th className="text-center p-3 font-medium">Peso</th>
           <th className="text-center p-3 font-medium">Stato</th>
           <th className="text-center p-3 font-medium">Shipment</th>
-          <th className="text-center p-3 font-medium">IR</th>
           <th className="text-center p-3 font-medium">Laydown</th>
           <th className="text-center p-3 font-medium">To Site</th>
           <th className="text-center p-3 font-medium">Erected</th>
@@ -1057,7 +1067,7 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
       </thead>
       <tbody>
         {spools.length === 0 ? (
-          <tr><td colSpan={11} className="p-8 text-center text-gray-400">Nessuno spool trovato</td></tr>
+          <tr><td colSpan={12} className="p-8 text-center text-gray-400">Nessuno spool trovato</td></tr>
         ) : spools.map(spool => (
           <tr key={spool.id} className="border-t hover:bg-gray-50">
             <td className="p-3">
@@ -1066,13 +1076,20 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
             </td>
             <td className="p-3 text-xs text-gray-600">{spool.iso_number}</td>
             <td className="p-3 text-center">{spool.diameter_inch}"</td>
+            <td className="p-3 text-center text-xs">{spool.thickness_mm || '—'}</td>
+            <td className="p-3 text-center text-xs font-mono">{spool.material_code || '—'}</td>
             <td className="p-3 text-center">{spool.weight_kg?.toFixed(1)} kg</td>
             <td className="p-3 text-center"><SpoolStatusBadge status={spool.site_status} /></td>
-            <td className="p-3 text-center text-xs">{spool.shipment_date ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.laydown_arrival ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{spool.erected ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{formatDate(spool.shipment_date)}</td>
+            <td className="p-3 text-center text-xs">{formatDate(spool.laydown_arrival)}</td>
+            <td className="p-3 text-center text-xs">{formatDate(spool.to_site)}</td>
+            <td className="p-3 text-center text-xs">
+              {spool.erected_ongoing && !spool.erected ? (
+                <span className="text-lime-600" title={`In corso: ${formatDate(spool.erected_ongoing)}`}>🔄 {formatDate(spool.erected_ongoing)}</span>
+              ) : (
+                formatDate(spool.erected)
+              )}
+            </td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(spool)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
               <button onClick={() => onDelete(spool.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
@@ -1084,8 +1101,8 @@ const SpoolsTable = ({ spools, onEdit, onDelete }) => (
   </div>
 );
 
-// Supports Table
-const SupportsTable = ({ supports, onEdit, onDelete }) => (
+// Supports Table - with date display
+const SupportsTable = ({ supports, formatDate, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1111,9 +1128,9 @@ const SupportsTable = ({ supports, onEdit, onDelete }) => (
             <td className="p-3 text-xs text-gray-600">{sup.iso_number}</td>
             <td className="p-3 text-center text-xs text-blue-600 font-mono">{sup.full_spool_no?.split('-').pop()}</td>
             <td className="p-3 text-center">{sup.weight_kg?.toFixed(2)} kg</td>
-            <td className="p-3 text-center text-xs">{sup.ir_number ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{sup.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{sup.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">{sup.ir_number || '—'}</td>
+            <td className="p-3 text-center text-xs">{formatDate(sup.delivered_to_site)}</td>
+            <td className="p-3 text-center text-xs">{formatDate(sup.assembly_date)}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(sup)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
               <button onClick={() => onDelete(sup.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
@@ -1125,8 +1142,8 @@ const SupportsTable = ({ supports, onEdit, onDelete }) => (
   </div>
 );
 
-// Flanges Table
-const FlangesTable = ({ flanges, onEdit, onDelete }) => (
+// Flanges Table - with date display and ident codes
+const FlangesTable = ({ flanges, formatDate, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
       <thead className="bg-gray-100">
@@ -1134,10 +1151,10 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
           <th className="text-left p-3 font-medium">Tag</th>
           <th className="text-left p-3 font-medium">ISO</th>
           <th className="text-center p-3 font-medium">Type</th>
-          <th className="text-center p-3 font-medium">Parts</th>
           <th className="text-center p-3 font-medium">Ø / Rating</th>
           <th className="text-center p-3 font-medium">Gasket</th>
           <th className="text-center p-3 font-medium">Bolts</th>
+          <th className="text-center p-3 font-medium">Ident</th>
           <th className="text-center p-3 font-medium">Delivered</th>
           <th className="text-center p-3 font-medium">Assembly</th>
           <th className="text-center p-3 font-medium">Azioni</th>
@@ -1151,16 +1168,19 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
             <td className="p-3 font-mono text-xs font-medium text-amber-700">{fl.flange_tag}</td>
             <td className="p-3 text-xs text-gray-600">{fl.iso_number}</td>
             <td className="p-3 text-center"><span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">{fl.flange_type}</span></td>
-            <td className="p-3 text-center text-xs">
-              <span className="text-blue-600">{fl.first_part_code?.split('-').pop()}</span>
-              <span className="text-gray-400 mx-1">↔</span>
-              <span className="text-blue-600">{fl.second_part_code?.split('-').pop()}</span>
-            </td>
             <td className="p-3 text-center text-xs">{fl.diameter_inch}" / {fl.pressure_rating}</td>
             <td className="p-3 text-center text-xs font-mono">{fl.gasket_code}</td>
             <td className="p-3 text-center text-xs"><span className="font-mono">{fl.bolt_code}</span> <span className="text-gray-400">×{fl.bolt_qty}</span></td>
-            <td className="p-3 text-center text-xs">{fl.delivered_to_site ? <span className="text-green-600">✓</span> : '—'}</td>
-            <td className="p-3 text-center text-xs">{fl.assembly_date ? <span className="text-green-600">✓</span> : '—'}</td>
+            <td className="p-3 text-center text-xs">
+              {(fl.ident_code_1 || fl.ident_code_2) ? (
+                <div className="flex flex-col gap-0.5">
+                  {fl.ident_code_1 && <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px]">{fl.ident_code_1} ×{fl.ident_qty_1 || 1}</span>}
+                  {fl.ident_code_2 && <span className="px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded text-[10px]">{fl.ident_code_2} ×{fl.ident_qty_2 || 1}</span>}
+                </div>
+              ) : '—'}
+            </td>
+            <td className="p-3 text-center text-xs">{formatDate(fl.delivered_to_site)}</td>
+            <td className="p-3 text-center text-xs">{formatDate(fl.assembly_date)}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(fl)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
               <button onClick={() => onDelete(fl.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
@@ -1173,7 +1193,7 @@ const FlangesTable = ({ flanges, onEdit, onDelete }) => (
 );
 
 // Welds Table with Detail Modal
-const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
+const WeldsTable = ({ welds, spools, formatDate, onEdit, onDelete }) => {
   const [viewingWeld, setViewingWeld] = useState(null);
   
   const getSpoolDetails = (fullSpoolNo) => {
@@ -1187,6 +1207,7 @@ const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
       at_laydown: { label: 'Laydown', color: 'bg-blue-100 text-blue-700' },
       ir_issued: { label: 'IR Emesso', color: 'bg-orange-100 text-orange-700' },
       at_site: { label: 'Al Sito', color: 'bg-purple-100 text-purple-700' },
+      erected_ongoing: { label: 'In Erezione', color: 'bg-lime-100 text-lime-700' },
       erected: { label: 'Eretto', color: 'bg-green-100 text-green-700' }
     };
     const config = configs[status] || configs.in_production;
@@ -1245,8 +1266,8 @@ const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
                     </button>
                   )}
                 </td>
-                <td className="p-3 text-center text-xs">{w.fitup_date ? <span className="text-green-600">✓</span> : '—'}</td>
-                <td className="p-3 text-center text-xs">{w.weld_date ? <span className="text-green-600">✓</span> : '—'}</td>
+                <td className="p-3 text-center text-xs">{formatDate(w.fitup_date)}</td>
+                <td className="p-3 text-center text-xs">{formatDate(w.weld_date)}</td>
                 <td className="p-3 text-center">
                   <button onClick={() => onEdit(w)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
                   <button onClick={() => onDelete(w.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
@@ -1327,9 +1348,9 @@ const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
                       <div><span className="text-gray-500">Diametro:</span><br/><span className="font-medium">{spool1.diameter_inch}"</span></div>
                       <div><span className="text-gray-500">Peso:</span><br/><span className="font-medium">{spool1.weight_kg?.toFixed(1)} kg</span></div>
                       <div><span className="text-gray-500">Service Class:</span><br/><span className="font-medium">{spool1.service_class || '-'}</span></div>
-                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{spool1.shipment_date || '-'}</span></div>
+                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{formatDate(spool1.shipment_date)}</span></div>
                       <div><span className="text-gray-500">IR:</span><br/><span className="font-medium">{spool1.ir_number || '-'}</span></div>
-                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{spool1.erected || '-'}</span></div>
+                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{formatDate(spool1.erected)}</span></div>
                     </div>
                   </div>
                 ) : (
@@ -1353,9 +1374,9 @@ const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
                       <div><span className="text-gray-500">Diametro:</span><br/><span className="font-medium">{spool2.diameter_inch}"</span></div>
                       <div><span className="text-gray-500">Peso:</span><br/><span className="font-medium">{spool2.weight_kg?.toFixed(1)} kg</span></div>
                       <div><span className="text-gray-500">Service Class:</span><br/><span className="font-medium">{spool2.service_class || '-'}</span></div>
-                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{spool2.shipment_date || '-'}</span></div>
+                      <div><span className="text-gray-500">Shipment:</span><br/><span className="font-medium">{formatDate(spool2.shipment_date)}</span></div>
                       <div><span className="text-gray-500">IR:</span><br/><span className="font-medium">{spool2.ir_number || '-'}</span></div>
-                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{spool2.erected || '-'}</span></div>
+                      <div><span className="text-gray-500">Erected:</span><br/><span className="font-medium">{formatDate(spool2.erected)}</span></div>
                     </div>
                   </div>
                 ) : (
@@ -1369,11 +1390,11 @@ const WeldsTable = ({ welds, spools, onEdit, onDelete }) => {
               <div className="grid grid-cols-2 gap-4">
                 <div className={`rounded-lg p-4 border ${viewingWeld.fitup_date ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}>
                   <div className="text-sm text-gray-500">Fitup Date</div>
-                  <div className="font-medium text-lg">{viewingWeld.fitup_date || 'Non eseguito'}</div>
+                  <div className="font-medium text-lg">{formatDate(viewingWeld.fitup_date) !== '—' ? formatDate(viewingWeld.fitup_date) : 'Non eseguito'}</div>
                 </div>
                 <div className={`rounded-lg p-4 border ${viewingWeld.weld_date ? 'bg-green-50 border-green-200' : 'bg-gray-50'}`}>
                   <div className="text-sm text-gray-500">Weld Date</div>
-                  <div className="font-medium text-lg">{viewingWeld.weld_date || 'Non eseguito'}</div>
+                  <div className="font-medium text-lg">{formatDate(viewingWeld.weld_date) !== '—' ? formatDate(viewingWeld.weld_date) : 'Non eseguito'}</div>
                 </div>
               </div>
             </div>
@@ -1574,9 +1595,61 @@ const DiffModal = ({ diffs, selectedDiffs, setSelectedDiffs, onApply, onClose, i
   </div>
 );
 
-// Add Modal (Inserimento Manuale)
+// Add Modal (Inserimento Manuale) - with autocomplete
 const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
   const [formData, setFormData] = useState({});
+  const [isoSearch, setIsoSearch] = useState('');
+  const [showIsoDropdown, setShowIsoDropdown] = useState(false);
+  const [spoolSearch, setSpoolSearch] = useState('');
+  const [showSpoolDropdown, setShowSpoolDropdown] = useState(false);
+  
+  // Filtered lists for autocomplete
+  const filteredIsos = useMemo(() => {
+    if (!isoSearch) return isometrics.slice(0, 10);
+    const search = isoSearch.toLowerCase();
+    return isometrics.filter(iso => iso.iso_number.toLowerCase().includes(search)).slice(0, 10);
+  }, [isometrics, isoSearch]);
+  
+  const filteredSpools = useMemo(() => {
+    if (!spoolSearch) return spools.slice(0, 10);
+    const search = spoolSearch.toLowerCase();
+    return spools.filter(s => s.full_spool_no.toLowerCase().includes(search)).slice(0, 10);
+  }, [spools, spoolSearch]);
+  
+  // Auto-populate weld fields from spools
+  const autoPopulateWeldFromSpools = (spool1FullNo, spool2FullNo) => {
+    const spool1 = spools.find(s => s.full_spool_no === spool1FullNo);
+    const spool2 = spools.find(s => s.full_spool_no === spool2FullNo);
+    
+    const updates = {};
+    
+    // ISO Number - prefer spool1
+    if (spool1?.iso_number) updates.iso_number = spool1.iso_number;
+    else if (spool2?.iso_number) updates.iso_number = spool2.iso_number;
+    
+    // Diameter - smaller of the two if different
+    if (spool1?.diameter_inch && spool2?.diameter_inch) {
+      updates.diameter_inch = Math.min(spool1.diameter_inch, spool2.diameter_inch);
+    } else {
+      updates.diameter_inch = spool1?.diameter_inch || spool2?.diameter_inch;
+    }
+    
+    // Thickness - prefer spool1
+    if (spool1?.thickness_mm) updates.thickness_mm = spool1.thickness_mm;
+    else if (spool2?.thickness_mm) updates.thickness_mm = spool2.thickness_mm;
+    
+    // Materials
+    updates.first_material_code = spool1?.material_code || '';
+    updates.second_material_code = spool2?.material_code || '';
+    
+    // Detect dissimilar
+    if (updates.first_material_code && updates.second_material_code && 
+        updates.first_material_code !== updates.second_material_code) {
+      updates.is_dissimilar = true;
+    }
+    
+    return updates;
+  };
 
   const handleSubmit = () => {
     if (type === 'spool') {
@@ -1608,7 +1681,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white">
+        <div className="p-6 border-b sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-gray-800">{titles[type]}</h2>
         </div>
         <div className="p-6 space-y-4">
@@ -1616,14 +1689,35 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
             <>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Spool No *</label><input type="text" value={formData.full_spool_no || ''} onChange={e => setFormData({...formData, full_spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="PRJ-ISO001-SP001" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number *</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ISO Number *</label>
+                  <input 
+                    type="text" 
+                    value={formData.iso_number || ''} 
+                    onChange={e => { setFormData({...formData, iso_number: e.target.value}); setIsoSearch(e.target.value); }}
+                    onFocus={() => setShowIsoDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowIsoDropdown(false), 200)}
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                  {showIsoDropdown && filteredIsos.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {filteredIsos.map(iso => (
+                        <div key={iso.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm" onClick={() => { setFormData({...formData, iso_number: iso.iso_number}); setShowIsoDropdown(false); }}>
+                          {iso.iso_number}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool No *</label><input type="text" value={formData.spool_no || ''} onChange={e => setFormData({...formData, spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="SP001" /></div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="grid grid-cols-4 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Ø (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spess. (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Lunghezza (m)</label><input type="number" step="0.01" value={formData.length_m || ''} onChange={e => setFormData({...formData, length_m: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Lung. (m)</label><input type="number" step="0.01" value={formData.length_m || ''} onChange={e => setFormData({...formData, length_m: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
+              <div><label className="block text-sm font-medium text-gray-700 mb-1">Material Code</label><input type="text" value={formData.material_code || ''} onChange={e => setFormData({...formData, material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="A106-B" /></div>
             </>
           )}
           {type === 'support' && (
@@ -1633,12 +1727,46 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Support Mark *</label><input type="text" value={formData.support_mark || ''} onChange={e => setFormData({...formData, support_mark: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="MG02-B" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Spool No (collegamento)</label>
-                <select value={formData.full_spool_no || ''} onChange={e => setFormData({...formData, full_spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                  <option value="">-- Seleziona Spool --</option>
-                  {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
-                </select>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label>
+                <input 
+                  type="text" 
+                  value={formData.iso_number || ''} 
+                  onChange={e => { setFormData({...formData, iso_number: e.target.value}); setIsoSearch(e.target.value); }}
+                  onFocus={() => setShowIsoDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowIsoDropdown(false), 200)}
+                  className="w-full px-3 py-2 border rounded-lg" 
+                />
+                {showIsoDropdown && filteredIsos.length > 0 && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {filteredIsos.map(iso => (
+                      <div key={iso.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm" onClick={() => { setFormData({...formData, iso_number: iso.iso_number}); setShowIsoDropdown(false); }}>
+                        {iso.iso_number}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Spool No (collegamento)</label>
+                <input 
+                  type="text" 
+                  value={formData.full_spool_no || ''} 
+                  onChange={e => { setFormData({...formData, full_spool_no: e.target.value}); setSpoolSearch(e.target.value); }}
+                  onFocus={() => setShowSpoolDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowSpoolDropdown(false), 200)}
+                  placeholder="Cerca spool..."
+                  className="w-full px-3 py-2 border rounded-lg" 
+                />
+                {showSpoolDropdown && filteredSpools.length > 0 && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {filteredSpools.map(s => (
+                      <div key={s.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm font-mono" onClick={() => { setFormData({...formData, full_spool_no: s.full_spool_no}); setShowSpoolDropdown(false); }}>
+                        {s.full_spool_no}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -1646,7 +1774,26 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
             <>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Flange Tag *</label><input type="text" value={formData.flange_tag || ''} onChange={e => setFormData({...formData, flange_tag: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="HF100001" /></div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label>
+                  <input 
+                    type="text" 
+                    value={formData.iso_number || ''} 
+                    onChange={e => { setFormData({...formData, iso_number: e.target.value}); setIsoSearch(e.target.value); }}
+                    onFocus={() => setShowIsoDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowIsoDropdown(false), 200)}
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                  {showIsoDropdown && filteredIsos.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {filteredIsos.map(iso => (
+                        <div key={iso.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm" onClick={() => { setFormData({...formData, iso_number: iso.iso_number}); setShowIsoDropdown(false); }}>
+                          {iso.iso_number}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                   <select value={formData.flange_type || ''} onChange={e => setFormData({...formData, flange_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
                     <option value="">--</option><option value="SP">SP</option><option value="SM">SM</option><option value="SE">SE</option><option value="SV">SV</option><option value="SI">SI</option>
@@ -1662,6 +1809,17 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Bolt Code</label><input type="text" value={formData.bolt_code || ''} onChange={e => setFormData({...formData, bolt_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Bolt Qty</label><input type="number" value={formData.bolt_qty || ''} onChange={e => setFormData({...formData, bolt_qty: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="border-t pt-4 mt-2">
+                <p className="text-sm font-medium text-gray-700 mb-2">Ident Codes (opzionali)</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-xs text-gray-500 mb-1">Ident Code 1</label><input type="text" value={formData.ident_code_1 || ''} onChange={e => setFormData({...formData, ident_code_1: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 1</label><input type="number" value={formData.ident_qty_1 || ''} onChange={e => setFormData({...formData, ident_qty_1: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Ident Code 2</label><input type="text" value={formData.ident_code_2 || ''} onChange={e => setFormData({...formData, ident_code_2: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 2</label><input type="number" value={formData.ident_qty_2 || ''} onChange={e => setFormData({...formData, ident_qty_2: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </div>
             </>
           )}
           {type === 'weld' && (
@@ -1670,19 +1828,108 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Full Weld No *</label><input type="text" value={formData.full_weld_no || ''} onChange={e => setFormData({...formData, full_weld_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="PRJ-ISO001-W001" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Weld No *</label><input type="text" value={formData.weld_no || ''} onChange={e => setFormData({...formData, weld_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="W001" /></div>
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">ISO Number</label>
+                <input 
+                  type="text" 
+                  value={formData.iso_number || ''} 
+                  onChange={e => { setFormData({...formData, iso_number: e.target.value}); setIsoSearch(e.target.value); }}
+                  onFocus={() => setShowIsoDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowIsoDropdown(false), 200)}
+                  className="w-full px-3 py-2 border rounded-lg" 
+                />
+                {showIsoDropdown && filteredIsos.length > 0 && (
+                  <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {filteredIsos.map(iso => (
+                      <div key={iso.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm" onClick={() => { setFormData({...formData, iso_number: iso.iso_number}); setShowIsoDropdown(false); }}>
+                        {iso.iso_number}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool 1</label>
-                  <select value={formData.full_first_spool || ''} onChange={e => setFormData({...formData, full_first_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                    <option value="">--</option>
-                    {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
-                  </select>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Spool 1</label>
+                  <input 
+                    type="text" 
+                    value={formData.full_first_spool || ''} 
+                    onChange={e => { 
+                      const newVal = e.target.value;
+                      setFormData({...formData, full_first_spool: newVal}); 
+                      setSpoolSearch(newVal); 
+                    }}
+                    onFocus={() => setShowSpoolDropdown(true)}
+                    onBlur={() => setTimeout(() => {
+                      setShowSpoolDropdown(false);
+                      // Auto-populate when both spools selected
+                      if (formData.full_first_spool && formData.full_second_spool) {
+                        const updates = autoPopulateWeldFromSpools(formData.full_first_spool, formData.full_second_spool);
+                        setFormData(prev => ({...prev, ...updates}));
+                      }
+                    }, 200)}
+                    placeholder="Cerca spool..."
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                  {showSpoolDropdown && filteredSpools.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {filteredSpools.map(s => (
+                        <div key={s.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono" onClick={() => { 
+                          const newData = {...formData, full_first_spool: s.full_spool_no};
+                          if (newData.full_second_spool) {
+                            const updates = autoPopulateWeldFromSpools(s.full_spool_no, newData.full_second_spool);
+                            setFormData({...newData, ...updates});
+                          } else {
+                            setFormData(newData);
+                          }
+                          setShowSpoolDropdown(false); 
+                        }}>
+                          {s.full_spool_no}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Spool 2</label>
-                  <select value={formData.full_second_spool || ''} onChange={e => setFormData({...formData, full_second_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
-                    <option value="">--</option>
-                    {spools.map(s => <option key={s.id} value={s.full_spool_no}>{s.full_spool_no}</option>)}
-                  </select>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Spool 2</label>
+                  <input 
+                    type="text" 
+                    value={formData.full_second_spool || ''} 
+                    onChange={e => { 
+                      const newVal = e.target.value;
+                      setFormData({...formData, full_second_spool: newVal}); 
+                      setSpoolSearch(newVal); 
+                    }}
+                    onFocus={() => setShowSpoolDropdown(true)}
+                    onBlur={() => setTimeout(() => {
+                      setShowSpoolDropdown(false);
+                      // Auto-populate when both spools selected
+                      if (formData.full_first_spool && formData.full_second_spool) {
+                        const updates = autoPopulateWeldFromSpools(formData.full_first_spool, formData.full_second_spool);
+                        setFormData(prev => ({...prev, ...updates}));
+                      }
+                    }, 200)}
+                    placeholder="Cerca spool..."
+                    className="w-full px-3 py-2 border rounded-lg" 
+                  />
+                  {showSpoolDropdown && filteredSpools.length > 0 && (
+                    <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {filteredSpools.map(s => (
+                        <div key={s.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono" onClick={() => { 
+                          const newData = {...formData, full_second_spool: s.full_spool_no};
+                          if (newData.full_first_spool) {
+                            const updates = autoPopulateWeldFromSpools(newData.full_first_spool, s.full_spool_no);
+                            setFormData({...newData, ...updates});
+                          } else {
+                            setFormData(newData);
+                          }
+                          setShowSpoolDropdown(false); 
+                        }}>
+                          {s.full_spool_no}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
@@ -1693,6 +1940,10 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                 </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Ø (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Thick (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Mat. Spool 1</label><input type="text" value={formData.first_material_code || ''} onChange={e => setFormData({...formData, first_material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Mat. Spool 2</label><input type="text" value={formData.second_material_code || ''} onChange={e => setFormData({...formData, second_material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
               </div>
               <div><label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.is_dissimilar || false} onChange={e => setFormData({...formData, is_dissimilar: e.target.checked})} className="w-4 h-4" /><span className="text-sm text-gray-700">Saldatura Dissimile</span></label></div>
             </>
@@ -1718,6 +1969,7 @@ const EditModal = ({ item, type, onSave, onClose }) => {
       updates.ir_number = formData.ir_number || null;
       updates.laydown_arrival = formData.laydown_arrival || null;
       updates.to_site = formData.to_site || null;
+      updates.erected_ongoing = formData.erected_ongoing || null;
       updates.erected = formData.erected || null;
     } else if (type === 'support') {
       updates.ir_number = formData.ir_number || null;
@@ -1727,6 +1979,10 @@ const EditModal = ({ item, type, onSave, onClose }) => {
       updates.ir_number = formData.ir_number || null;
       updates.delivered_to_site = formData.delivered_to_site || null;
       updates.assembly_date = formData.assembly_date || null;
+      updates.ident_code_1 = formData.ident_code_1 || null;
+      updates.ident_qty_1 = formData.ident_qty_1 || null;
+      updates.ident_code_2 = formData.ident_code_2 || null;
+      updates.ident_qty_2 = formData.ident_qty_2 || null;
     } else if (type === 'weld') {
       updates.fitup_date = formData.fitup_date || null;
       updates.weld_date = formData.weld_date || null;
@@ -1753,7 +2009,10 @@ const EditModal = ({ item, type, onSave, onClose }) => {
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Laydown Arrival</label><input type="date" value={formData.laydown_arrival || ''} onChange={e => setFormData({...formData, laydown_arrival: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">To Site</label><input type="date" value={formData.to_site || ''} onChange={e => setFormData({...formData, to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               </div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Erected</label><input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">In Erezione (ongoing)</label><input type="date" value={formData.erected_ongoing || ''} onChange={e => setFormData({...formData, erected_ongoing: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+                <div><label className="block text-sm font-medium text-gray-700 mb-1">Erected</label><input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              </div>
             </>
           )}
           {type === 'support' && (
@@ -1768,6 +2027,17 @@ const EditModal = ({ item, type, onSave, onClose }) => {
               <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="border-t pt-4 mt-2">
+                <p className="text-sm font-medium text-gray-700 mb-2">Ident Codes</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><label className="block text-xs text-gray-500 mb-1">Ident Code 1</label><input type="text" value={formData.ident_code_1 || ''} onChange={e => setFormData({...formData, ident_code_1: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 1</label><input type="number" value={formData.ident_qty_1 || ''} onChange={e => setFormData({...formData, ident_qty_1: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Ident Code 2</label><input type="text" value={formData.ident_code_2 || ''} onChange={e => setFormData({...formData, ident_code_2: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 2</label><input type="number" value={formData.ident_qty_2 || ''} onChange={e => setFormData({...formData, ident_qty_2: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </div>
             </>
           )}
           {type === 'weld' && (
@@ -1780,230 +2050,6 @@ const EditModal = ({ item, type, onSave, onClose }) => {
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
           <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// Excel Preview Modal - Mostra struttura colonne richieste
-// ============================================================================
-
-const ExcelPreviewModal = ({ type, onClose, onDownload }) => {
-  const structures = {
-    spools: {
-      title: '📦 Struttura Excel - Spools',
-      description: 'Importa gli spools con tracking delle fasi di produzione e consegna.',
-      columns: [
-        { name: 'Spool_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
-        { name: 'Full_Spool_No', required: true, description: 'Codice completo spool', example: 'PRJ-ISO001-SP001' },
-        { name: 'ISO_Number', required: true, description: 'Numero isometrico', example: 'PRJ-ISO001' },
-        { name: 'Spool_No', required: true, description: 'Numero spool breve', example: 'SP001' },
-        { name: 'Service_class', required: false, description: 'Classe di servizio', example: 'HC' },
-        { name: 'Service_Cat', required: false, description: 'Categoria servizio', example: 'CAT1' },
-        { name: 'Spool_diameter', required: false, description: 'Diametro in pollici', example: '4' },
-        { name: 'Spool_Weight', required: false, description: 'Peso in kg', example: '25.5' },
-        { name: 'Spool_Length', required: false, description: 'Lunghezza in metri', example: '2.5' },
-        { name: 'SHIPMENT_DATE', required: false, description: 'Data spedizione', example: '2025-01-15' },
-        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-001' },
-        { name: 'IR_Number_Date', required: false, description: 'Data emissione IR', example: '2025-01-16' },
-        { name: 'LAYDOWN_ARRIVAL', required: false, description: 'Arrivo in laydown', example: '2025-01-18' },
-        { name: 'TO_SITE', required: false, description: 'Arrivo in cantiere', example: '2025-01-20' },
-        { name: 'ERECTED', required: false, description: 'Data montaggio', example: '2025-01-25' },
-        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
-      ]
-    },
-    supports: {
-      title: '🔩 Struttura Excel - Supports',
-      description: 'Importa i supporti con tracking consegna e montaggio.',
-      columns: [
-        { name: 'Support_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
-        { name: 'Support_Tag_No', required: true, description: 'Tag supporto univoco', example: 'SUP-001' },
-        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
-        { name: 'FullTagNo', required: false, description: 'Tag completo', example: 'PRJ-SUP-001' },
-        { name: 'Support_Name', required: false, description: 'Nome descrittivo', example: 'Spring Hanger' },
-        { name: 'Support_Mark', required: true, description: 'Codice tipo supporto (per inventario)', example: 'MG02-B' },
-        { name: 'Full_Spool_No', required: false, description: 'Spool collegato', example: 'PRJ-ISO001-SP001' },
-        { name: 'Weight', required: false, description: 'Peso in kg', example: '5.5' },
-        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-002' },
-        { name: 'IR_Number_Date', required: false, description: 'Data IR', example: '2025-01-16' },
-        { name: 'Delivered to Site', required: false, description: 'Data consegna', example: '2025-01-20' },
-        { name: 'Delivered to', required: false, description: 'Destinatario', example: 'Area 100' },
-        { name: 'Assembly_Date', required: false, description: 'Data montaggio', example: '2025-01-25' },
-        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
-      ]
-    },
-    flanges: {
-      title: '⚙️ Struttura Excel - Flanged Joints',
-      description: 'Importa i giunti flangiati con materiali associati (guarnizioni, bulloni, isolamento).',
-      columns: [
-        { name: 'Flange_ID', required: false, description: 'ID univoco (opzionale)', example: '1' },
-        { name: 'Flange_Tag', required: true, description: 'Tag flangia univoco', example: 'HF109901' },
-        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
-        { name: 'Flange_Type', required: false, description: 'Tipo: SP/SM/SE/SV/SI', example: 'SP' },
-        { name: 'First_Part_Code', required: false, description: 'Codice primo componente', example: 'PRJ-ISO001-SP001' },
-        { name: 'Second_Part_Code', required: false, description: 'Codice secondo componente', example: 'PRJ-ISO001-SP002' },
-        { name: 'Flange_Diameter', required: false, description: 'Diametro in pollici', example: '8' },
-        { name: 'Pressure_Rating', required: false, description: 'Classe pressione', example: '150#' },
-        { name: 'Critical_Flange', required: false, description: 'Classe critica (L1/L2)', example: 'L1' },
-        { name: 'Gasket_Code', required: false, description: 'Codice guarnizione', example: 'GSK-001' },
-        { name: 'Gasket_Qty', required: false, description: 'Quantità guarnizioni', example: '1' },
-        { name: 'Bolt_Code', required: false, description: 'Codice bulloneria', example: 'BLT-001' },
-        { name: 'Bolt_Qty', required: false, description: 'Quantità bulloni', example: '8' },
-        { name: 'Insulation_Code', required: false, description: 'Codice isolamento', example: 'INS-001' },
-        { name: 'Insulation_Qty', required: false, description: 'Quantità isolamento', example: '1.5' },
-        { name: 'Insulation_Alt_Code', required: false, description: 'Codice isolamento alternativo', example: 'INS-002' },
-        { name: 'Insulation_Alt_Qty', required: false, description: 'Quantità alt.', example: '0.5' },
-        { name: 'IR_Number', required: false, description: 'Numero IR', example: 'IR-003' },
-        { name: 'IR_Number_Date', required: false, description: 'Data IR', example: '2025-01-16' },
-        { name: 'Delivered to Site', required: false, description: 'Data consegna', example: '2025-01-20' },
-        { name: 'Delivered to', required: false, description: 'Destinatario', example: 'Area 100' },
-        { name: 'Assembly_Date', required: false, description: 'Data assemblaggio', example: '2025-01-25' },
-        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
-      ]
-    },
-    welds: {
-      title: '🔥 Struttura Excel - Welds',
-      description: 'Importa le saldature con collegamento agli spools e tracking fitup/saldatura.',
-      columns: [
-        { name: 'Full_Weld_No', required: true, description: 'Codice completo saldatura', example: 'PRJ-ISO001-W001' },
-        { name: 'Weld_No', required: true, description: 'Numero saldatura breve', example: 'W001' },
-        { name: 'ISO_Number', required: false, description: 'Numero isometrico', example: 'PRJ-ISO001' },
-        { name: 'First_Material_Code', required: false, description: 'Materiale primo componente', example: 'A106-B' },
-        { name: 'Second_Material_Code', required: false, description: 'Materiale secondo componente', example: 'A106-B' },
-        { name: 'Full_First_Spool', required: false, description: 'Primo spool', example: 'PRJ-ISO001-SP001' },
-        { name: 'Full_Second_Spool', required: false, description: 'Secondo spool', example: 'PRJ-ISO001-SP002' },
-        { name: 'Weld_Type', required: false, description: 'Tipo: BW/SW/FW', example: 'BW' },
-        { name: 'Weld_Cat', required: false, description: 'Categoria saldatura', example: 'CAT1' },
-        { name: 'Dia_Inch', required: false, description: 'Diametro in pollici', example: '4' },
-        { name: 'Thickness', required: false, description: 'Spessore in mm', example: '6.02' },
-        { name: 'Dissimilar Joint', required: false, description: 'Giunto dissimile (Yes/No)', example: 'No' },
-        { name: 'Fitup_Date', required: false, description: 'Data fitup', example: '2025-01-22' },
-        { name: 'Weld_Date', required: false, description: 'Data saldatura', example: '2025-01-23' },
-        { name: 'Week_Plan', required: false, description: 'Settimana pianificata', example: 'W04' }
-      ]
-    }
-  };
-
-  const structure = structures[type];
-  if (!structure) return null;
-
-  const requiredColumns = structure.columns.filter(c => c.required);
-  const optionalColumns = structure.columns.filter(c => !c.required);
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b bg-gradient-to-r from-amber-50 to-amber-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">{structure.title}</h2>
-              <p className="text-sm text-gray-600 mt-1">{structure.description}</p>
-            </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-xl">✕</button>
-          </div>
-        </div>
-        
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Legend */}
-          <div className="flex gap-4 mb-4 text-sm">
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-red-500 rounded-full"></span>
-              Obbligatorio
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-3 h-3 bg-gray-300 rounded-full"></span>
-              Opzionale
-            </span>
-          </div>
-          
-          {/* Required Columns */}
-          {requiredColumns.length > 0 && (
-            <div className="mb-6">
-              <h3 className="font-semibold text-red-700 mb-3 flex items-center gap-2">
-                ⚠️ Colonne Obbligatorie ({requiredColumns.length})
-              </h3>
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-red-50">
-                    <tr>
-                      <th className="text-left p-3 font-medium">Nome Colonna Excel</th>
-                      <th className="text-left p-3 font-medium">Descrizione</th>
-                      <th className="text-left p-3 font-medium">Esempio</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {requiredColumns.map((col, idx) => (
-                      <tr key={idx} className="border-t">
-                        <td className="p-3 font-mono font-medium text-red-700">{col.name}</td>
-                        <td className="p-3 text-gray-600">{col.description}</td>
-                        <td className="p-3 font-mono text-xs bg-gray-50">{col.example}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          
-          {/* Optional Columns */}
-          <div>
-            <h3 className="font-semibold text-gray-700 mb-3">
-              📋 Colonne Opzionali ({optionalColumns.length})
-            </h3>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left p-3 font-medium">Nome Colonna Excel</th>
-                    <th className="text-left p-3 font-medium">Descrizione</th>
-                    <th className="text-left p-3 font-medium">Esempio</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {optionalColumns.map((col, idx) => (
-                    <tr key={idx} className="border-t hover:bg-gray-50">
-                      <td className="p-3 font-mono text-gray-700">{col.name}</td>
-                      <td className="p-3 text-gray-600">{col.description}</td>
-                      <td className="p-3 font-mono text-xs bg-gray-50">{col.example}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          
-          {/* Tips */}
-          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-800 mb-2">💡 Suggerimenti</h4>
-            <ul className="text-sm text-blue-700 space-y-1">
-              <li>• Le date devono essere nel formato <code className="bg-white px-1 rounded">YYYY-MM-DD</code> o come date Excel</li>
-              <li>• I numeri decimali usano il punto come separatore (es: 25.5)</li>
-              <li>• Le colonne possono essere in qualsiasi ordine</li>
-              <li>• Le colonne extra nel file verranno ignorate</li>
-            </ul>
-          </div>
-        </div>
-        
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-          <p className="text-sm text-gray-500">
-            Scarica il template per avere un file Excel pronto da compilare
-          </p>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">
-              Chiudi
-            </button>
-            <button 
-              onClick={() => { onDownload(type); }}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-            >
-              📥 Scarica Template
-            </button>
-          </div>
         </div>
       </div>
     </div>
