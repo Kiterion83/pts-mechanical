@@ -17,7 +17,8 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronLeft,
-  Factory
+  Factory,
+  BarChart3
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -26,7 +27,8 @@ const mainMenuItems = [
   { path: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { path: '/mto-piping', icon: Package, labelKey: 'nav.mtoPiping' },
   { path: '/project-equipment', icon: Factory, labelKey: 'nav.projectEquipment' },
-  { path: '/work-packages', icon: Wrench, labelKey: 'nav.workPackages' },
+  { path: '/work-packages', icon: Wrench, labelKey: 'nav.workPackages', exact: true },
+  { path: '/work-packages/gantt', icon: BarChart3, labelKey: 'nav.gantt' },  // AGGIUNTO: Gantt separato
   { path: '/daily-reports', icon: ClipboardList, labelKey: 'nav.dailyReports' },
   { path: '/material-requests', icon: ShoppingCart, labelKey: 'nav.materialRequests' },
 ]
@@ -103,6 +105,7 @@ export default function Sidebar({ isOpen, onClose, collapsed, onToggleCollapse }
                 <li key={item.path}>
                   <NavLink
                     to={item.path}
+                    end={item.exact}
                     onClick={onClose}
                     title={collapsed ? t(item.labelKey) : ''}
                     className={({ isActive }) => `
