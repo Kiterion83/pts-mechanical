@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
-import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
 // WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
@@ -60,6 +59,8 @@ export default function WorkPackages() {
   const [welds, setWelds] = useState([]);
   const [supports, setSupports] = useState([]);
   const [flanges, setFlanges] = useState([]);
+  const [supportSummary, setSupportSummary] = useState([]);
+  const [flangeMaterialsSummary, setFlangeMaterialsSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const [activeTab, setActiveTab] = useState('list');
@@ -157,6 +158,17 @@ export default function WorkPackages() {
       const { data: flangeData } = await supabase.from('mto_flanged_joints').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
       setFlanges(flangeData || []);
     } catch (e) { setFlanges([]); }
+    
+    // Fetch inventory summaries
+    try {
+      const { data: suppSummary } = await supabase.from('v_mto_support_summary').select('*').eq('project_id', activeProject.id);
+      setSupportSummary(suppSummary || []);
+    } catch (e) { setSupportSummary([]); }
+    
+    try {
+      const { data: flangeSummary } = await supabase.from('v_mto_flange_materials_summary').select('*').eq('project_id', activeProject.id);
+      setFlangeMaterialsSummary(flangeSummary || []);
+    } catch (e) { setFlangeMaterialsSummary([]); }
   };
 
   const calculateWPProgress = (wp) => {
@@ -321,9 +333,6 @@ export default function WorkPackages() {
           <button onClick={() => setActiveTab('list')} className={`px-6 py-3 text-sm font-medium ${activeTab === 'list' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
             📋 Lista
           </button>
-          <button onClick={() => setActiveTab('gantt')} className={`px-6 py-3 text-sm font-medium ${activeTab === 'gantt' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
-            📊 Gantt
-          </button>
         </div>
 
         {activeTab === 'list' && (
@@ -404,12 +413,6 @@ export default function WorkPackages() {
             </div>
           </>
         )}
-
-        {activeTab === 'gantt' && (
-          <div className="p-4">
-            <WorkPackagesGantt workPackages={filteredWPs || []} squads={squads || []} />
-          </div>
-        )}
       </div>
 
       {/* Modals */}
@@ -422,6 +425,8 @@ export default function WorkPackages() {
           welds={welds}
           supports={supports}
           flanges={flanges}
+          supportSummary={supportSummary}
+          flangeMaterialsSummary={flangeMaterialsSummary}
           projectId={activeProject.id}
           onClose={() => setShowCreateWPP(false)}
           onSuccess={() => { setShowCreateWPP(false); fetchAllData(); }}
@@ -812,7 +817,7 @@ const ResourceConflictModal = ({ conflicts, squadInfo, newWPDates, onSplitResour
 // CREATE WP-P WIZARD (5 steps - Step 6 removed per Feature #4)
 // ============================================================================
 
-const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supports, flanges, projectId, onClose, onSuccess }) => {
+const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supports, flanges, supportSummary, flangeMaterialsSummary, projectId, onClose, onSuccess }) => {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   
@@ -832,6 +837,9 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
   // Filters
   const [weldSearch, setWeldSearch] = useState('');
   const [weldFilterIso, setWeldFilterIso] = useState('');
+  
+  // Weld detail modal
+  const [viewingWeld, setViewingWeld] = useState(null);
 
   // Generate next code
   const nextCode = useMemo(() => {
@@ -1075,9 +1083,17 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           {/* Step 1: Info Base */}
           {step === 1 && (
             <div className="space-y-4 max-w-2xl">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label>
-                <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label>
+                  <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Revisione</label>
+                  <div className="w-full px-3 py-2 border rounded-lg bg-purple-50 text-purple-700 font-medium">
+                    Rev.0 <span className="text-xs text-purple-500 ml-2">(nuova creazione)</span>
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
@@ -1175,11 +1191,12 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                       <th className="text-center p-2">Ø</th>
                       <th className="text-center p-2">Tipo</th>
                       <th className="text-center p-2">Dissimile</th>
+                      <th className="w-10 p-2"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredWelds.length === 0 ? (
-                      <tr><td colSpan={7} className="p-4 text-center text-gray-400">Nessuna saldatura disponibile</td></tr>
+                      <tr><td colSpan={8} className="p-4 text-center text-gray-400">Nessuna saldatura disponibile</td></tr>
                     ) : filteredWelds.map(w => {
                       const spool1 = spools.find(s => s.id === w.spool_1_id);
                       const spool2 = spools.find(s => s.id === w.spool_2_id);
@@ -1220,6 +1237,15 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                           <td className="p-2 text-center">{w.diameter_inch}"</td>
                           <td className="p-2 text-center"><span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">{w.weld_type}</span></td>
                           <td className="p-2 text-center">{w.is_dissimilar ? <span className="text-yellow-600">⚠️</span> : '-'}</td>
+                          <td className="p-2 text-center">
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setViewingWeld({...w, spool1, spool2}); }}
+                              className="p-1.5 hover:bg-blue-100 rounded text-blue-600"
+                              title="Dettagli saldatura"
+                            >
+                              🔍
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1282,14 +1308,30 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                         <th className="w-10 p-2"></th>
                         <th className="text-left p-2 font-medium">TAG</th>
                         <th className="text-left p-2 font-medium">Support Mark</th>
+                        <th className="text-left p-2 font-medium">Spool</th>
                         <th className="text-left p-2 font-medium">ISO</th>
                         <th className="text-center p-2 font-medium">Peso (kg)</th>
+                        <th className="text-center p-2 font-medium bg-blue-50">Qty Nec.</th>
+                        <th className="text-center p-2 font-medium bg-green-50">Qty Disp.</th>
                       </tr>
                     </thead>
                     <tbody>
                       {selectedSupports.map(supportId => {
                         const support = supports.find(s => s.id === supportId);
                         if (!support) return null;
+                        
+                        // Get inventory info for this support mark
+                        const summaryItem = supportSummary?.find(s => s.support_mark === support.support_mark);
+                        const qtyNeeded = selectedSupports.filter(id => {
+                          const s = supports.find(sup => sup.id === id);
+                          return s?.support_mark === support.support_mark;
+                        }).length;
+                        const qtyAvailable = summaryItem ? (summaryItem.qty_warehouse - summaryItem.qty_delivered) : 0;
+                        const hasEnough = qtyAvailable >= qtyNeeded;
+                        
+                        // Get spool info
+                        const linkedSpool = spools.find(sp => sp.full_spool_no === support.full_spool_no);
+                        
                         return (
                           <tr key={supportId} className="border-t hover:bg-gray-50">
                             <td className="p-2 text-center">
@@ -1305,8 +1347,16 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                             <td className="p-2">
                               <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{support.support_mark}</span>
                             </td>
+                            <td className="p-2">
+                              <span className="font-mono text-xs text-blue-600">{linkedSpool?.spool_no || support.full_spool_no?.split('-').pop() || '-'}</span>
+                            </td>
                             <td className="p-2 text-xs text-gray-600">{support.iso_number}</td>
                             <td className="p-2 text-center text-xs">{support.weight_kg?.toFixed(2) || '-'}</td>
+                            <td className="p-2 text-center bg-blue-50 font-medium text-blue-700">{qtyNeeded}</td>
+                            <td className={`p-2 text-center font-medium ${hasEnough ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                              {qtyAvailable}
+                              {!hasEnough && <span className="ml-1">⚠️</span>}
+                            </td>
                           </tr>
                         );
                       })}
@@ -1342,9 +1392,22 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                         <th className="text-left p-2 font-medium">ISO</th>
                         <th className="text-center p-2 font-medium">Type</th>
                         <th className="text-center p-2 font-medium">Ø / Rating</th>
-                        <th className="text-center p-2 font-medium bg-purple-50">Gasket</th>
-                        <th className="text-center p-2 font-medium bg-gray-50">Bolts</th>
-                        <th className="text-center p-2 font-medium bg-amber-50">Ind.</th>
+                        <th className="text-center p-2 font-medium bg-purple-50" colSpan={2}>Gasket</th>
+                        <th className="text-center p-2 font-medium bg-gray-100" colSpan={2}>Bolts</th>
+                        <th className="text-center p-2 font-medium bg-amber-50" colSpan={2}>Ind.</th>
+                      </tr>
+                      <tr className="bg-gray-50 text-xs">
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th></th>
+                        <th className="p-1 bg-purple-50">Codice</th>
+                        <th className="p-1 bg-purple-100">Nec/Disp</th>
+                        <th className="p-1 bg-gray-100">Codice</th>
+                        <th className="p-1 bg-gray-200">Nec/Disp</th>
+                        <th className="p-1 bg-amber-50">Codice</th>
+                        <th className="p-1 bg-amber-100">Nec/Disp</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1354,6 +1417,41 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                         const typeColor = flange.flange_type === 'SI' ? 'bg-amber-100 text-amber-700' : 
                                           flange.flange_type === 'SE' ? 'bg-green-100 text-green-700' : 
                                           flange.flange_type === 'SV' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700';
+                        
+                        // Calculate quantities needed in this WP for each material
+                        const gasketNeeded = selectedFlanges.filter(id => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return f?.gasket_code === flange.gasket_code;
+                        }).reduce((sum, id) => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return sum + (f?.gasket_qty || 1);
+                        }, 0);
+                        
+                        const boltNeeded = selectedFlanges.filter(id => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return f?.bolt_code === flange.bolt_code;
+                        }).reduce((sum, id) => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return sum + (f?.bolt_qty || 0);
+                        }, 0);
+                        
+                        const indNeeded = selectedFlanges.filter(id => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return f?.insulation_code && f?.insulation_code === flange.insulation_code;
+                        }).reduce((sum, id) => {
+                          const f = flanges.find(fl => fl.id === id);
+                          return sum + (f?.insulation_qty || 1);
+                        }, 0);
+                        
+                        // Get available quantities from inventory
+                        const gasketSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.gasket_code && m.material_type === 'gasket');
+                        const boltSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.bolt_code && m.material_type === 'bolt');
+                        const indSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.insulation_code && m.material_type === 'insulation');
+                        
+                        const gasketAvail = gasketSummary ? (gasketSummary.qty_warehouse - (gasketSummary.qty_delivered || 0)) : 0;
+                        const boltAvail = boltSummary ? (boltSummary.qty_warehouse - (boltSummary.qty_delivered || 0)) : 0;
+                        const indAvail = indSummary ? (indSummary.qty_warehouse - (indSummary.qty_delivered || 0)) : 0;
+                        
                         return (
                           <tr key={flangeId} className={`border-t hover:bg-gray-50 ${flange.is_critical ? 'bg-red-50' : ''}`}>
                             <td className="p-2 text-center">
@@ -1374,20 +1472,32 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                               <span className={`px-1.5 py-0.5 rounded text-xs ${typeColor}`}>{flange.flange_type}</span>
                             </td>
                             <td className="p-2 text-center text-xs">{flange.diameter_inch}" / {flange.pressure_rating}</td>
+                            {/* Gasket */}
                             <td className="p-2 text-center bg-purple-50">
                               {flange.gasket_code ? (
                                 <span className="font-mono text-xs text-purple-700">{flange.gasket_code}</span>
                               ) : '-'}
                             </td>
+                            <td className={`p-2 text-center text-xs font-medium ${flange.gasket_code ? (gasketAvail >= gasketNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.gasket_code ? `${gasketNeeded}/${gasketAvail}` : '-'}
+                            </td>
+                            {/* Bolts */}
                             <td className="p-2 text-center bg-gray-50">
                               {flange.bolt_code ? (
                                 <span className="font-mono text-xs">{flange.bolt_code} <span className="text-gray-400">×{flange.bolt_qty}</span></span>
                               ) : '-'}
                             </td>
+                            <td className={`p-2 text-center text-xs font-medium ${flange.bolt_code ? (boltAvail >= boltNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.bolt_code ? `${boltNeeded}/${boltAvail}` : '-'}
+                            </td>
+                            {/* Insulation */}
                             <td className="p-2 text-center bg-amber-50">
                               {flange.insulation_code ? (
                                 <span className="font-mono text-xs text-amber-700">{flange.insulation_code}</span>
                               ) : '-'}
+                            </td>
+                            <td className={`p-2 text-center text-xs font-medium ${flange.insulation_code ? (indAvail >= indNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.insulation_code ? `${indNeeded}/${indAvail}` : '-'}
                             </td>
                           </tr>
                         );
@@ -1452,6 +1562,165 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
           )}
         </div>
       </div>
+      
+      {/* Modal Dettagli Saldatura */}
+      {viewingWeld && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="p-4 border-b flex items-center justify-between bg-orange-50">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔥</span>
+                <div>
+                  <h3 className="font-bold text-gray-800">Dettagli Saldatura: {viewingWeld.weld_no}</h3>
+                  <p className="text-xs text-gray-500">{viewingWeld.full_weld_no}</p>
+                </div>
+              </div>
+              {viewingWeld.is_dissimilar && (
+                <span className="px-2 py-1 bg-yellow-400 text-yellow-900 rounded text-xs font-bold">⚠️ DISSIMILARE</span>
+              )}
+              <button onClick={() => setViewingWeld(null)} className="p-1 hover:bg-gray-200 rounded">✕</button>
+            </div>
+            
+            <div className="p-4 space-y-4">
+              {/* Info saldatura */}
+              <div className="grid grid-cols-4 gap-2">
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">ISO</p>
+                  <p className="font-mono text-sm font-medium">{viewingWeld.iso_number}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Tipo</p>
+                  <p className="font-medium">{viewingWeld.weld_type} ({viewingWeld.weld_category || '-'})</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Diametro</p>
+                  <p className="font-bold text-lg">{viewingWeld.diameter_inch}"</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xs text-gray-500">Spessore</p>
+                  <p className="font-bold">{viewingWeld.thickness_mm} mm</p>
+                </div>
+              </div>
+              
+              {/* Materiali dissimili */}
+              {viewingWeld.is_dissimilar && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-yellow-800 mb-2">⚠️ Materiali Dissimili</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white rounded p-2 border">
+                      <p className="text-xs text-gray-500">Materiale Spool 1</p>
+                      <p className="font-mono font-bold">{viewingWeld.first_material_code || '-'}</p>
+                    </div>
+                    <div className="bg-white rounded p-2 border">
+                      <p className="text-xs text-gray-500">Materiale Spool 2</p>
+                      <p className="font-mono font-bold">{viewingWeld.second_material_code || '-'}</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-yellow-700 mt-2">⚠️ WPS speciale richiesta per questa saldatura</p>
+                </div>
+              )}
+              
+              {/* Spool 1 */}
+              {viewingWeld.spool1 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-blue-800 mb-2">🔧 Spool 1: {viewingWeld.spool1.spool_no}</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Full No:</span>
+                      <span className="ml-2 font-mono text-xs">{viewingWeld.spool1.full_spool_no}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Stato:</span>
+                      <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                        viewingWeld.spool1.site_status === 'erected' ? 'bg-green-100 text-green-700' :
+                        viewingWeld.spool1.site_status === 'at_site' ? 'bg-blue-100 text-blue-700' :
+                        viewingWeld.spool1.site_status === 'ir_issued' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>{viewingWeld.spool1.site_status?.replace('_', ' ') || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Diametro:</span>
+                      <span className="ml-2">{viewingWeld.spool1.diameter_inch}"</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Peso:</span>
+                      <span className="ml-2">{viewingWeld.spool1.weight_kg?.toFixed(1)} kg</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Service Class:</span>
+                      <span className="ml-2">{viewingWeld.spool1.service_class || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Shipment:</span>
+                      <span className="ml-2">{viewingWeld.spool1.shipment_date || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">IR:</span>
+                      <span className="ml-2">{viewingWeld.spool1.ir_number || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Erected:</span>
+                      <span className="ml-2">{viewingWeld.spool1.erected || '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Spool 2 */}
+              {viewingWeld.spool2 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm font-medium text-blue-800 mb-2">🔧 Spool 2: {viewingWeld.spool2.spool_no}</p>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Full No:</span>
+                      <span className="ml-2 font-mono text-xs">{viewingWeld.spool2.full_spool_no}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Stato:</span>
+                      <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${
+                        viewingWeld.spool2.site_status === 'erected' ? 'bg-green-100 text-green-700' :
+                        viewingWeld.spool2.site_status === 'at_site' ? 'bg-blue-100 text-blue-700' :
+                        viewingWeld.spool2.site_status === 'ir_issued' ? 'bg-yellow-100 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>{viewingWeld.spool2.site_status?.replace('_', ' ') || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Diametro:</span>
+                      <span className="ml-2">{viewingWeld.spool2.diameter_inch}"</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Peso:</span>
+                      <span className="ml-2">{viewingWeld.spool2.weight_kg?.toFixed(1)} kg</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Service Class:</span>
+                      <span className="ml-2">{viewingWeld.spool2.service_class || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Shipment:</span>
+                      <span className="ml-2">{viewingWeld.spool2.shipment_date || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">IR:</span>
+                      <span className="ml-2">{viewingWeld.spool2.ir_number || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Erected:</span>
+                      <span className="ml-2">{viewingWeld.spool2.erected || '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50">
+              <button onClick={() => setViewingWeld(null)} className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
+                Chiudi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
