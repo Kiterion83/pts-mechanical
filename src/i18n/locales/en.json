@@ -17,6 +17,7 @@
     "dailyReports": "Daily Reports",
     "materialRequests": "Material Requests",
     "mezzi": "Site Equipment"
+    "gantt": "WP Gantt"
   },
   "auth": {
     "login": "Login",
