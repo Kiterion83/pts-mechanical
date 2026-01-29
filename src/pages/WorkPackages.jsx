@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useProject } from '../contexts/ProjectContext';
-import WorkPackagesGantt from '../components/WorkPackagesGantt';
 
 // ============================================================================
-// WORK PACKAGES PAGE - WP-P (Piping) e WP-A (Action)
-// FASE A: Fix bugs + Semplificazioni UI + Sistema Revisioni
+// WORK PACKAGES PAGE - VERSIONE 2
+// FIX COMPLETO per tutti i 7 problemi identificati:
+// 1. Revisione visibile (Rev.0)
+// 2. Saldature con Spool1↔Spool2 + pallini stato + tooltip
+// 3. Supporti con Tag, Mark, ISO, Spool, Peso, Qty Nec, Qty Disp
+// 4. Flanges con Gasket/Bolts/INT Code + qty
+// 5. Gantt in pagina separata (rimosso da qui)
+// 6. Modifica WP completa (spools + welds + supports + flanges)
+// 7. Creazione WP con salvataggio corretto di tutti gli elementi
 // ============================================================================
 
 // Utility: Check conflitti squadra
@@ -35,20 +41,12 @@ const checkSquadConflicts = (squadId, startDate, endDate, allWorkPackages, exclu
   });
 };
 
-// Utility: Calcola giorni trascorsi (FIX #9)
+// Utility: Calcola giorni trascorsi
 const calculateDaysElapsed = (fromDate) => {
   if (!fromDate) return null;
   const from = new Date(fromDate);
   const now = new Date();
   return Math.ceil(Math.abs(now - from) / (1000 * 60 * 60 * 24));
-};
-
-// Utility: Calcola giorni tra due date
-const calculateDaysBetween = (fromDate, toDate) => {
-  if (!fromDate || !toDate) return null;
-  const from = new Date(fromDate);
-  const to = new Date(toDate);
-  return Math.ceil(Math.abs(to - from) / (1000 * 60 * 60 * 24));
 };
 
 export default function WorkPackages() {
@@ -60,9 +58,10 @@ export default function WorkPackages() {
   const [welds, setWelds] = useState([]);
   const [supports, setSupports] = useState([]);
   const [flanges, setFlanges] = useState([]);
+  const [supportSummary, setSupportSummary] = useState([]);
+  const [flangeMaterialsSummary, setFlangeMaterialsSummary] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const [activeTab, setActiveTab] = useState('list');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSquad, setFilterSquad] = useState('all');
@@ -85,7 +84,8 @@ export default function WorkPackages() {
       await Promise.all([
         fetchWorkPackages(),
         fetchSquads(),
-        fetchMTOData()
+        fetchMTOData(),
+        fetchInventorySummaries()
       ]);
     } catch (error) {
       console.error('WorkPackages: Error fetching data:', error);
@@ -100,119 +100,53 @@ export default function WorkPackages() {
       .select(`
         *,
         squad:squads(id, squad_number, name),
-        wp_spools(id, spool_id, spool_number)
+        wp_spools(id, spool_id, spool_number, spool:mto_spools(*)),
+        wp_welds(id, weld_id, weld:mto_welds(*)),
+        wp_supports(id, support_id, support:mto_supports(*)),
+        wp_flanges(id, flange_id, flange:mto_flanged_joints(*))
       `)
       .eq('project_id', activeProject.id)
-      .is('deleted_at', null)
-      .order('code');
+      .order('created_at', { ascending: false });
     
-    if (error) throw error;
-    
-    const wpIds = data?.map(wp => wp.id) || [];
-    if (wpIds.length > 0) {
-      const { data: activities } = await supabase
-        .from('wp_activities')
-        .select('*')
-        .in('work_package_id', wpIds);
-      
-      data.forEach(wp => {
-        wp.activities = activities?.filter(a => a.work_package_id === wp.id) || [];
-      });
-    }
-    
+    if (error) console.error('Error fetching WPs:', error);
     setWorkPackages(data || []);
   };
 
   const fetchSquads = async () => {
     const { data } = await supabase
       .from('squads')
-      .select('*, squad_members(id), supervisor_id, foreman_id')
+      .select('*, squad_members(*)')
       .eq('project_id', activeProject.id)
-      .order('squad_number');
+      .eq('status', 'active');
     setSquads(data || []);
   };
 
   const fetchMTOData = async () => {
-    try {
-      const { data: isoData } = await supabase.from('mto_isometrics').select('*').eq('project_id', activeProject.id).eq('status', 'active');
-      setIsometrics(isoData || []);
-    } catch (e) { setIsometrics([]); }
-    
-    try {
-      const { data: spoolData } = await supabase.from('mto_spools').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
-      setSpools(spoolData || []);
-    } catch (e) { setSpools([]); }
-    
-    try {
-      const { data: weldData } = await supabase.from('mto_welds').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
-      setWelds(weldData || []);
-    } catch (e) { setWelds([]); }
-    
-    try {
-      const { data: suppData } = await supabase.from('mto_supports').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
-      setSupports(suppData || []);
-    } catch (e) { setSupports([]); }
-    
-    try {
-      const { data: flangeData } = await supabase.from('mto_flanged_joints').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
-      setFlanges(flangeData || []);
-    } catch (e) { setFlanges([]); }
+    const { data: isoData } = await supabase.from('mto_isometrics').select('*').eq('project_id', activeProject.id).eq('status', 'active');
+    setIsometrics(isoData || []);
+
+    const { data: spoolData } = await supabase.from('mto_spools').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
+    setSpools(spoolData || []);
+
+    const { data: weldData } = await supabase.from('mto_welds').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
+    setWelds(weldData || []);
+
+    const { data: suppData } = await supabase.from('mto_supports').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
+    setSupports(suppData || []);
+
+    const { data: flangeData } = await supabase.from('mto_flanged_joints').select('*').eq('project_id', activeProject.id).is('deleted_at', null);
+    setFlanges(flangeData || []);
   };
 
-  const calculateWPProgress = (wp) => {
-    if (wp.wp_type === 'action') return wp.manual_progress || 0;
+  const fetchInventorySummaries = async () => {
+    const { data: supSum } = await supabase.from('v_mto_support_summary').select('*').eq('project_id', activeProject.id);
+    setSupportSummary(supSum || []);
     
-    const activities = wp.activities || [];
-    const welding = activities.filter(a => a.category === 'welding');
-    const support = activities.filter(a => a.category === 'support');
-    const flange = activities.filter(a => a.category === 'flange');
-    
-    const weldingTotal = welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const weldingCompleted = welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
-    const supportTotal = support.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const supportCompleted = support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
-    const flangeTotal = flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0);
-    const flangeCompleted = flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0);
-    
-    let categoriesPresent = 0;
-    if (weldingTotal > 0) categoriesPresent++;
-    if (supportTotal > 0) categoriesPresent++;
-    if (flangeTotal > 0) categoriesPresent++;
-    
-    if (categoriesPresent === 0) return 0;
-    
-    const weight = 100 / categoriesPresent;
-    let total = 0;
-    
-    if (weldingTotal > 0) total += (weldingCompleted / weldingTotal) * weight;
-    if (supportTotal > 0) total += (supportCompleted / supportTotal) * weight;
-    if (flangeTotal > 0) total += (flangeCompleted / flangeTotal) * weight;
-    
-    return Math.round(total);
+    const { data: flangeSum } = await supabase.from('v_mto_flange_materials_summary').select('*').eq('project_id', activeProject.id);
+    setFlangeMaterialsSummary(flangeSum || []);
   };
 
-  const getWPQuantities = (wp) => {
-    const activities = wp.activities || [];
-    const welding = activities.filter(a => a.category === 'welding');
-    const support = activities.filter(a => a.category === 'support');
-    const flange = activities.filter(a => a.category === 'flange');
-    
-    return {
-      welds: {
-        total: welding.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: welding.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
-      },
-      supports: {
-        total: support.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: support.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
-      },
-      flanges: {
-        total: flange.reduce((s, a) => s + Number(a.quantity_total || 0), 0),
-        completed: flange.reduce((s, a) => s + Number(a.quantity_completed || 0), 0)
-      }
-    };
-  };
-
+  // Filtri
   const filteredWPs = useMemo(() => {
     return workPackages.filter(wp => {
       if (filterType !== 'all' && wp.wp_type !== filterType) return false;
@@ -220,10 +154,7 @@ export default function WorkPackages() {
       if (filterSquad !== 'all' && wp.squad_id !== filterSquad) return false;
       if (searchTerm) {
         const search = searchTerm.toLowerCase();
-        if (!wp.code.toLowerCase().includes(search) && 
-            !wp.description?.toLowerCase().includes(search)) {
-          return false;
-        }
+        if (!wp.code?.toLowerCase().includes(search) && !wp.description?.toLowerCase().includes(search)) return false;
       }
       return true;
     });
@@ -232,36 +163,52 @@ export default function WorkPackages() {
   const wpPiping = filteredWPs.filter(wp => wp.wp_type === 'piping');
   const wpAction = filteredWPs.filter(wp => wp.wp_type === 'action');
 
-  // FIX #6: Stats calculation using Set to dedupe WP IDs
-  const stats = useMemo(() => {
-    const uniqueIds = new Set(workPackages.map(wp => wp.id));
-    const uniqueWPs = workPackages.filter((wp, idx, arr) => 
-      arr.findIndex(w => w.id === wp.id) === idx
-    );
+  // Calcolo progress
+  const calculateProgress = useCallback((wp) => {
+    if (wp.wp_type === 'action') return wp.manual_progress || 0;
+    
+    const wpSpools = wp.wp_spools || [];
+    const wpWelds = wp.wp_welds || [];
+    const wpSupports = wp.wp_supports || [];
+    const wpFlanges = wp.wp_flanges || [];
+    
+    if (wpSpools.length === 0) return 0;
+    
+    // Progress basato su welds completate (principale per piping)
+    const totalWelds = wpWelds.length;
+    const completedWelds = wpWelds.filter(ww => ww.weld?.weld_date).length;
+    
+    if (totalWelds > 0) {
+      return Math.round((completedWelds / totalWelds) * 100);
+    }
+    
+    // Fallback: spools eretti
+    const erecteds = wpSpools.filter(ws => ws.spool?.site_status === 'erected').length;
+    return Math.round((erecteds / wpSpools.length) * 100);
+  }, []);
+
+  // Quantità per WP
+  const getQuantities = useCallback((wp) => {
+    const wpSpools = wp.wp_spools || [];
+    const wpWelds = wp.wp_welds || [];
+    const wpSupports = wp.wp_supports || [];
+    const wpFlanges = wp.wp_flanges || [];
     
     return {
-      total: uniqueIds.size,
-      piping: uniqueWPs.filter(wp => wp.wp_type === 'piping').length,
-      action: uniqueWPs.filter(wp => wp.wp_type === 'action').length,
-      inProgress: uniqueWPs.filter(wp => wp.status === 'in_progress').length,
-      notAssigned: uniqueWPs.filter(wp => wp.status === 'not_assigned').length,
-      completed: uniqueWPs.filter(wp => wp.status === 'completed').length,
-      avgProgress: uniqueWPs.length > 0 
-        ? Math.round(uniqueWPs.reduce((s, wp) => s + calculateWPProgress(wp), 0) / uniqueWPs.length)
-        : 0
+      spools: { total: wpSpools.length, completed: wpSpools.filter(ws => ws.spool?.site_status === 'erected').length },
+      welds: { total: wpWelds.length, completed: wpWelds.filter(ww => ww.weld?.weld_date).length },
+      supports: { total: wpSupports.length, completed: wpSupports.filter(ws => ws.support?.assembly_date).length },
+      flanges: { total: wpFlanges.length, completed: wpFlanges.filter(wf => wf.flange?.assembly_date).length }
     };
-  }, [workPackages]);
+  }, []);
 
-  const handleDeleteWP = async (wp) => {
-    if (!confirm(`Eliminare ${wp.code}?`)) return;
+  // Delete WP
+  const handleDeleteWP = async (wpId) => {
+    if (!confirm('Sei sicuro di voler eliminare questo Work Package?')) return;
     
-    const { error } = await supabase
-      .from('work_packages')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', wp.id);
-    
+    const { error } = await supabase.from('work_packages').delete().eq('id', wpId);
     if (error) {
-      alert('Errore eliminazione: ' + error.message);
+      alert('Errore: ' + error.message);
     } else {
       fetchWorkPackages();
     }
@@ -271,11 +218,10 @@ export default function WorkPackages() {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-gray-500">
         <p className="text-lg">Nessun progetto selezionato</p>
-        <p className="text-sm mt-2">Seleziona un progetto dal menu</p>
       </div>
     );
   }
-  
+
   if (projectLoading || loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -287,128 +233,117 @@ export default function WorkPackages() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            🔧 Work Packages
-          </h1>
-          <p className="text-gray-500 mt-1">
-            {activeProject?.name} • {stats.total} WP totali
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setShowCreateWPP(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
-            <span>➕</span> Nuovo WP-P
-          </button>
-          <button onClick={() => setShowCreateWPA(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium">
-            <span>➕</span> Nuovo WP-A
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Cards - FIX #7: Solo progress fisico, no % giorni */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard icon="🔧" iconBg="bg-blue-100" value={stats.piping} label="WP Piping" />
-        <StatCard icon="⚡" iconBg="bg-green-100" value={stats.action} label="WP Action" />
-        <StatCard icon="🔄" iconBg="bg-amber-100" value={stats.inProgress} label="In Corso" />
-        <StatCard icon="📋" iconBg="bg-gray-100" value={stats.notAssigned} label="Non Assegnati" />
-        <StatCard icon="✅" iconBg="bg-emerald-100" value={stats.completed} label="Completati" />
-      </div>
-
-      {/* Tabs */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="flex border-b">
-          <button onClick={() => setActiveTab('list')} className={`px-6 py-3 text-sm font-medium ${activeTab === 'list' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
-            📋 Lista
-          </button>
-          <button onClick={() => setActiveTab('gantt')} className={`px-6 py-3 text-sm font-medium ${activeTab === 'gantt' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
-            📊 Gantt
-          </button>
-        </div>
-
-        {activeTab === 'list' && (
-          <>
-            {/* Filters */}
-            <div className="p-4 border-b bg-gray-50 flex flex-wrap gap-3">
-              <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="🔍 Cerca WP..." className="px-3 py-2 border rounded-lg flex-1 min-w-[200px]" />
-              <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-2 border rounded-lg">
-                <option value="all">Tutti i tipi</option>
-                <option value="piping">WP-P (Piping)</option>
-                <option value="action">WP-A (Action)</option>
-              </select>
-              <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
-                <option value="all">Tutti gli stati</option>
-                <option value="not_assigned">Non Assegnato</option>
-                <option value="planned">Pianificato</option>
-                <option value="in_progress">In Corso</option>
-                <option value="completed">Completato</option>
-              </select>
-              <select value={filterSquad} onChange={e => setFilterSquad(e.target.value)} className="px-3 py-2 border rounded-lg">
-                <option value="all">Tutte le squadre</option>
-                {squads.map(s => <option key={s.id} value={s.id}>Squadra {s.squad_number}</option>)}
-              </select>
-            </div>
-
-            {/* WP List */}
-            <div className="p-4 space-y-4">
-              {filteredWPs.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <p className="text-4xl mb-2">📦</p>
-                  <p>Nessun Work Package trovato</p>
-                </div>
-              ) : (
-                <>
-                  {wpPiping.length > 0 && (
-                    <div className="space-y-3">
-                      <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                        WP Piping ({wpPiping.length})
-                      </h3>
-                      {wpPiping.map(wp => (
-                        <WPPipingCard 
-                          key={wp.id} 
-                          wp={wp} 
-                          expanded={expandedWP === wp.id}
-                          onToggle={() => setExpandedWP(expandedWP === wp.id ? null : wp.id)}
-                          onEdit={() => setEditingWP(wp)}
-                          onDelete={() => handleDeleteWP(wp)}
-                          calculateProgress={calculateWPProgress}
-                          getQuantities={getWPQuantities}
-                          spools={spools}
-                          supports={supports}
-                          flanges={flanges}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  
-                  {wpAction.length > 0 && (
-                    <div className="space-y-3 mt-6">
-                      <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                        WP Action ({wpAction.length})
-                      </h3>
-                      {wpAction.map(wp => (
-                        <WPActionCard 
-                          key={wp.id} 
-                          wp={wp}
-                          onEdit={() => setEditingWP(wp)}
-                          onDelete={() => handleDeleteWP(wp)}
-                          calculateProgress={calculateWPProgress}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-
-        {activeTab === 'gantt' && (
-          <div className="p-4">
-            <WorkPackagesGantt workPackages={filteredWPs || []} squads={squads || []} />
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+              📋 Work Packages
+            </h1>
+            <p className="text-gray-500 mt-1">{activeProject?.name} • {workPackages.length} WP totali</p>
           </div>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={() => setShowCreateWPP(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium">
+              🔧 Nuovo WP-P
+            </button>
+            <button onClick={() => setShowCreateWPA(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium">
+              ⚡ Nuovo WP-A
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+          <StatCard icon="🔧" bg="bg-blue-50" border="border-blue-200" value={wpPiping.length} label="WP Piping" />
+          <StatCard icon="⚡" bg="bg-green-50" border="border-green-200" value={wpAction.length} label="WP Action" />
+          <StatCard icon="✅" bg="bg-emerald-50" border="border-emerald-200" value={filteredWPs.filter(wp => wp.status === 'completed').length} label="Completati" />
+          <StatCard icon="🚧" bg="bg-amber-50" border="border-amber-200" value={filteredWPs.filter(wp => wp.status === 'in_progress').length} label="In Corso" />
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[200px]">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Cerca WP..." className="w-full pl-10 pr-4 py-2 border rounded-lg" />
+          </div>
+          <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="all">Tutti i tipi</option>
+            <option value="piping">WP-P Piping</option>
+            <option value="action">WP-A Action</option>
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="all">Tutti gli stati</option>
+            <option value="not_assigned">Non Assegnato</option>
+            <option value="planned">Pianificato</option>
+            <option value="in_progress">In Corso</option>
+            <option value="completed">Completato</option>
+          </select>
+          <select value={filterSquad} onChange={(e) => setFilterSquad(e.target.value)} className="px-3 py-2 border rounded-lg">
+            <option value="all">Tutte le squadre</option>
+            {squads.map(s => <option key={s.id} value={s.id}>SQ{s.squad_number}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* WP List */}
+      <div className="space-y-4">
+        {filteredWPs.length === 0 ? (
+          <div className="bg-white rounded-xl shadow-sm border p-12 text-center">
+            <div className="text-4xl mb-4">📋</div>
+            <p className="text-gray-500">Nessun Work Package trovato</p>
+          </div>
+        ) : (
+          <>
+            {/* WP Piping */}
+            {wpPiping.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  🔧 WP Piping <span className="text-sm font-normal text-gray-400">({wpPiping.length})</span>
+                </h3>
+                <div className="space-y-3">
+                  {wpPiping.map(wp => (
+                    <WPPipingCard 
+                      key={wp.id} 
+                      wp={wp} 
+                      expanded={expandedWP === wp.id}
+                      onToggle={() => setExpandedWP(expandedWP === wp.id ? null : wp.id)}
+                      onEdit={() => setEditingWP(wp)}
+                      onDelete={() => handleDeleteWP(wp.id)}
+                      calculateProgress={calculateProgress}
+                      getQuantities={getQuantities}
+                      spools={spools}
+                      welds={welds}
+                      supports={supports}
+                      flanges={flanges}
+                      supportSummary={supportSummary}
+                      flangeMaterialsSummary={flangeMaterialsSummary}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* WP Action */}
+            {wpAction.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-lg font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  ⚡ WP Action <span className="text-sm font-normal text-gray-400">({wpAction.length})</span>
+                </h3>
+                <div className="space-y-3">
+                  {wpAction.map(wp => (
+                    <WPActionCard 
+                      key={wp.id} 
+                      wp={wp} 
+                      onEdit={() => setEditingWP(wp)}
+                      onDelete={() => handleDeleteWP(wp.id)}
+                      calculateProgress={calculateProgress}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -424,7 +359,7 @@ export default function WorkPackages() {
           flanges={flanges}
           projectId={activeProject.id}
           onClose={() => setShowCreateWPP(false)}
-          onSuccess={() => { setShowCreateWPP(false); fetchAllData(); }}
+          onSuccess={() => { setShowCreateWPP(false); fetchWorkPackages(); }}
         />
       )}
       
@@ -434,7 +369,7 @@ export default function WorkPackages() {
           squads={squads}
           projectId={activeProject.id}
           onClose={() => setShowCreateWPA(false)}
-          onSuccess={() => { setShowCreateWPA(false); fetchAllData(); }}
+          onSuccess={() => { setShowCreateWPA(false); fetchWorkPackages(); }}
         />
       )}
       
@@ -447,8 +382,10 @@ export default function WorkPackages() {
           welds={welds}
           supports={supports}
           flanges={flanges}
+          supportSummary={supportSummary}
+          flangeMaterialsSummary={flangeMaterialsSummary}
           onClose={() => setEditingWP(null)}
-          onSuccess={() => { setEditingWP(null); fetchAllData(); }}
+          onSuccess={() => { setEditingWP(null); fetchWorkPackages(); }}
         />
       )}
     </div>
@@ -456,101 +393,102 @@ export default function WorkPackages() {
 }
 
 // ============================================================================
-// SMALL COMPONENTS
+// COMPONENTI UI BASE
 // ============================================================================
 
-const StatCard = ({ icon, iconBg, value, label }) => (
-  <div className="bg-white rounded-xl shadow-sm border p-4">
-    <div className="flex items-center gap-3">
-      <div className={`w-10 h-10 ${iconBg} rounded-lg flex items-center justify-center text-xl`}>{icon}</div>
+const StatCard = ({ icon, bg, border, value, label }) => (
+  <div className={`${bg} rounded-lg p-4 border ${border}`}>
+    <div className="flex items-center gap-2">
+      <span className="text-xl">{icon}</span>
       <div>
-        <p className="text-2xl font-bold text-gray-800">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
+        <div className="text-2xl font-bold text-gray-700">{value}</div>
+        <div className="text-xs text-gray-600">{label}</div>
       </div>
     </div>
   </div>
 );
 
-const ProgressBar = ({ percent, size = "normal", color = null }) => {
-  const height = size === "small" ? "h-1.5" : "h-2.5";
-  const bgColor = color || (percent >= 100 ? "bg-emerald-500" : percent >= 50 ? "bg-green-500" : "bg-blue-500");
-  return (
-    <div className={`flex-1 bg-gray-200 rounded-full ${height}`}>
-      <div className={`${bgColor} ${height} rounded-full transition-all`} style={{ width: `${Math.min(100, percent)}%` }} />
-    </div>
-  );
-};
+const ProgressBar = ({ percent, size = 'default', color = 'bg-blue-500' }) => (
+  <div className={`flex-1 bg-gray-200 rounded-full overflow-hidden ${size === 'small' ? 'h-1.5' : 'h-2.5'}`}>
+    <div className={`${color} h-full rounded-full transition-all`} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
+  </div>
+);
 
 const StatusBadge = ({ status }) => {
   const configs = {
-    not_assigned: { label: 'Non Assegnato', bg: 'bg-gray-100', text: 'text-gray-600' },
-    planned: { label: 'Pianificato', bg: 'bg-blue-100', text: 'text-blue-800' },
-    in_progress: { label: 'In Corso', bg: 'bg-amber-100', text: 'text-amber-800' },
-    completed: { label: 'Completato', bg: 'bg-emerald-100', text: 'text-emerald-800' }
+    not_assigned: { label: 'Non Assegnato', color: 'bg-gray-100 text-gray-600' },
+    planned: { label: 'Pianificato', color: 'bg-blue-100 text-blue-700' },
+    in_progress: { label: 'In Corso', color: 'bg-amber-100 text-amber-700' },
+    completed: { label: 'Completato', color: 'bg-emerald-100 text-emerald-700' }
   };
   const config = configs[status] || configs.not_assigned;
-  return <span className={`${config.bg} ${config.text} px-2 py-0.5 text-xs rounded-full font-medium`}>{config.label}</span>;
+  return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${config.color}`}>{config.label}</span>;
 };
 
-// FIX #2: Stati spool semplificati (4 invece di 6)
-const SiteStatusBadge = ({ status }) => {
+// FIX #1: RevisionBadge mostra ANCHE Rev.0
+const RevisionBadge = ({ revision }) => {
+  if (revision === null || revision === undefined) return null;
+  return <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 text-xs rounded font-medium">Rev.{revision}</span>;
+};
+
+const DaysBadge = ({ wp }) => {
+  if (wp.status === 'completed') return null;
+  
+  const days = calculateDaysElapsed(wp.created_at);
+  if (!days || days < 7) return null;
+  
+  const color = days > 30 ? 'bg-red-100 text-red-700' : days > 14 ? 'bg-amber-100 text-amber-700' : 'bg-yellow-100 text-yellow-700';
+  return <span className={`px-1.5 py-0.5 text-xs rounded font-medium ${color}`}>{days}gg</span>;
+};
+
+// FIX #2: Site Status con pallini colorati
+const SiteStatusDot = ({ status }) => {
   const configs = {
-    // Non rilevanti per costruzione - mappati a "Attesa"
-    in_production: { label: 'Attesa', bg: 'bg-gray-100', text: 'text-gray-500' },
-    shipped: { label: 'Attesa', bg: 'bg-gray-100', text: 'text-gray-500' },
-    at_laydown: { label: 'Attesa', bg: 'bg-gray-100', text: 'text-gray-500' },
-    // Rilevanti per costruzione
-    ir_issued: { label: 'IR', bg: 'bg-orange-100', text: 'text-orange-700' },
-    at_site: { label: 'Sito', bg: 'bg-blue-100', text: 'text-blue-700' },
-    erection_ongoing: { label: 'Montaggio', bg: 'bg-amber-100', text: 'text-amber-700' },
-    erected: { label: 'Eretto', bg: 'bg-emerald-100', text: 'text-emerald-700' }
+    in_production: { color: 'bg-gray-400', label: 'In Produzione' },
+    shipped: { color: 'bg-purple-400', label: 'Spedito' },
+    ir_issued: { color: 'bg-amber-400', label: 'IR Emesso' },
+    at_laydown: { color: 'bg-cyan-400', label: 'Laydown' },
+    at_site: { color: 'bg-blue-400', label: 'Al Sito' },
+    erected: { color: 'bg-emerald-400', label: 'Eretto' }
   };
   const config = configs[status] || configs.in_production;
-  return <span className={`${config.bg} ${config.text} px-1.5 py-0.5 text-xs rounded font-medium`}>{config.label}</span>;
-};
-
-const AvailabilityDot = ({ available }) => (
-  <span className={`w-3 h-3 rounded-full ${available ? 'bg-green-500' : 'bg-red-500'}`} title={available ? 'Disponibile' : 'Non disponibile'}></span>
-);
-
-// Badge revisione - FIX #3: Mostra sempre Rev.X incluso Rev.0
-const RevisionBadge = ({ revision }) => {
-  const rev = revision ?? 0;
-  return <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 text-xs rounded font-medium">Rev.{rev}</span>;
-};
-
-// FIX #9: Badge giorni - mostra durata
-const DaysBadge = ({ wp }) => {
-  const days = wp.completed_at 
-    ? calculateDaysBetween(wp.created_at, wp.completed_at)
-    : calculateDaysElapsed(wp.created_at);
-  
-  if (!days) return null;
-  
-  const isCompleted = wp.status === 'completed';
   return (
-    <span className={`text-xs ${isCompleted ? 'text-green-600' : 'text-gray-500'}`} title={isCompleted ? `Completato in ${days} giorni` : `Aperto da ${days} giorni`}>
-      {isCompleted ? `✓ ${days}gg` : `${days}gg`}
-    </span>
+    <span className={`w-3 h-3 rounded-full ${config.color} inline-block`} title={config.label}></span>
   );
 };
 
+const SiteStatusBadge = ({ status }) => {
+  const configs = {
+    in_production: { label: 'Prod', color: 'bg-gray-100 text-gray-600' },
+    shipped: { label: 'Spedito', color: 'bg-purple-100 text-purple-700' },
+    ir_issued: { label: 'IR', color: 'bg-amber-100 text-amber-700' },
+    at_laydown: { label: 'Laydown', color: 'bg-cyan-100 text-cyan-700' },
+    at_site: { label: 'Sito', color: 'bg-blue-100 text-blue-700' },
+    erected: { label: 'Eretto', color: 'bg-emerald-100 text-emerald-700' }
+  };
+  const config = configs[status] || configs.in_production;
+  return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${config.color}`}>{config.label}</span>;
+};
+
+
 // ============================================================================
-// WP PIPING CARD
+// WP PIPING CARD - Con espansione dettagli
+// FIX #2, #3, #4: Visualizzazione corretta di Welds, Supports, Flanges
 // ============================================================================
 
-const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgress, getQuantities, spools, supports, flanges }) => {
+const WPPipingCard = ({ 
+  wp, expanded, onToggle, onEdit, onDelete, calculateProgress, getQuantities, 
+  spools, welds, supports, flanges, supportSummary, flangeMaterialsSummary 
+}) => {
   const progress = calculateProgress(wp);
   const quantities = getQuantities(wp);
-  const wpSpoolNos = wp.wp_spools?.map(s => s.spool_number) || [];
+  const wpSpoolNos = wp.wp_spools?.map(ws => ws.spool_number || ws.spool?.spool_no) || [];
   
   return (
     <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-      {/* Main row */}
-      <div className="flex items-center p-4 gap-4">
-        <button onClick={onToggle} className="text-gray-400 hover:text-gray-600">
-          {expanded ? '▼' : '▶'}
-        </button>
+      {/* Header */}
+      <div className="flex items-center gap-4 p-4 cursor-pointer hover:bg-gray-50" onClick={onToggle}>
+        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-xl">🔧</div>
         
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -558,7 +496,6 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
             <StatusBadge status={wp.status} />
             <RevisionBadge revision={wp.revision} />
             <DaysBadge wp={wp} />
-            {wp.split_resources && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded">➗ Risorse condivise</span>}
           </div>
           <p className="text-sm text-gray-600 truncate mt-1">{wp.description || 'Nessuna descrizione'}</p>
         </div>
@@ -570,64 +507,302 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
           </div>
           <div className="text-center">
             <p className="text-xs text-gray-500">Spools</p>
-            <p className="font-medium text-sm">{wpSpoolNos.length}</p>
+            <p className="font-medium text-sm">{quantities.spools.completed}/{quantities.spools.total}</p>
           </div>
           <div className="text-center">
-            <p className="text-xs text-gray-500">Saldature</p>
+            <p className="text-xs text-gray-500">Welds</p>
             <p className="font-medium text-sm">{quantities.welds.completed}/{quantities.welds.total}</p>
           </div>
           <div className="w-24">
             <div className="flex items-center gap-2">
-              <ProgressBar percent={progress} size="small" />
+              <ProgressBar percent={progress} size="small" color="bg-blue-500" />
               <span className="text-xs font-medium text-gray-600">{progress}%</span>
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-1">
-          <button onClick={onEdit} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✏️</button>
-          <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-lg text-red-500">🗑️</button>
+          <button onClick={(e) => { e.stopPropagation(); onEdit(); }} className="p-2 hover:bg-gray-100 rounded-lg text-gray-500">✏️</button>
+          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="p-2 hover:bg-red-50 rounded-lg text-red-500">🗑️</button>
+          <span className="text-gray-400 text-lg">{expanded ? '▼' : '▶'}</span>
         </div>
       </div>
       
-      {/* Expanded content */}
+      {/* Expanded Content - FIX #2, #3, #4 */}
       {expanded && (
-        <div className="border-t bg-gray-50 p-4">
-          <div className="grid md:grid-cols-3 gap-4">
-            {/* Welds progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">🔥 Saldature</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.welds.total > 0 ? (quantities.welds.completed / quantities.welds.total) * 100 : 0} size="small" color="bg-orange-500" />
-                <span className="text-xs text-gray-600">{quantities.welds.completed}/{quantities.welds.total}</span>
+        <div className="border-t bg-gray-50 p-4 space-y-6">
+          {/* Progress bars dettagliati */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-gray-600">📦 Spools</span>
+                <span className="font-medium">{quantities.spools.completed}/{quantities.spools.total}</span>
               </div>
+              <ProgressBar percent={quantities.spools.total > 0 ? (quantities.spools.completed / quantities.spools.total) * 100 : 0} size="small" color="bg-blue-500" />
             </div>
-            
-            {/* Supports progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">🔩 Supporti</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.supports.total > 0 ? (quantities.supports.completed / quantities.supports.total) * 100 : 0} size="small" color="bg-gray-500" />
-                <span className="text-xs text-gray-600">{quantities.supports.completed}/{quantities.supports.total}</span>
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-gray-600">🔥 Saldature</span>
+                <span className="font-medium">{quantities.welds.completed}/{quantities.welds.total}</span>
               </div>
+              <ProgressBar percent={quantities.welds.total > 0 ? (quantities.welds.completed / quantities.welds.total) * 100 : 0} size="small" color="bg-orange-500" />
             </div>
-            
-            {/* Flanges progress */}
-            <div className="bg-white rounded-lg p-3 border">
-              <h4 className="font-medium text-sm text-gray-700 mb-2">⚙️ Flangie</h4>
-              <div className="flex items-center gap-2">
-                <ProgressBar percent={quantities.flanges.total > 0 ? (quantities.flanges.completed / quantities.flanges.total) * 100 : 0} size="small" color="bg-amber-500" />
-                <span className="text-xs text-gray-600">{quantities.flanges.completed}/{quantities.flanges.total}</span>
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-gray-600">🔩 Supporti</span>
+                <span className="font-medium">{quantities.supports.completed}/{quantities.supports.total}</span>
               </div>
+              <ProgressBar percent={quantities.supports.total > 0 ? (quantities.supports.completed / quantities.supports.total) * 100 : 0} size="small" color="bg-gray-500" />
+            </div>
+            <div>
+              <div className="flex justify-between text-xs mb-1">
+                <span className="text-gray-600">⚙️ Flangie</span>
+                <span className="font-medium">{quantities.flanges.completed}/{quantities.flanges.total}</span>
+              </div>
+              <ProgressBar percent={quantities.flanges.total > 0 ? (quantities.flanges.completed / quantities.flanges.total) * 100 : 0} size="small" color="bg-amber-500" />
             </div>
           </div>
           
-          {/* Spools list */}
+          {/* FIX #2: SALDATURE con Spool1 ↔ Spool2 + pallini stato + tooltip lente */}
+          {wp.wp_welds?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">🔥 Saldature ({wp.wp_welds.length})</h4>
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left p-2 font-medium">Weld No</th>
+                      <th className="text-center p-2 font-medium">Spool 1</th>
+                      <th className="text-center p-2 font-medium"></th>
+                      <th className="text-center p-2 font-medium">Spool 2</th>
+                      <th className="text-center p-2 font-medium">Ø</th>
+                      <th className="text-center p-2 font-medium">Tipo</th>
+                      <th className="text-center p-2 font-medium">Stato</th>
+                      <th className="text-center p-2 font-medium">Info</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wp.wp_welds.slice(0, 10).map(ww => {
+                      const weld = ww.weld;
+                      if (!weld) return null;
+                      
+                      // Trova i dati degli spool
+                      const spool1 = spools.find(s => s.full_spool_no === weld.full_first_spool);
+                      const spool2 = spools.find(s => s.full_spool_no === weld.full_second_spool);
+                      
+                      return (
+                        <tr key={ww.id} className={`border-t hover:bg-gray-50 ${weld.is_dissimilar ? 'bg-yellow-50' : ''}`}>
+                          <td className="p-2 font-mono text-orange-600 font-medium">{weld.weld_no}</td>
+                          <td className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <SiteStatusDot status={spool1?.site_status} />
+                              <span className="font-mono text-xs text-blue-600">{weld.full_first_spool?.split('-').pop() || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="p-2 text-center text-gray-400">↔</td>
+                          <td className="p-2 text-center">
+                            <div className="flex items-center justify-center gap-1">
+                              <SiteStatusDot status={spool2?.site_status} />
+                              <span className="font-mono text-xs text-blue-600">{weld.full_second_spool?.split('-').pop() || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="p-2 text-center text-xs">{weld.diameter_inch}"</td>
+                          <td className="p-2 text-center">
+                            <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 rounded text-xs">{weld.weld_type}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {weld.weld_date ? (
+                              <span className="text-emerald-600">✓</span>
+                            ) : weld.fitup_date ? (
+                              <span className="text-amber-500">◐</span>
+                            ) : (
+                              <span className="text-gray-300">○</span>
+                            )}
+                          </td>
+                          <td className="p-2 text-center">
+                            <WeldInfoTooltip weld={weld} spool1={spool1} spool2={spool2} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {wp.wp_welds.length > 10 && (
+                  <div className="p-2 text-center text-xs text-gray-500 bg-gray-50 border-t">
+                    +{wp.wp_welds.length - 10} altre saldature
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* FIX #3: SUPPORTI con Tag, Mark, ISO, Spool, Peso, Qty Nec, Qty Disp */}
+          {wp.wp_supports?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">🔩 Supporti ({wp.wp_supports.length})</h4>
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left p-2 font-medium">Tag</th>
+                      <th className="text-center p-2 font-medium">Support Mark</th>
+                      <th className="text-left p-2 font-medium">ISO</th>
+                      <th className="text-center p-2 font-medium">Spool</th>
+                      <th className="text-right p-2 font-medium">Peso</th>
+                      <th className="text-center p-2 font-medium">Qty Nec</th>
+                      <th className="text-center p-2 font-medium">Qty Disp</th>
+                      <th className="text-center p-2 font-medium">Stato</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wp.wp_supports.slice(0, 10).map(ws => {
+                      const support = ws.support;
+                      if (!support) return null;
+                      
+                      // Trova disponibilità dal summary
+                      const markSummary = supportSummary.find(s => s.support_mark === support.support_mark);
+                      const qtyNecessaria = markSummary?.qty_necessary || 0;
+                      const qtyDisponibile = (markSummary?.qty_warehouse || 0) - (markSummary?.qty_delivered || 0);
+                      const isOk = qtyDisponibile >= 1;
+                      
+                      return (
+                        <tr key={ws.id} className="border-t hover:bg-gray-50">
+                          <td className="p-2 font-mono text-xs">{support.support_tag_no}</td>
+                          <td className="p-2 text-center">
+                            <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{support.support_mark}</span>
+                          </td>
+                          <td className="p-2 text-xs text-gray-600">{support.iso_number}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-mono text-xs text-blue-600">{support.full_spool_no?.split('-').pop() || '-'}</span>
+                          </td>
+                          <td className="p-2 text-right text-xs">{support.weight_kg?.toFixed(2)} kg</td>
+                          <td className="p-2 text-center text-xs font-medium">{qtyNecessaria}</td>
+                          <td className="p-2 text-center">
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${isOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {qtyDisponibile}
+                            </span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {support.assembly_date ? (
+                              <span className="text-emerald-600">✓</span>
+                            ) : support.delivered_to_site ? (
+                              <span className="text-blue-500">◐</span>
+                            ) : (
+                              <span className="text-gray-300">○</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {wp.wp_supports.length > 10 && (
+                  <div className="p-2 text-center text-xs text-gray-500 bg-gray-50 border-t">
+                    +{wp.wp_supports.length - 10} altri supporti
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* FIX #4: FLANGES con Gasket/Bolts/INT Code + qty */}
+          {wp.wp_flanges?.length > 0 && (
+            <div>
+              <h4 className="font-medium text-sm text-gray-700 mb-2">⚙️ Accoppiamenti Flangiati ({wp.wp_flanges.length})</h4>
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left p-2 font-medium">Tag</th>
+                      <th className="text-center p-2 font-medium">Gasket</th>
+                      <th className="text-center p-2 font-medium">Qty N/D</th>
+                      <th className="text-center p-2 font-medium">Bolts</th>
+                      <th className="text-center p-2 font-medium">Qty N/D</th>
+                      <th className="text-center p-2 font-medium">INT Code</th>
+                      <th className="text-center p-2 font-medium">Qty N/D</th>
+                      <th className="text-center p-2 font-medium">Stato</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wp.wp_flanges.slice(0, 10).map(wf => {
+                      const flange = wf.flange;
+                      if (!flange) return null;
+                      
+                      // Trova disponibilità
+                      const gasketSum = flangeMaterialsSummary.find(m => m.material_code === flange.gasket_code && m.material_type === 'gasket');
+                      const boltSum = flangeMaterialsSummary.find(m => m.material_code === flange.bolt_code && m.material_type === 'bolt');
+                      const insSum = flange.insulation_code ? flangeMaterialsSummary.find(m => m.material_code === flange.insulation_code && m.material_type === 'insulation') : null;
+                      
+                      const gasketDisp = (gasketSum?.qty_warehouse || 0) - (gasketSum?.qty_delivered || 0);
+                      const boltDisp = (boltSum?.qty_warehouse || 0) - (boltSum?.qty_delivered || 0);
+                      const insDisp = insSum ? (insSum.qty_warehouse || 0) - (insSum.qty_delivered || 0) : 0;
+                      
+                      const gasketOk = !flange.gasket_code || gasketDisp >= (flange.gasket_qty || 1);
+                      const boltOk = !flange.bolt_code || boltDisp >= (flange.bolt_qty || 0);
+                      const insOk = !flange.insulation_code || insDisp >= (flange.insulation_qty || 0);
+                      
+                      return (
+                        <tr key={wf.id} className="border-t hover:bg-gray-50">
+                          <td className="p-2 font-mono text-xs text-amber-700">{flange.flange_tag}</td>
+                          <td className="p-2 text-center">
+                            <span className="font-mono text-xs">{flange.gasket_code || '-'}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {flange.gasket_code ? (
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${gasketOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {flange.gasket_qty || 1}/{gasketDisp}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="p-2 text-center">
+                            <span className="font-mono text-xs">{flange.bolt_code || '-'}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {flange.bolt_code ? (
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${boltOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {flange.bolt_qty || 0}/{boltDisp}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="p-2 text-center">
+                            <span className="font-mono text-xs">{flange.insulation_code || '-'}</span>
+                          </td>
+                          <td className="p-2 text-center">
+                            {flange.insulation_code ? (
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${insOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {flange.insulation_qty || 0}/{insDisp}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td className="p-2 text-center">
+                            {flange.assembly_date ? (
+                              <span className="text-emerald-600">✓</span>
+                            ) : flange.delivered_to_site ? (
+                              <span className="text-blue-500">◐</span>
+                            ) : (
+                              <span className="text-gray-300">○</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {wp.wp_flanges.length > 10 && (
+                  <div className="p-2 text-center text-xs text-gray-500 bg-gray-50 border-t">
+                    +{wp.wp_flanges.length - 10} altre flangie
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Spools list (semplice) */}
           {wpSpoolNos.length > 0 && (
-            <div className="mt-4">
+            <div>
               <h4 className="font-medium text-sm text-gray-700 mb-2">📦 Spools ({wpSpoolNos.length})</h4>
               <div className="flex flex-wrap gap-2">
-                {wpSpoolNos.slice(0, 10).map((sn, idx) => {
+                {wpSpoolNos.slice(0, 15).map((sn, idx) => {
                   const spoolData = spools.find(s => s.spool_no === sn || s.full_spool_no?.endsWith(sn));
                   return (
                     <div key={idx} className="flex items-center gap-1 bg-white border rounded px-2 py-1 text-xs">
@@ -636,18 +811,74 @@ const WPPipingCard = ({ wp, expanded, onToggle, onEdit, onDelete, calculateProgr
                     </div>
                   );
                 })}
-                {wpSpoolNos.length > 10 && <span className="text-xs text-gray-500">+{wpSpoolNos.length - 10} altri</span>}
+                {wpSpoolNos.length > 15 && <span className="text-xs text-gray-500">+{wpSpoolNos.length - 15} altri</span>}
               </div>
             </div>
           )}
           
-          {/* Dates */}
-          {(wp.planned_start || wp.planned_end) && (
-            <div className="mt-4 flex gap-4 text-sm text-gray-600">
+          {/* Date */}
+          {(wp.planned_start || wp.planned_end || wp.created_at) && (
+            <div className="flex flex-wrap gap-4 text-sm text-gray-600 pt-2 border-t">
+              {wp.created_at && <span>📅 Creato: {new Date(wp.created_at).toLocaleDateString('it-IT')}</span>}
               {wp.planned_start && <span>📅 Inizio: {new Date(wp.planned_start).toLocaleDateString('it-IT')}</span>}
               {wp.planned_end && <span>📅 Fine: {new Date(wp.planned_end).toLocaleDateString('it-IT')}</span>}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// FIX #2: Tooltip con lente per info dettagliate saldatura
+const WeldInfoTooltip = ({ weld, spool1, spool2 }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  
+  return (
+    <div className="relative inline-block">
+      <button 
+        className="p-1 hover:bg-gray-100 rounded text-gray-500"
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        onClick={() => setShowTooltip(!showTooltip)}
+      >
+        🔍
+      </button>
+      
+      {showTooltip && (
+        <div className="absolute z-50 right-0 top-full mt-1 w-64 bg-white border rounded-lg shadow-xl p-3 text-xs">
+          <div className="font-bold text-gray-800 mb-2 border-b pb-1">
+            Weld: {weld.full_weld_no}
+          </div>
+          
+          <div className="space-y-2">
+            <div>
+              <p className="text-gray-500 font-medium">Spool 1:</p>
+              <p className="font-mono text-blue-600">{weld.full_first_spool || '-'}</p>
+              {spool1 && (
+                <>
+                  <p className="text-gray-600">Materiale: {spool1.service_class || '-'}</p>
+                  <p className="text-gray-600">Ø {spool1.diameter_inch}" • {spool1.weight_kg?.toFixed(1)} kg</p>
+                </>
+              )}
+            </div>
+            
+            <div>
+              <p className="text-gray-500 font-medium">Spool 2:</p>
+              <p className="font-mono text-blue-600">{weld.full_second_spool || '-'}</p>
+              {spool2 && (
+                <>
+                  <p className="text-gray-600">Materiale: {spool2.service_class || '-'}</p>
+                  <p className="text-gray-600">Ø {spool2.diameter_inch}" • {spool2.weight_kg?.toFixed(1)} kg</p>
+                </>
+              )}
+            </div>
+            
+            <div className="border-t pt-2">
+              <p className="text-gray-600">Ø Weld: {weld.diameter_inch}" • Spess: {weld.thickness_mm}mm</p>
+              {weld.is_dissimilar && <p className="text-yellow-600 font-medium">⚠️ Saldatura Dissimile</p>}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -694,628 +925,378 @@ const WPActionCard = ({ wp, onEdit, onDelete, calculateProgress }) => {
           <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-lg text-red-500">🗑️</button>
         </div>
       </div>
+      
+      {/* Info extra */}
+      {(wp.planned_start || wp.created_at) && (
+        <div className="mt-3 pt-3 border-t flex flex-wrap gap-4 text-xs text-gray-500">
+          {wp.created_at && <span>Creato: {new Date(wp.created_at).toLocaleDateString('it-IT')}</span>}
+          {wp.planned_start && <span>Inizio: {new Date(wp.planned_start).toLocaleDateString('it-IT')}</span>}
+          {wp.planned_end && <span>Fine: {new Date(wp.planned_end).toLocaleDateString('it-IT')}</span>}
+        </div>
+      )}
     </div>
   );
 };
 
-// ============================================================================
-// RESOURCE CONFLICT MODAL
-// ============================================================================
-
-const ResourceConflictModal = ({ conflicts, squadInfo, newWPDates, onSplitResources, onChangeSquad, onClose }) => {
-  const parseDate = (dateStr) => {
-    if (!dateStr) return null;
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  };
-
-  const calculateOverlapDays = (wp) => {
-    const wpStart = parseDate(wp.planned_start);
-    const wpEnd = parseDate(wp.planned_end);
-    const newStart = parseDate(newWPDates.start);
-    const newEnd = parseDate(newWPDates.end);
-    if (!wpStart || !wpEnd || !newStart || !newEnd) return 0;
-    const overlapStart = new Date(Math.max(wpStart, newStart));
-    const overlapEnd = new Date(Math.min(wpEnd, newEnd));
-    if (overlapStart > overlapEnd) return 0;
-    return Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
-  };
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    const date = parseDate(dateStr);
-    return date.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
-  const totalConflicts = conflicts.length + 1;
-  const resourcesPerWP = (squadInfo.memberCount / totalConflicts).toFixed(1);
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
-        <div className="bg-amber-50 border-b border-amber-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center"><span className="text-2xl">⚠️</span></div>
-            <div>
-              <h2 className="text-lg font-bold text-amber-800">Conflitto Risorse</h2>
-              <p className="text-sm text-amber-600">Squadra già impegnata</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-blue-800">
-              <span className="text-lg">👥</span>
-              <span className="font-semibold">Squadra {squadInfo.squad_number} {squadInfo.name ? `- ${squadInfo.name}` : ''}</span>
-              <span className="bg-blue-200 px-2 py-0.5 rounded text-sm font-bold">{squadInfo.memberCount} persone</span>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">La squadra è già assegnata a:</p>
-            <div className="space-y-2 max-h-40 overflow-y-auto">
-              {conflicts.map(wp => (
-                <div key={wp.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border">
-                  <div>
-                    <span className={`font-mono text-xs px-1.5 py-0.5 rounded mr-2 ${wp.wp_type === 'piping' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>{wp.code}</span>
-                    <span className="text-sm text-gray-700">{wp.description}</span>
-                  </div>
-                  <div className="text-xs text-gray-500 text-right">
-                    <div>📅 {formatDate(wp.planned_start)} - {formatDate(wp.planned_end)}</div>
-                    <div className="text-amber-600 font-medium">{calculateOverlapDays(wp)} gg sovrapposizione</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="border-t pt-4">
-            <p className="text-sm font-medium text-gray-700 mb-3">Come vuoi gestire il conflitto?</p>
-            <div className="grid gap-3">
-              <div className="border-2 border-blue-200 rounded-lg p-3 bg-blue-50">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0"><span className="text-xl">➗</span></div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-800">Dividi Risorse</p>
-                    <p className="text-sm text-gray-500 mt-1">Le {squadInfo.memberCount} persone divise su {totalConflicts} WP</p>
-                    <div className="mt-2 bg-blue-100 rounded px-2 py-1 inline-block">
-                      <span className="text-blue-800 font-bold">{resourcesPerWP} persone/WP</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="border-2 border-gray-200 rounded-lg p-3">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center shrink-0"><span className="text-xl">✏️</span></div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-800">Cambia Squadra</p>
-                    <p className="text-sm text-gray-500 mt-1">Assegna una squadra diversa</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 p-4 border-t bg-gray-50">
-          <button onClick={onClose} className="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100">Annulla</button>
-          <button onClick={onChangeSquad} className="flex-1 px-4 py-2.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center justify-center gap-2"><span>✏️</span> Cambia</button>
-          <button onClick={onSplitResources} className="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"><span>➗</span> Dividi</button>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // ============================================================================
-// CREATE WP-P WIZARD (5 steps - Step 6 removed per Feature #4)
+// CREATE WP-P WIZARD
+// FIX #7: Salvataggio corretto di tutti gli elementi (spools, welds, supports, flanges)
 // ============================================================================
 
 const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supports, flanges, projectId, onClose, onSuccess }) => {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   
-  // Form data
+  // Step 1: ISO Selection
+  const [selectedISOs, setSelectedISOs] = useState([]);
+  
+  // Step 2: Spool selection (from selected ISOs)
+  const [selectedSpools, setSelectedSpools] = useState([]);
+  
+  // Step 3: Review (auto-derived welds, supports, flanges)
   const [formData, setFormData] = useState({
     description: '',
-    notes: '',
-    area: ''
+    area: '',
+    notes: ''
   });
-  
-  // Selections
-  const [selectedWelds, setSelectedWelds] = useState([]);
-  const [selectedSpools, setSelectedSpools] = useState([]);
-  const [selectedSupports, setSelectedSupports] = useState([]);
-  const [selectedFlanges, setSelectedFlanges] = useState([]);
-  
-  // Filters
-  const [weldSearch, setWeldSearch] = useState('');
-  const [weldFilterIso, setWeldFilterIso] = useState('');
 
-  // Generate next code
-  const nextCode = useMemo(() => {
-    const pipingWPs = workPackages.filter(wp => wp.wp_type === 'piping');
-    const maxNum = pipingWPs.reduce((max, wp) => {
-      const match = wp.code.match(/WP-P-(\d+)/);
-      return match ? Math.max(max, parseInt(match[1])) : max;
-    }, 0);
-    return `WP-P-${String(maxNum + 1).padStart(3, '0')}`;
-  }, [workPackages]);
-
-  // Filter available welds (not assigned to other WPs)
-  const assignedWeldIds = useMemo(() => {
+  // Find already assigned spools/welds
+  const assignedSpoolIds = useMemo(() => {
     const ids = new Set();
     workPackages.forEach(wp => {
-      if (wp.activities) {
-        wp.activities.forEach(a => {
-          if (a.category === 'welding' && a.item_ids) {
-            a.item_ids.forEach(id => ids.add(id));
-          }
-        });
-      }
+      wp.wp_spools?.forEach(ws => { if (ws.spool_id) ids.add(ws.spool_id); });
     });
     return ids;
   }, [workPackages]);
 
-  const availableWelds = useMemo(() => {
-    return welds.filter(w => !assignedWeldIds.has(w.id));
-  }, [welds, assignedWeldIds]);
-
-  const filteredWelds = useMemo(() => {
-    return availableWelds.filter(w => {
-      if (weldFilterIso) {
-        const iso = isometrics.find(i => i.id === weldFilterIso);
-        if (iso && w.iso_number !== iso.iso_number) return false;
-      }
-      if (weldSearch) {
-        const search = weldSearch.toLowerCase();
-        if (!w.full_weld_no?.toLowerCase().includes(search) && 
-            !w.weld_no?.toLowerCase().includes(search) &&
-            !w.iso_number?.toLowerCase().includes(search)) return false;
-      }
-      return true;
+  const assignedWeldIds = useMemo(() => {
+    const ids = new Set();
+    workPackages.forEach(wp => {
+      wp.wp_welds?.forEach(ww => { if (ww.weld_id) ids.add(ww.weld_id); });
     });
-  }, [availableWelds, weldFilterIso, weldSearch, isometrics]);
+    return ids;
+  }, [workPackages]);
 
-  // Auto-derive spools from selected welds
-  useEffect(() => {
-    if (selectedWelds.length > 0) {
-      const spoolIds = new Set();
-      selectedWelds.forEach(weldId => {
-        const weld = welds.find(w => w.id === weldId);
-        if (weld) {
-          if (weld.spool_1_id) spoolIds.add(weld.spool_1_id);
-          if (weld.spool_2_id) spoolIds.add(weld.spool_2_id);
-        }
-      });
-      setSelectedSpools([...spoolIds]);
-    }
-  }, [selectedWelds, welds]);
+  // Available spools (from selected ISOs, not assigned)
+  const availableSpools = useMemo(() => {
+    if (selectedISOs.length === 0) return [];
+    return spools.filter(s => 
+      selectedISOs.includes(s.iso_number) && 
+      !assignedSpoolIds.has(s.id)
+    );
+  }, [spools, selectedISOs, assignedSpoolIds]);
+
+  // Auto-derive welds from selected spools
+  const derivedWelds = useMemo(() => {
+    if (selectedSpools.length === 0) return [];
+    const spoolFullNos = selectedSpools.map(id => {
+      const spool = spools.find(s => s.id === id);
+      return spool?.full_spool_no;
+    }).filter(Boolean);
+    
+    return welds.filter(w => 
+      !assignedWeldIds.has(w.id) &&
+      (spoolFullNos.includes(w.full_first_spool) || spoolFullNos.includes(w.full_second_spool))
+    );
+  }, [selectedSpools, spools, welds, assignedWeldIds]);
 
   // Auto-derive supports from selected spools
-  useEffect(() => {
-    if (selectedSpools.length > 0) {
-      const supportIds = supports
-        .filter(s => selectedSpools.includes(s.spool_id))
-        .map(s => s.id);
-      setSelectedSupports(supportIds);
-    }
-  }, [selectedSpools, supports]);
+  const derivedSupports = useMemo(() => {
+    if (selectedSpools.length === 0) return [];
+    const spoolFullNos = selectedSpools.map(id => {
+      const spool = spools.find(s => s.id === id);
+      return spool?.full_spool_no;
+    }).filter(Boolean);
+    
+    return supports.filter(s => spoolFullNos.includes(s.full_spool_no));
+  }, [selectedSpools, spools, supports]);
 
   // Auto-derive flanges from selected spools
-  useEffect(() => {
-    if (selectedSpools.length > 0) {
-      const flangeIds = flanges
-        .filter(f => selectedSpools.includes(f.first_part_id) || selectedSpools.includes(f.second_part_id))
-        .map(f => f.id);
-      setSelectedFlanges(flangeIds);
-    }
-  }, [selectedSpools, flanges]);
-
-  const handleToggleWeld = (weldId) => {
-    setSelectedWelds(prev => 
-      prev.includes(weldId) ? prev.filter(id => id !== weldId) : [...prev, weldId]
+  const derivedFlanges = useMemo(() => {
+    if (selectedSpools.length === 0) return [];
+    const spoolFullNos = selectedSpools.map(id => {
+      const spool = spools.find(s => s.id === id);
+      return spool?.full_spool_no;
+    }).filter(Boolean);
+    
+    return flanges.filter(f => 
+      spoolFullNos.includes(f.first_part_code) || spoolFullNos.includes(f.second_part_code)
     );
+  }, [selectedSpools, spools, flanges]);
+
+  // Generate WP code
+  const generateWPCode = () => {
+    const existingPiping = workPackages.filter(wp => wp.wp_type === 'piping');
+    const nextNum = existingPiping.length + 1;
+    return `WP-P-${String(nextNum).padStart(3, '0')}`;
   };
 
-  const handleSelectAllWelds = () => {
-    if (selectedWelds.length === filteredWelds.length) {
-      setSelectedWelds([]);
-    } else {
-      setSelectedWelds(filteredWelds.map(w => w.id));
-    }
-  };
-
+  // FIX #7: Handle save with correct storage of ALL elements
   const handleSave = async () => {
+    if (selectedSpools.length === 0) {
+      alert('Seleziona almeno uno spool');
+      return;
+    }
+    
     setSaving(true);
     try {
-      // Create WP
-      const { data: wpData, error: wpError } = await supabase
-        .from('work_packages')
-        .insert({
-          project_id: projectId,
-          code: nextCode,
-          wp_type: 'piping',
-          description: formData.description || null,
-          notes: formData.notes || null,
-          area: formData.area || null,
-          status: 'not_assigned',
-          revision: 0,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      const wpCode = generateWPCode();
+      
+      // 1. Create WP with revision 0
+      const { data: newWP, error: wpError } = await supabase.from('work_packages').insert({
+        project_id: projectId,
+        code: wpCode,
+        wp_type: 'piping',
+        description: formData.description || null,
+        area: formData.area || null,
+        notes: formData.notes || null,
+        status: 'not_assigned',
+        revision: 0,
+        created_at: new Date().toISOString()
+      }).select().single();
       
       if (wpError) throw wpError;
-
-      // Save wp_spools
-      if (selectedSpools.length > 0) {
-        const spoolsToInsert = selectedSpools.map(spoolId => {
-          const spool = spools.find(s => s.id === spoolId);
-          return {
-            work_package_id: wpData.id,
-            spool_id: spoolId,
-            spool_number: spool?.spool_no || spool?.full_spool_no
-          };
-        });
-        await supabase.from('wp_spools').insert(spoolsToInsert);
-      }
-
-      // Create activities for welds
-      if (selectedWelds.length > 0) {
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'welding',
-          quantity_total: selectedWelds.length,
-          quantity_completed: 0,
-          item_ids: selectedWelds
-        });
-      }
-
-      // Create activities for supports
-      if (selectedSupports.length > 0) {
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'support',
-          quantity_total: selectedSupports.length,
-          quantity_completed: 0,
-          item_ids: selectedSupports
-        });
+      
+      // 2. Save spools
+      const spoolsToInsert = selectedSpools.map(spoolId => {
+        const spool = spools.find(s => s.id === spoolId);
+        return {
+          work_package_id: newWP.id,
+          spool_id: spoolId,
+          spool_number: spool?.spool_no || spool?.full_spool_no
+        };
+      });
+      
+      const { error: spoolError } = await supabase.from('wp_spools').insert(spoolsToInsert);
+      if (spoolError) console.error('Error saving spools:', spoolError);
+      
+      // 3. FIX #7: Save welds to wp_welds
+      if (derivedWelds.length > 0) {
+        const weldsToInsert = derivedWelds.map(weld => ({
+          work_package_id: newWP.id,
+          weld_id: weld.id
+        }));
         
-        // FIX #2: Save to wp_supports for material availability tracking
-        const supportsToInsert = selectedSupports.map(supportId => {
-          const support = supports.find(s => s.id === supportId);
-          return {
-            work_package_id: wpData.id,
-            support_id: supportId,
-            support_tag: support?.support_tag_no
-          };
-        });
-        await supabase.from('wp_supports').insert(supportsToInsert);
+        const { error: weldError } = await supabase.from('wp_welds').insert(weldsToInsert);
+        if (weldError) console.error('Error saving welds:', weldError);
       }
-
-      // Create activities for flanges
-      if (selectedFlanges.length > 0) {
-        await supabase.from('wp_activities').insert({
-          work_package_id: wpData.id,
-          category: 'flange',
-          quantity_total: selectedFlanges.length,
-          quantity_completed: 0,
-          item_ids: selectedFlanges
-        });
+      
+      // 4. FIX #7: Save supports to wp_supports
+      if (derivedSupports.length > 0) {
+        const supportsToInsert = derivedSupports.map(support => ({
+          work_package_id: newWP.id,
+          support_id: support.id
+        }));
         
-        // FIX #2: Save to wp_flanges for material availability tracking
-        const flangesToInsert = selectedFlanges.map(flangeId => {
-          const flange = flanges.find(f => f.id === flangeId);
-          return {
-            work_package_id: wpData.id,
-            flange_id: flangeId,
-            flange_tag: flange?.flange_tag
-          };
-        });
-        await supabase.from('wp_flanges').insert(flangesToInsert);
+        const { error: supportError } = await supabase.from('wp_supports').insert(supportsToInsert);
+        if (supportError) console.error('Error saving supports:', supportError);
       }
-
-      // Log revision
+      
+      // 5. FIX #7: Save flanges to wp_flanges
+      if (derivedFlanges.length > 0) {
+        const flangesToInsert = derivedFlanges.map(flange => ({
+          work_package_id: newWP.id,
+          flange_id: flange.id
+        }));
+        
+        const { error: flangeError } = await supabase.from('wp_flanges').insert(flangesToInsert);
+        if (flangeError) console.error('Error saving flanges:', flangeError);
+      }
+      
+      // 6. Log revision
       await supabase.from('wp_revisions').insert({
-        project_id: projectId,
-        work_package_id: wpData.id,
+        work_package_id: newWP.id,
         revision_number: 0,
         change_type: 'created',
-        changes_summary: `WP creato con ${selectedWelds.length} saldature, ${selectedSpools.length} spools, ${selectedSupports.length} supporti, ${selectedFlanges.length} flangie`,
-        new_values: {
-          welds: selectedWelds.length,
-          spools: selectedSpools.length,
-          supports: selectedSupports.length,
-          flanges: selectedFlanges.length
-        }
+        change_description: `WP creato con ${selectedSpools.length} spools, ${derivedWelds.length} welds, ${derivedSupports.length} supports, ${derivedFlanges.length} flanges`
       });
-
+      
       onSuccess();
     } catch (error) {
+      console.error('Error creating WP:', error);
       alert('Errore: ' + error.message);
     } finally {
       setSaving(false);
     }
   };
 
-  const canProceed = () => {
-    if (step === 2) return selectedWelds.length > 0;
-    return true;
-  };
-
-  const stepLabels = ['Info Base', 'Saldature', 'Spools', 'Supporti', 'Flanges'];
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">🔧 Nuovo Work Package Piping</h2>
-            <p className="text-sm text-gray-500">Step {step} di 5 - {stepLabels[step - 1]}</p>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🔧</span>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">Nuovo WP Piping</h2>
+              <p className="text-sm text-gray-500">Step {step} di 3</p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg text-gray-500">✕</button>
+          <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
         </div>
         
-        {/* Step indicators */}
-        <div className="flex border-b overflow-x-auto">
-          {stepLabels.map((label, idx) => (
-            <div key={idx} className={`flex-1 py-3 text-center text-xs sm:text-sm font-medium border-b-2 whitespace-nowrap px-2 
-              ${step === idx + 1 ? 'border-blue-500 text-blue-600 bg-blue-50' : 
-                step > idx + 1 ? 'border-green-500 text-green-600 bg-green-50' : 'border-transparent text-gray-400'}`}>
-              {step > idx + 1 ? '✓' : `${idx + 1}.`} {label}
-            </div>
-          ))}
+        {/* Progress */}
+        <div className="flex border-b">
+          <div className={`flex-1 p-3 text-center text-sm font-medium ${step >= 1 ? 'text-blue-600 bg-blue-50' : 'text-gray-400'}`}>
+            1. Seleziona ISO
+          </div>
+          <div className={`flex-1 p-3 text-center text-sm font-medium ${step >= 2 ? 'text-blue-600 bg-blue-50' : 'text-gray-400'}`}>
+            2. Seleziona Spools
+          </div>
+          <div className={`flex-1 p-3 text-center text-sm font-medium ${step >= 3 ? 'text-blue-600 bg-blue-50' : 'text-gray-400'}`}>
+            3. Riepilogo
+          </div>
         </div>
         
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Info Base */}
+          {/* Step 1: ISO Selection */}
           {step === 1 && (
-            <div className="space-y-4 max-w-2xl">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label>
-                <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
+            <div className="space-y-4">
+              <p className="text-gray-600">Seleziona gli isometrici da includere nel Work Package:</p>
+              
+              <div className="border rounded-lg max-h-[400px] overflow-y-auto">
+                {isometrics.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400">Nessun isometrico disponibile</div>
+                ) : (
+                  isometrics.map(iso => {
+                    const isoSpools = spools.filter(s => s.iso_number === iso.iso_number && !assignedSpoolIds.has(s.id));
+                    const isSelected = selectedISOs.includes(iso.iso_number);
+                    
+                    return (
+                      <label key={iso.id} className={`flex items-center gap-4 p-4 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedISOs([...selectedISOs, iso.iso_number]);
+                            } else {
+                              setSelectedISOs(selectedISOs.filter(i => i !== iso.iso_number));
+                              // Remove spools from this ISO
+                              const isoSpoolIds = isoSpools.map(s => s.id);
+                              setSelectedSpools(selectedSpools.filter(id => !isoSpoolIds.includes(id)));
+                            }
+                          }}
+                          className="w-5 h-5 text-blue-600 rounded"
+                        />
+                        <div className="flex-1">
+                          <p className="font-mono font-medium text-blue-600">{iso.iso_number}</p>
+                          <p className="text-xs text-gray-500">{isoSpools.length} spools disponibili</p>
+                        </div>
+                      </label>
+                    );
+                  })
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
-                <input 
-                  type="text" 
-                  value={formData.description} 
-                  onChange={e => setFormData({...formData, description: e.target.value})} 
-                  placeholder="Es: Linea 24&quot; HC (opzionale)"
-                  className="w-full px-3 py-2 border rounded-lg" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-                <input 
-                  type="text" 
-                  value={formData.area} 
-                  onChange={e => setFormData({...formData, area: e.target.value})} 
-                  placeholder="Es: Area 100"
-                  className="w-full px-3 py-2 border rounded-lg" 
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-                <textarea 
-                  rows={3} 
-                  value={formData.notes} 
-                  onChange={e => setFormData({...formData, notes: e.target.value})} 
-                  className="w-full px-3 py-2 border rounded-lg" 
-                />
-              </div>
+              
+              {selectedISOs.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                  {selectedISOs.length} ISO selezionati • {availableSpools.length} spools disponibili
+                </div>
+              )}
             </div>
           )}
           
-          {/* Step 2: Select Welds */}
+          {/* Step 2: Spool Selection */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-orange-800">🔥 <strong>Seleziona le saldature</strong> da includere nel WP. Spools, supporti e flanges verranno derivati automaticamente.</p>
-              </div>
-              
-              {/* Filters */}
-              <div className="grid md:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg border">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cerca</label>
-                  <input 
-                    type="text" 
-                    value={weldSearch} 
-                    onChange={e => setWeldSearch(e.target.value)} 
-                    placeholder="Weld No, ISO..."
-                    className="w-full px-3 py-2 border rounded-lg bg-white" 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Isometrico</label>
-                  <select 
-                    value={weldFilterIso} 
-                    onChange={e => setWeldFilterIso(e.target.value)} 
-                    className="w-full px-3 py-2 border rounded-lg bg-white"
-                  >
-                    <option value="">Tutti</option>
-                    {isometrics.map(iso => <option key={iso.id} value={iso.id}>{iso.iso_number}</option>)}
-                  </select>
-                </div>
-              </div>
-              
-              {/* Selection summary */}
               <div className="flex items-center justify-between">
-                <h4 className="font-medium text-gray-700">Saldature disponibili ({filteredWelds.length})</h4>
-                <div className="flex items-center gap-4">
-                  <span className="text-sm text-orange-600 font-medium">🔥 {selectedWelds.length} selezionate</span>
-                  <button onClick={handleSelectAllWelds} className="text-sm text-blue-600 hover:underline">
-                    {selectedWelds.length === filteredWelds.length ? 'Deseleziona tutti' : 'Seleziona tutti'}
-                  </button>
-                </div>
+                <p className="text-gray-600">Seleziona gli spools:</p>
+                <button 
+                  onClick={() => setSelectedSpools(availableSpools.map(s => s.id))}
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
+                  ✓ Seleziona tutti
+                </button>
               </div>
               
-              {/* Welds table */}
-              <div className="border rounded-lg overflow-hidden max-h-[400px] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                      <th className="w-10 p-2"></th>
-                      <th className="text-left p-2">Weld No</th>
-                      <th className="text-left p-2">ISO</th>
-                      <th className="text-center p-2">Ø</th>
-                      <th className="text-center p-2">Tipo</th>
-                      <th className="text-center p-2">Dissimile</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredWelds.length === 0 ? (
-                      <tr><td colSpan={6} className="p-4 text-center text-gray-400">Nessuna saldatura disponibile</td></tr>
-                    ) : filteredWelds.map(w => (
-                      <tr 
-                        key={w.id} 
-                        onClick={() => handleToggleWeld(w.id)}
-                        className={`border-t cursor-pointer hover:bg-gray-50 ${selectedWelds.includes(w.id) ? 'bg-orange-50' : ''} ${w.is_dissimilar ? 'bg-yellow-50' : ''}`}
-                      >
-                        <td className="p-2 text-center">
-                          <input 
-                            type="checkbox" 
-                            checked={selectedWelds.includes(w.id)} 
-                            onChange={() => {}}
-                            className="w-4 h-4 text-orange-600 rounded"
-                          />
-                        </td>
-                        <td className="p-2 font-mono text-orange-600">{w.weld_no}</td>
-                        <td className="p-2 text-gray-600 text-xs">{w.iso_number}</td>
-                        <td className="p-2 text-center">{w.diameter_inch}"</td>
-                        <td className="p-2 text-center"><span className="px-1.5 py-0.5 bg-gray-100 rounded text-xs">{w.weld_type}</span></td>
-                        <td className="p-2 text-center">{w.is_dissimilar ? <span className="text-yellow-600">⚠️</span> : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="border rounded-lg max-h-[350px] overflow-y-auto">
+                {availableSpools.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400">Nessuno spool disponibile. Torna indietro e seleziona ISO.</div>
+                ) : (
+                  availableSpools.map(spool => {
+                    const isSelected = selectedSpools.includes(spool.id);
+                    return (
+                      <label key={spool.id} className={`flex items-center gap-4 p-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}`}>
+                        <input 
+                          type="checkbox" 
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedSpools([...selectedSpools, spool.id]);
+                            } else {
+                              setSelectedSpools(selectedSpools.filter(id => id !== spool.id));
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <div className="flex-1 flex items-center gap-4">
+                          <span className="font-mono text-sm text-blue-600">{spool.spool_no}</span>
+                          <span className="text-xs text-gray-500">{spool.iso_number}</span>
+                          <SiteStatusBadge status={spool.site_status} />
+                        </div>
+                        <span className="text-xs text-gray-400">{spool.diameter_inch}" • {spool.weight_kg?.toFixed(1)}kg</span>
+                      </label>
+                    );
+                  })
+                )}
               </div>
+              
+              {selectedSpools.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                  {selectedSpools.length} spools selezionati
+                </div>
+              )}
             </div>
           )}
           
-          {/* Step 3: Review Spools */}
+          {/* Step 3: Review */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                <p className="text-sm text-blue-800">📦 <strong>Spools derivati automaticamente</strong> dalle saldature selezionate.</p>
-              </div>
-              
-              <h4 className="font-medium text-gray-700">Spools ({selectedSpools.length})</h4>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                {selectedSpools.map(spoolId => {
-                  const spool = spools.find(s => s.id === spoolId);
-                  if (!spool) return null;
-                  return (
-                    <div key={spoolId} className="bg-white border rounded-lg p-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-blue-600 font-medium">{spool.spool_no}</span>
-                        <SiteStatusBadge status={spool.site_status} />
-                      </div>
-                      <div className="text-xs text-gray-500 mt-1">{spool.iso_number}</div>
-                      <div className="text-xs text-gray-400 mt-1">Ø{spool.diameter_inch}" • {spool.weight_kg}kg</div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {selectedSpools.length === 0 && (
-                <div className="text-center py-8 text-gray-400">
-                  <p>Nessuno spool derivato. Torna indietro e seleziona delle saldature.</p>
+              {/* FIX #1: Mostra Rev.0 */}
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 border rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="font-mono font-bold text-xl text-blue-600">{generateWPCode()}</span>
+                  <RevisionBadge revision={0} />
                 </div>
-              )}
-            </div>
-          )}
-          
-          {/* Step 4: Review Supports */}
-          {step === 4 && (
-            <div className="space-y-4">
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                <p className="text-sm text-gray-800">🔩 <strong>Supporti derivati automaticamente</strong> dagli spools.</p>
+                <p className="text-sm text-gray-600">Nuovo Work Package Piping</p>
               </div>
               
-              <h4 className="font-medium text-gray-700">Supporti ({selectedSupports.length})</h4>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                {selectedSupports.map(supportId => {
-                  const support = supports.find(s => s.id === supportId);
-                  if (!support) return null;
-                  return (
-                    <div key={supportId} className="bg-white border rounded-lg p-3">
-                      <div className="font-mono text-gray-700">{support.support_tag_no}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{support.support_mark}</span>
-                        <span className="text-xs text-gray-500">{support.weight_kg}kg</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {selectedSupports.length === 0 && (
-                <div className="text-center py-8 text-gray-400">
-                  <p>Nessun supporto trovato per gli spools selezionati.</p>
+              {/* Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="bg-blue-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-600">{selectedSpools.length}</div>
+                  <div className="text-xs text-gray-600">📦 Spools</div>
                 </div>
-              )}
-            </div>
-          )}
-          
-          {/* Step 5: Review Flanges */}
-          {step === 5 && (
-            <div className="space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-800">⚙️ <strong>Flangie derivate automaticamente</strong> dagli spools.</p>
-              </div>
-              
-              <h4 className="font-medium text-gray-700">Flangie ({selectedFlanges.length})</h4>
-              
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto">
-                {selectedFlanges.map(flangeId => {
-                  const flange = flanges.find(f => f.id === flangeId);
-                  if (!flange) return null;
-                  return (
-                    <div key={flangeId} className="bg-white border rounded-lg p-3">
-                      <div className="font-mono text-amber-700">{flange.flange_tag}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">{flange.flange_type}</span>
-                        <span className="text-xs text-gray-500">Ø{flange.diameter_inch}" {flange.pressure_rating}</span>
-                      </div>
-                      {flange.is_critical && <span className="text-xs text-red-600 font-medium mt-1 block">⚠️ Critica</span>}
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {selectedFlanges.length === 0 && (
-                <div className="text-center py-8 text-gray-400">
-                  <p>Nessuna flangia trovata per gli spools selezionati.</p>
+                <div className="bg-orange-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-orange-600">{derivedWelds.length}</div>
+                  <div className="text-xs text-gray-600">🔥 Saldature</div>
                 </div>
-              )}
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-gray-600">{derivedSupports.length}</div>
+                  <div className="text-xs text-gray-600">🔩 Supporti</div>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-amber-600">{derivedFlanges.length}</div>
+                  <div className="text-xs text-gray-600">⚙️ Flangie</div>
+                </div>
+              </div>
               
-              {/* Summary before save */}
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
-                <h4 className="font-semibold text-blue-800 mb-2">📋 Riepilogo WP</h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                  <div>
-                    <p className="text-2xl font-bold text-orange-600">{selectedWelds.length}</p>
-                    <p className="text-xs text-gray-600">Saldature</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-blue-600">{selectedSpools.length}</p>
-                    <p className="text-xs text-gray-600">Spools</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-600">{selectedSupports.length}</p>
-                    <p className="text-xs text-gray-600">Supporti</p>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-amber-600">{selectedFlanges.length}</p>
-                    <p className="text-xs text-gray-600">Flangie</p>
-                  </div>
+              {/* Form */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione</label>
+                  <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Opzionale" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                  <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Es. Area 100" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                  <textarea rows={2} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
                 </div>
               </div>
             </div>
@@ -1323,25 +1304,21 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
         </div>
         
         {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t bg-gray-50">
-          <button onClick={() => step > 1 ? setStep(step - 1) : onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">
+        <div className="flex justify-between gap-3 p-4 border-t bg-gray-50">
+          <button onClick={() => step > 1 ? setStep(step - 1) : onClose()} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">
             {step > 1 ? '← Indietro' : 'Annulla'}
           </button>
           
-          {step < 5 ? (
+          {step < 3 ? (
             <button 
               onClick={() => setStep(step + 1)} 
-              disabled={!canProceed()}
+              disabled={(step === 1 && selectedISOs.length === 0) || (step === 2 && selectedSpools.length === 0)}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
               Avanti →
             </button>
           ) : (
-            <button 
-              onClick={handleSave} 
-              disabled={saving || selectedWelds.length === 0}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
+            <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
               {saving ? 'Creazione...' : '✓ Crea WP'}
             </button>
           )}
@@ -1359,57 +1336,51 @@ const CreateWPAModal = ({ workPackages, squads, projectId, onClose, onSuccess })
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({
     description: '',
-    notes: '',
     area: '',
+    notes: '',
     estimated_hours: ''
   });
 
-  const nextCode = useMemo(() => {
-    const actionWPs = workPackages.filter(wp => wp.wp_type === 'action');
-    const maxNum = actionWPs.reduce((max, wp) => {
-      const match = wp.code.match(/WP-A-(\d+)/);
-      return match ? Math.max(max, parseInt(match[1])) : max;
-    }, 0);
-    return `WP-A-${String(maxNum + 1).padStart(3, '0')}`;
-  }, [workPackages]);
+  const generateWPCode = () => {
+    const existingAction = workPackages.filter(wp => wp.wp_type === 'action');
+    const nextNum = existingAction.length + 1;
+    return `WP-A-${String(nextNum).padStart(3, '0')}`;
+  };
 
   const handleSave = async () => {
     if (!formData.description) {
-      alert('La descrizione è obbligatoria per WP-A');
+      alert('Descrizione obbligatoria per WP-A');
       return;
     }
     
     setSaving(true);
     try {
-      const { data: wpData, error } = await supabase
-        .from('work_packages')
-        .insert({
-          project_id: projectId,
-          code: nextCode,
-          wp_type: 'action',
-          description: formData.description,
-          notes: formData.notes || null,
-          area: formData.area || null,
-          estimated_hours: formData.estimated_hours ? Number(formData.estimated_hours) : null,
-          status: 'not_assigned',
-          manual_progress: 0,
-          revision: 0,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      const wpCode = generateWPCode();
+      
+      const { data: newWP, error } = await supabase.from('work_packages').insert({
+        project_id: projectId,
+        code: wpCode,
+        wp_type: 'action',
+        description: formData.description,
+        area: formData.area || null,
+        notes: formData.notes || null,
+        estimated_hours: formData.estimated_hours ? Number(formData.estimated_hours) : null,
+        status: 'not_assigned',
+        revision: 0,
+        manual_progress: 0,
+        created_at: new Date().toISOString()
+      }).select().single();
       
       if (error) throw error;
-
+      
       // Log revision
       await supabase.from('wp_revisions').insert({
-        project_id: projectId,
-        work_package_id: wpData.id,
+        work_package_id: newWP.id,
         revision_number: 0,
         change_type: 'created',
-        changes_summary: `WP-A creato: ${formData.description}`
+        change_description: 'WP Action creato'
       });
-
+      
       onSuccess();
     } catch (error) {
       alert('Errore: ' + error.message);
@@ -1420,64 +1391,43 @@ const CreateWPAModal = ({ workPackages, squads, projectId, onClose, onSuccess })
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
         <div className="flex items-center justify-between p-4 border-b bg-gradient-to-r from-green-50 to-green-100">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">⚡ Nuovo Work Package Action</h2>
-            <p className="text-sm text-gray-500">Attività generica / extra scope</p>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">⚡</span>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">Nuovo WP Action</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">{generateWPCode()}</span>
+                <RevisionBadge revision={0} />
+              </div>
+            </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
         </div>
         
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Codice WP</label>
-            <input type="text" value={nextCode} readOnly className="w-full px-3 py-2 border rounded-lg bg-gray-50" />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Descrizione *</label>
-            <input 
-              type="text" 
-              value={formData.description} 
-              onChange={e => setFormData({...formData, description: e.target.value})} 
-              placeholder="Es: Installazione scaffolding Area 200"
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
+            <input type="text" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-3 py-2 border rounded-lg" placeholder="Es. Installazione valvole area 100" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
-            <input 
-              type="text" 
-              value={formData.area} 
-              onChange={e => setFormData({...formData, area: e.target.value})} 
-              placeholder="Es: Area 200"
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
+            <input type="text" value={formData.area} onChange={e => setFormData({...formData, area: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Ore Stimate</label>
-            <input 
-              type="number" 
-              value={formData.estimated_hours} 
-              onChange={e => setFormData({...formData, estimated_hours: e.target.value})} 
-              placeholder="Es: 40"
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
+            <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Note</label>
-            <textarea 
-              rows={3} 
-              value={formData.notes} 
-              onChange={e => setFormData({...formData, notes: e.target.value})} 
-              className="w-full px-3 py-2 border rounded-lg" 
-            />
+            <textarea rows={2} value={formData.notes} onChange={e => setFormData({...formData, notes: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
           </div>
         </div>
         
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
           <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} disabled={saving || !formData.description} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             {saving ? 'Creazione...' : '✓ Crea WP'}
           </button>
         </div>
@@ -1486,23 +1436,18 @@ const CreateWPAModal = ({ workPackages, squads, projectId, onClose, onSuccess })
   );
 };
 
+
 // ============================================================================
-// EDIT WP MODAL - FIX #3: Con modifica contenuto e sistema revisioni
+// EDIT WP MODAL
+// FIX #6: Modifica completa con spools + welds + supports + flanges
 // ============================================================================
 
-const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, flanges, onClose, onSuccess }) => {
+const EditWPModal = ({ 
+  wp, squads, allWorkPackages, spools, welds, supports, flanges, 
+  supportSummary, flangeMaterialsSummary, onClose, onSuccess 
+}) => {
   const [saving, setSaving] = useState(false);
-  const [activeEditTab, setActiveEditTab] = useState('info');
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingChanges, setPendingChanges] = useState(null);
-  const [showCompletionAlert, setShowCompletionAlert] = useState(false);
-  
-  // PHASE B: Material availability state
-  const [materialAvailability, setMaterialAvailability] = useState({
-    supports: [],
-    flangeMaterials: [],
-    loading: true
-  });
+  const [activeTab, setActiveTab] = useState('info');
   
   // Info form
   const [formData, setFormData] = useState({
@@ -1519,165 +1464,84 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
   
   // Content state (for WP-P)
   const [wpSpools, setWpSpools] = useState([]);
-  const [contentChanged, setContentChanged] = useState(false);
-  const [addingSpools, setAddingSpools] = useState(false);
+  const [wpWelds, setWpWelds] = useState([]);
+  const [wpSupports, setWpSupports] = useState([]);
+  const [wpFlanges, setWpFlanges] = useState([]);
+  
+  // Pending changes
   const [spoolsToAdd, setSpoolsToAdd] = useState([]);
   const [spoolsToRemove, setSpoolsToRemove] = useState([]);
+  const [weldsToAdd, setWeldsToAdd] = useState([]);
+  const [weldsToRemove, setWeldsToRemove] = useState([]);
+  const [supportsToAdd, setSupportsToAdd] = useState([]);
+  const [supportsToRemove, setSupportsToRemove] = useState([]);
+  const [flangesToAdd, setFlangesToAdd] = useState([]);
+  const [flangesToRemove, setFlangesToRemove] = useState([]);
   
-  const [splitResources, setSplitResources] = useState(wp.split_resources || false);
-  const [showConflictModal, setShowConflictModal] = useState(false);
-  const [conflicts, setConflicts] = useState([]);
-  const [originalSquadId] = useState(wp.squad_id);
+  // Modal state
+  const [showAddModal, setShowAddModal] = useState(null); // 'spools', 'welds', 'supports', 'flanges'
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
 
-  // Load current WP spools
+  const isPiping = wp.wp_type === 'piping';
+  const contentChanged = spoolsToAdd.length > 0 || spoolsToRemove.length > 0 ||
+                         weldsToAdd.length > 0 || weldsToRemove.length > 0 ||
+                         supportsToAdd.length > 0 || supportsToRemove.length > 0 ||
+                         flangesToAdd.length > 0 || flangesToRemove.length > 0;
+
+  // Load current WP content
   useEffect(() => {
-    if (wp.wp_type === 'piping') {
-      loadWPSpools();
-      loadMaterialAvailability();
+    if (isPiping) {
+      loadWPContent();
     }
   }, [wp.id]);
 
-  const loadWPSpools = async () => {
-    const { data } = await supabase
+  const loadWPContent = async () => {
+    const { data: spoolData } = await supabase
       .from('wp_spools')
       .select('*, spool:mto_spools(*)')
       .eq('work_package_id', wp.id);
-    setWpSpools(data || []);
-  };
-
-  // PHASE B: Load material availability for WP flanges and supports
-  const loadMaterialAvailability = async () => {
-    setMaterialAvailability(prev => ({ ...prev, loading: true }));
-    try {
-      // Get WP flanges and supports
-      const { data: wpFlangesData } = await supabase
-        .from('wp_flanges')
-        .select('flange_id')
-        .eq('work_package_id', wp.id);
-      
-      const { data: wpSupportsData } = await supabase
-        .from('wp_supports')
-        .select('support_id')
-        .eq('work_package_id', wp.id);
-      
-      const wpFlangeIds = wpFlangesData?.map(f => f.flange_id) || [];
-      const wpSupportIds = wpSupportsData?.map(s => s.support_id) || [];
-      
-      // Get flange details with material info
-      let flangeDetails = [];
-      if (wpFlangeIds.length > 0) {
-        const { data: flangesInfo } = await supabase
-          .from('mto_flanged_joints')
-          .select('*')
-          .in('id', wpFlangeIds);
-        flangeDetails = flangesInfo || [];
-      }
-      
-      // Get support details
-      let supportDetails = [];
-      if (wpSupportIds.length > 0) {
-        const { data: supportsInfo } = await supabase
-          .from('mto_supports')
-          .select('*')
-          .in('id', wpSupportIds);
-        supportDetails = supportsInfo || [];
-      }
-      
-      // Get support inventory summary
-      const { data: supportSummary } = await supabase
-        .from('v_mto_support_summary')
-        .select('*')
-        .eq('project_id', wp.project_id);
-      
-      // Get flange materials inventory summary
-      const { data: flangeMaterialsSummary } = await supabase
-        .from('v_mto_flange_materials_summary')
-        .select('*')
-        .eq('project_id', wp.project_id);
-      
-      // Calculate availability per flange
-      const flangesWithAvailability = flangeDetails.map(flange => {
-        const gasketAvail = flangeMaterialsSummary?.find(m => 
-          m.material_code === flange.gasket_code && m.material_type === 'gasket'
-        );
-        const boltAvail = flangeMaterialsSummary?.find(m => 
-          m.material_code === flange.bolt_code && m.material_type === 'bolt'
-        );
-        const insulAvail = flange.insulation_code ? flangeMaterialsSummary?.find(m => 
-          m.material_code === flange.insulation_code && m.material_type === 'insulation'
-        ) : null;
-        
-        return {
-          ...flange,
-          gasket: {
-            code: flange.gasket_code,
-            qty_needed: flange.gasket_qty || 1,
-            available: (gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0),
-            status: !flange.gasket_code ? 'na' : 
-                    ((gasketAvail?.qty_warehouse || 0) - (gasketAvail?.qty_delivered || 0)) >= (flange.gasket_qty || 1) ? 'ok' : 'missing'
-          },
-          bolt: {
-            code: flange.bolt_code,
-            qty_needed: flange.bolt_qty || 0,
-            available: (boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0),
-            status: !flange.bolt_code || flange.bolt_qty === 0 ? 'na' : 
-                    ((boltAvail?.qty_warehouse || 0) - (boltAvail?.qty_delivered || 0)) >= (flange.bolt_qty || 0) ? 'ok' : 'missing'
-          },
-          insulation: {
-            code: flange.insulation_code,
-            qty_needed: flange.insulation_qty || 0,
-            available: insulAvail ? (insulAvail.qty_warehouse || 0) - (insulAvail.qty_delivered || 0) : 0,
-            status: !flange.insulation_code ? 'na' : 
-                    ((insulAvail?.qty_warehouse || 0) - (insulAvail?.qty_delivered || 0)) >= (flange.insulation_qty || 0) ? 'ok' : 'missing'
-          }
-        };
-      });
-      
-      // Calculate availability per support
-      const supportsWithAvailability = supportDetails.map(support => {
-        const markAvail = supportSummary?.find(s => s.support_mark === support.support_mark);
-        const available = (markAvail?.qty_warehouse || 0) - (markAvail?.qty_delivered || 0);
-        const needed = 1; // Each support needs 1 from its mark
-        
-        return {
-          ...support,
-          availability: {
-            available,
-            needed,
-            total_mark_needed: markAvail?.qty_necessary || 0,
-            status: available >= needed ? 'ok' : 'missing'
-          }
-        };
-      });
-      
-      setMaterialAvailability({
-        supports: supportsWithAvailability,
-        flanges: flangesWithAvailability,
-        loading: false
-      });
-    } catch (error) {
-      console.error('Error loading material availability:', error);
-      setMaterialAvailability(prev => ({ ...prev, loading: false }));
-    }
-  };
-
-  // Check conflitti quando cambia squadra
-  useEffect(() => {
-    if (formData.squad_id && formData.planned_start && formData.planned_end && formData.squad_id !== originalSquadId) {
-      const foundConflicts = checkSquadConflicts(formData.squad_id, formData.planned_start, formData.planned_end, allWorkPackages, wp.id);
-      if (foundConflicts.length > 0) {
-        setConflicts(foundConflicts);
-        setShowConflictModal(true);
-      }
-    }
-  }, [formData.squad_id]);
-
-  const handleSaveInfo = async () => {
-    if (!formData.description && wp.wp_type === 'action') { 
-      alert('Descrizione obbligatoria per WP-A'); 
-      return; 
-    }
+    setWpSpools(spoolData || []);
     
+    const { data: weldData } = await supabase
+      .from('wp_welds')
+      .select('*, weld:mto_welds(*)')
+      .eq('work_package_id', wp.id);
+    setWpWelds(weldData || []);
+    
+    const { data: supportData } = await supabase
+      .from('wp_supports')
+      .select('*, support:mto_supports(*)')
+      .eq('work_package_id', wp.id);
+    setWpSupports(supportData || []);
+    
+    const { data: flangeData } = await supabase
+      .from('wp_flanges')
+      .select('*, flange:mto_flanged_joints(*)')
+      .eq('work_package_id', wp.id);
+    setWpFlanges(flangeData || []);
+  };
+
+  // Available items for adding
+  const currentSpoolIds = wpSpools.map(ws => ws.spool_id);
+  const currentWeldIds = wpWelds.map(ww => ww.weld_id);
+  const currentSupportIds = wpSupports.map(ws => ws.support_id);
+  const currentFlangeIds = wpFlanges.map(wf => wf.flange_id);
+  
+  const availableSpools = spools.filter(s => 
+    !currentSpoolIds.includes(s.id) && !spoolsToAdd.includes(s.id)
+  );
+  const availableWelds = welds.filter(w => 
+    !currentWeldIds.includes(w.id) && !weldsToAdd.includes(w.id)
+  );
+  const availableSupports = supports.filter(s => 
+    !currentSupportIds.includes(s.id) && !supportsToAdd.includes(s.id)
+  );
+  const availableFlanges = flanges.filter(f => 
+    !currentFlangeIds.includes(f.id) && !flangesToAdd.includes(f.id)
+  );
+
+  // Save info
+  const handleSaveInfo = async () => {
     setSaving(true);
     try {
       const updateData = {
@@ -1688,141 +1552,20 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
         planned_start: formData.planned_start || null,
         planned_end: formData.planned_end || null,
         status: formData.status,
-        split_resources: splitResources,
         updated_at: new Date().toISOString()
       };
       
-      if (wp.wp_type === 'action') {
+      if (!isPiping) {
         updateData.manual_progress = Number(formData.manual_progress) || 0;
         updateData.estimated_hours = formData.estimated_hours ? Number(formData.estimated_hours) : null;
       }
       
-      // Check what changed for revision log
-      const changes = [];
-      if (formData.squad_id !== wp.squad_id) changes.push('squadra');
-      if (formData.status !== wp.status) changes.push('stato');
-      if (formData.planned_start !== wp.planned_start || formData.planned_end !== wp.planned_end) changes.push('date');
-      if (formData.description !== wp.description || formData.notes !== wp.notes) changes.push('info');
-      
-      const { error } = await supabase.from('work_packages').update(updateData).eq('id', wp.id);
-      if (error) throw error;
-      
-      // Log revision if anything changed
-      if (changes.length > 0) {
-        const changeType = changes.includes('squadra') ? 'assignment_changed' : 
-                          changes.includes('stato') ? 'status_changed' :
-                          changes.includes('date') ? 'dates_changed' : 'info_updated';
-        
-        await supabase.from('wp_revisions').insert({
-          project_id: wp.project_id,
-          work_package_id: wp.id,
-          revision_number: (wp.revision || 0) + 1,
-          change_type: changeType,
-          changes_summary: `Modifiche: ${changes.join(', ')}`,
-          old_values: {
-            squad_id: wp.squad_id,
-            status: wp.status,
-            planned_start: wp.planned_start,
-            planned_end: wp.planned_end
-          },
-          new_values: {
-            squad_id: formData.squad_id,
-            status: formData.status,
-            planned_start: formData.planned_start,
-            planned_end: formData.planned_end
-          }
-        });
-      }
-      
-      // PHASE B: Show completion alert if status changed to completed
-      if (formData.status === 'completed' && wp.status !== 'completed') {
-        setShowCompletionAlert(true);
-        // Auto-close after 3 seconds
-        setTimeout(() => {
-          setShowCompletionAlert(false);
-          onSuccess();
-        }, 3000);
-      } else {
-        onSuccess();
-      }
-    } catch (error) { 
-      alert('Errore: ' + error.message); 
-    } finally { 
-      setSaving(false); 
-    }
-  };
-
-  const handleAddSpools = (selectedIds) => {
-    setSpoolsToAdd(selectedIds);
-    setContentChanged(true);
-    setAddingSpools(false);
-  };
-
-  const handleRemoveSpool = (spoolId) => {
-    setSpoolsToRemove([...spoolsToRemove, spoolId]);
-    setContentChanged(true);
-  };
-
-  const handleSaveContent = () => {
-    if (!contentChanged) return;
-    
-    // Show confirmation modal
-    setPendingChanges({
-      added: spoolsToAdd.length,
-      removed: spoolsToRemove.length
-    });
-    setShowConfirmModal(true);
-  };
-
-  const confirmContentChanges = async () => {
-    setSaving(true);
-    try {
-      // Remove spools
-      if (spoolsToRemove.length > 0) {
-        await supabase
-          .from('wp_spools')
-          .delete()
-          .eq('work_package_id', wp.id)
-          .in('spool_id', spoolsToRemove);
-      }
-      
-      // Add spools
-      if (spoolsToAdd.length > 0) {
-        const spoolsToInsert = spoolsToAdd.map(spoolId => {
-          const spool = spools.find(s => s.id === spoolId);
-          return {
-            work_package_id: wp.id,
-            spool_id: spoolId,
-            spool_number: spool?.spool_no || spool?.full_spool_no
-          };
-        });
-        await supabase.from('wp_spools').insert(spoolsToInsert);
-      }
-      
-      // Recalculate activities based on new spools
-      // ... (complex logic to update welds/supports/flanges counts)
-      
-      // Increment revision
-      await supabase
+      const { error } = await supabase
         .from('work_packages')
-        .update({ 
-          revision: (wp.revision || 0) + 1,
-          updated_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', wp.id);
       
-      // Log revision
-      await supabase.from('wp_revisions').insert({
-        project_id: wp.project_id,
-        work_package_id: wp.id,
-        revision_number: (wp.revision || 0) + 1,
-        change_type: 'content_modified',
-        changes_summary: `Modificato contenuto: +${spoolsToAdd.length} spools, -${spoolsToRemove.length} spools`,
-        old_values: { spool_count: wpSpools.length },
-        new_values: { spool_count: wpSpools.length + spoolsToAdd.length - spoolsToRemove.length }
-      });
-      
-      setShowConfirmModal(false);
+      if (error) throw error;
       onSuccess();
     } catch (error) {
       alert('Errore: ' + error.message);
@@ -1831,27 +1574,97 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
     }
   };
 
-  const getSquadInfo = () => {
-    const squad = squads.find(s => s.id === formData.squad_id);
-    if (!squad) return null;
-    let memberCount = squad.squad_members?.length || 0;
-    if (squad.foreman_id) memberCount++;
-    return { id: squad.id, squad_number: squad.squad_number, name: squad.name, memberCount };
+  // FIX #6: Save content changes (all types)
+  const handleSaveContent = async () => {
+    setShowConfirmSave(false);
+    setSaving(true);
+    
+    try {
+      // Remove spools
+      for (const spoolId of spoolsToRemove) {
+        await supabase.from('wp_spools').delete().eq('work_package_id', wp.id).eq('spool_id', spoolId);
+      }
+      
+      // Add spools
+      for (const spoolId of spoolsToAdd) {
+        const spool = spools.find(s => s.id === spoolId);
+        await supabase.from('wp_spools').insert({
+          work_package_id: wp.id,
+          spool_id: spoolId,
+          spool_number: spool?.spool_no || spool?.full_spool_no
+        });
+      }
+      
+      // Remove welds
+      for (const weldId of weldsToRemove) {
+        await supabase.from('wp_welds').delete().eq('work_package_id', wp.id).eq('weld_id', weldId);
+      }
+      
+      // Add welds
+      for (const weldId of weldsToAdd) {
+        await supabase.from('wp_welds').insert({
+          work_package_id: wp.id,
+          weld_id: weldId
+        });
+      }
+      
+      // Remove supports
+      for (const supportId of supportsToRemove) {
+        await supabase.from('wp_supports').delete().eq('work_package_id', wp.id).eq('support_id', supportId);
+      }
+      
+      // Add supports
+      for (const supportId of supportsToAdd) {
+        await supabase.from('wp_supports').insert({
+          work_package_id: wp.id,
+          support_id: supportId
+        });
+      }
+      
+      // Remove flanges
+      for (const flangeId of flangesToRemove) {
+        await supabase.from('wp_flanges').delete().eq('work_package_id', wp.id).eq('flange_id', flangeId);
+      }
+      
+      // Add flanges
+      for (const flangeId of flangesToAdd) {
+        await supabase.from('wp_flanges').insert({
+          work_package_id: wp.id,
+          flange_id: flangeId
+        });
+      }
+      
+      // Increment revision
+      const newRevision = (wp.revision || 0) + 1;
+      await supabase.from('work_packages').update({ 
+        revision: newRevision,
+        updated_at: new Date().toISOString()
+      }).eq('id', wp.id);
+      
+      // Log revision
+      await supabase.from('wp_revisions').insert({
+        work_package_id: wp.id,
+        revision_number: newRevision,
+        change_type: 'content_modified',
+        change_description: `Modifiche: ${spoolsToAdd.length} spools aggiunti, ${spoolsToRemove.length} rimossi; ${weldsToAdd.length} welds aggiunti, ${weldsToRemove.length} rimossi; ${supportsToAdd.length} supports aggiunti, ${supportsToRemove.length} rimossi; ${flangesToAdd.length} flanges aggiunti, ${flangesToRemove.length} rimossi`
+      });
+      
+      onSuccess();
+    } catch (error) {
+      alert('Errore: ' + error.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const isPiping = wp.wp_type === 'piping';
   const headerColor = isPiping ? 'from-blue-50 to-blue-100' : 'from-green-50 to-green-100';
   const buttonColor = isPiping ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700';
   const icon = isPiping ? '🔧' : '⚡';
 
-  // Available spools for adding (not already in WP)
-  const currentSpoolIds = wpSpools.map(ws => ws.spool_id);
-  const availableSpools = spools.filter(s => !currentSpoolIds.includes(s.id) && !spoolsToAdd.includes(s.id));
-
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
           {/* Header */}
           <div className={`flex items-center justify-between p-4 border-b bg-gradient-to-r ${headerColor}`}>
             <div className="flex items-center gap-3">
@@ -1859,75 +1672,56 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
               <div>
                 <h2 className="text-xl font-bold text-gray-800">Modifica {wp.code}</h2>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-sm text-gray-500">{isPiping ? 'Work Package Piping' : 'Work Package Action'}</span>
+                  <span className="text-sm text-gray-500">{isPiping ? 'WP Piping' : 'WP Action'}</span>
                   <RevisionBadge revision={wp.revision} />
+                  {wp.created_at && <span className="text-xs text-gray-400">Creato: {new Date(wp.created_at).toLocaleDateString('it-IT')}</span>}
                 </div>
               </div>
             </div>
             <button onClick={onClose} className="p-2 hover:bg-white/50 rounded-lg">✕</button>
           </div>
           
-          {/* Tabs - FIX #3: Aggiunti tab per Contenuto e Documenti + PHASE B: Materiali */}
+          {/* Tabs */}
           <div className="flex border-b overflow-x-auto">
-            <button 
-              onClick={() => setActiveEditTab('info')} 
-              className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'info' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
+            <button onClick={() => setActiveTab('info')} className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeTab === 'info' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
               📝 Info
             </button>
             {isPiping && (
-              <button 
-                onClick={() => setActiveEditTab('content')} 
-                className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'content' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
-              >
-                📦 Contenuto {contentChanged && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
-              </button>
+              <>
+                <button onClick={() => setActiveTab('spools')} className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeTab === 'spools' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
+                  📦 Spools {(spoolsToAdd.length > 0 || spoolsToRemove.length > 0) && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
+                </button>
+                <button onClick={() => setActiveTab('welds')} className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeTab === 'welds' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
+                  🔥 Saldature {(weldsToAdd.length > 0 || weldsToRemove.length > 0) && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
+                </button>
+                <button onClick={() => setActiveTab('supports')} className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeTab === 'supports' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
+                  🔩 Supporti {(supportsToAdd.length > 0 || supportsToRemove.length > 0) && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
+                </button>
+                <button onClick={() => setActiveTab('flanges')} className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeTab === 'flanges' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500'}`}>
+                  ⚙️ Flangie {(flangesToAdd.length > 0 || flangesToRemove.length > 0) && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full inline-block"></span>}
+                </button>
+              </>
             )}
-            {isPiping && (
-              <button 
-                onClick={() => setActiveEditTab('materials')} 
-                className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'materials' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
-              >
-                📊 Materiali
-                {!materialAvailability.loading && (
-                  materialAvailability.flanges?.some(f => f.gasket.status === 'missing' || f.bolt.status === 'missing' || f.insulation.status === 'missing') ||
-                  materialAvailability.supports?.some(s => s.availability.status === 'missing')
-                ) && <span className="ml-1 w-2 h-2 bg-red-500 rounded-full inline-block"></span>}
-              </button>
-            )}
-            <button 
-              onClick={() => setActiveEditTab('documents')} 
-              className={`px-6 py-3 text-sm font-medium whitespace-nowrap ${activeEditTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
-              📎 Documenti
-            </button>
           </div>
           
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6">
-            {/* Tab Info */}
-            {activeEditTab === 'info' && (
+            {/* Info Tab */}
+            {activeTab === 'info' && (
               <div className="space-y-4">
-                {/* FIX #4: Info header with code, creation date and current squad */}
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Codice WP</label>
-                      <div className="font-mono text-lg font-bold text-gray-800">{wp.code}</div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Creato il</label>
-                      <div className="text-gray-800">{wp.created_at ? new Date(wp.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</div>
-                    </div>
+                <div className="bg-gray-50 rounded-lg p-4 grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Codice WP</label>
+                    <div className="font-mono text-lg font-bold text-gray-800">{wp.code}</div>
                   </div>
-                  {wp.squad_id && (
-                    <div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Creato il</label>
+                    <div className="text-gray-800">{wp.created_at ? new Date(wp.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</div>
+                  </div>
+                  {wp.squad && (
+                    <div className="col-span-2">
                       <label className="block text-xs font-medium text-gray-500 mb-1">Squadra Attuale</label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-purple-600 font-medium">
-                          {squads.find(s => s.id === wp.squad_id)?.name || `Squadra ${squads.find(s => s.id === wp.squad_id)?.squad_number || ''}`}
-                        </span>
-                      </div>
+                      <span className="text-purple-600 font-medium">SQ{wp.squad.squad_number} {wp.squad.name ? `- ${wp.squad.name}` : ''}</span>
                     </div>
                   )}
                 </div>
@@ -1957,7 +1751,7 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                   <label className="block text-sm font-medium text-gray-700 mb-1">Squadra</label>
                   <select value={formData.squad_id} onChange={e => setFormData({...formData, squad_id: e.target.value})} className="w-full px-3 py-2 border rounded-lg">
                     <option value="">-- Non assegnata --</option>
-                    {squads.map(s => <option key={s.id} value={s.id}>Squadra {s.squad_number} {s.name ? `- ${s.name}` : ''}</option>)}
+                    {squads.map(s => <option key={s.id} value={s.id}>SQ{s.squad_number} {s.name ? `- ${s.name}` : ''}</option>)}
                   </select>
                 </div>
                 
@@ -1973,18 +1767,16 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
                 </div>
                 
                 {!isPiping && (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Avanzamento %</label>
-                        <input type="number" min="0" max="100" value={formData.manual_progress} onChange={e => setFormData({...formData, manual_progress: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Ore Stimate</label>
-                        <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
-                      </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Avanzamento %</label>
+                      <input type="number" min="0" max="100" value={formData.manual_progress} onChange={e => setFormData({...formData, manual_progress: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
                     </div>
-                  </>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ore Stimate</label>
+                      <input type="number" value={formData.estimated_hours} onChange={e => setFormData({...formData, estimated_hours: e.target.value})} className="w-full px-3 py-2 border rounded-lg" />
+                    </div>
+                  </div>
                 )}
                 
                 <div>
@@ -1994,666 +1786,320 @@ const EditWPModal = ({ wp, squads, allWorkPackages, spools, welds, supports, fla
               </div>
             )}
             
-            {/* Tab Contenuto (WP-P only) - FIX #3 */}
-            {activeEditTab === 'content' && isPiping && (
-              <div className="space-y-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-sm text-blue-800">📦 <strong>Gestione Spools</strong> - Aggiungi o rimuovi spools dal WP. Le saldature, supporti e flangie verranno ricalcolate automaticamente.</p>
-                </div>
-                
-                {/* Current spools */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium text-gray-700">Spools nel WP ({wpSpools.length - spoolsToRemove.length + spoolsToAdd.length})</h4>
-                    <button onClick={() => setAddingSpools(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                      ➕ Aggiungi Spools
-                    </button>
-                  </div>
-                  
-                  <div className="border rounded-lg max-h-[300px] overflow-y-auto">
-                    {wpSpools.filter(ws => !spoolsToRemove.includes(ws.spool_id)).map(ws => (
-                      <div key={ws.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-blue-600">{ws.spool_number}</span>
-                          {ws.spool && <SiteStatusBadge status={ws.spool.site_status} />}
-                        </div>
-                        <button 
-                          onClick={() => handleRemoveSpool(ws.spool_id)} 
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded"
-                          title="Rimuovi dallo spool"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    ))}
-                    
-                    {/* Spools to add (pending) */}
-                    {spoolsToAdd.map(spoolId => {
-                      const spool = spools.find(s => s.id === spoolId);
-                      return (
-                        <div key={spoolId} className="flex items-center justify-between p-3 border-b last:border-b-0 bg-green-50">
-                          <div className="flex items-center gap-3">
-                            <span className="font-mono text-green-600">{spool?.spool_no || spool?.full_spool_no}</span>
-                            <span className="text-xs text-green-600 font-medium">➕ Nuovo</span>
-                          </div>
-                          <button 
-                            onClick={() => setSpoolsToAdd(spoolsToAdd.filter(id => id !== spoolId))} 
-                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
-                    
-                    {wpSpools.length === 0 && spoolsToAdd.length === 0 && (
-                      <div className="p-4 text-center text-gray-400">
-                        Nessuno spool nel WP
-                      </div>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Changes summary */}
-                {contentChanged && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <p className="text-sm text-amber-800 font-medium">⚠️ Modifiche in sospeso:</p>
-                    <ul className="text-sm text-amber-700 mt-1">
-                      {spoolsToAdd.length > 0 && <li>• {spoolsToAdd.length} spools da aggiungere</li>}
-                      {spoolsToRemove.length > 0 && <li>• {spoolsToRemove.length} spools da rimuovere</li>}
-                    </ul>
-                  </div>
+            {/* FIX #6: Spools Tab */}
+            {activeTab === 'spools' && isPiping && (
+              <EditContentSection
+                title="Spools"
+                icon="📦"
+                items={wpSpools}
+                itemsToAdd={spoolsToAdd}
+                itemsToRemove={spoolsToRemove}
+                onAdd={(id) => setSpoolsToAdd([...spoolsToAdd, id])}
+                onRemove={(id) => setSpoolsToRemove([...spoolsToRemove, id])}
+                onUndoAdd={(id) => setSpoolsToAdd(spoolsToAdd.filter(i => i !== id))}
+                onUndoRemove={(id) => setSpoolsToRemove(spoolsToRemove.filter(i => i !== id))}
+                availableItems={availableSpools}
+                renderItem={(ws) => (
+                  <>
+                    <span className="font-mono text-blue-600">{ws.spool_number || ws.spool?.spool_no}</span>
+                    {ws.spool && <SiteStatusBadge status={ws.spool.site_status} />}
+                    <span className="text-xs text-gray-500">{ws.spool?.diameter_inch}" • {ws.spool?.weight_kg?.toFixed(1)}kg</span>
+                  </>
                 )}
-              </div>
-            )}
-            
-            {/* PHASE B: Tab Materiali - Disponibilità materiali */}
-            {activeEditTab === 'materials' && isPiping && (
-              <MaterialAvailabilityTab 
-                materialAvailability={materialAvailability}
-                onRefresh={loadMaterialAvailability}
+                renderAvailableItem={(spool) => (
+                  <>
+                    <span className="font-mono text-blue-600">{spool.spool_no}</span>
+                    <span className="text-xs text-gray-500">{spool.iso_number}</span>
+                    <SiteStatusBadge status={spool.site_status} />
+                  </>
+                )}
+                getItemId={(ws) => ws.spool_id}
+                getAvailableId={(s) => s.id}
               />
             )}
             
-            {/* Tab Documenti */}
-            {activeEditTab === 'documents' && (
-              <WPDocuments workPackageId={wp.id} projectId={wp.project_id} />
+            {/* FIX #6: Welds Tab */}
+            {activeTab === 'welds' && isPiping && (
+              <EditContentSection
+                title="Saldature"
+                icon="🔥"
+                items={wpWelds}
+                itemsToAdd={weldsToAdd}
+                itemsToRemove={weldsToRemove}
+                onAdd={(id) => setWeldsToAdd([...weldsToAdd, id])}
+                onRemove={(id) => setWeldsToRemove([...weldsToRemove, id])}
+                onUndoAdd={(id) => setWeldsToAdd(weldsToAdd.filter(i => i !== id))}
+                onUndoRemove={(id) => setWeldsToRemove(weldsToRemove.filter(i => i !== id))}
+                availableItems={availableWelds}
+                renderItem={(ww) => (
+                  <>
+                    <span className="font-mono text-orange-600">{ww.weld?.weld_no}</span>
+                    <span className="text-xs text-gray-500">{ww.weld?.full_first_spool?.split('-').pop()} ↔ {ww.weld?.full_second_spool?.split('-').pop()}</span>
+                    <span className="text-xs">{ww.weld?.diameter_inch}" • {ww.weld?.weld_type}</span>
+                  </>
+                )}
+                renderAvailableItem={(weld) => (
+                  <>
+                    <span className="font-mono text-orange-600">{weld.weld_no}</span>
+                    <span className="text-xs text-gray-500">{weld.full_first_spool?.split('-').pop()} ↔ {weld.full_second_spool?.split('-').pop()}</span>
+                    <span className="text-xs">{weld.diameter_inch}" • {weld.weld_type}</span>
+                  </>
+                )}
+                getItemId={(ww) => ww.weld_id}
+                getAvailableId={(w) => w.id}
+              />
+            )}
+            
+            {/* FIX #6: Supports Tab */}
+            {activeTab === 'supports' && isPiping && (
+              <EditContentSection
+                title="Supporti"
+                icon="🔩"
+                items={wpSupports}
+                itemsToAdd={supportsToAdd}
+                itemsToRemove={supportsToRemove}
+                onAdd={(id) => setSupportsToAdd([...supportsToAdd, id])}
+                onRemove={(id) => setSupportsToRemove([...supportsToRemove, id])}
+                onUndoAdd={(id) => setSupportsToAdd(supportsToAdd.filter(i => i !== id))}
+                onUndoRemove={(id) => setSupportsToRemove(supportsToRemove.filter(i => i !== id))}
+                availableItems={availableSupports}
+                renderItem={(ws) => (
+                  <>
+                    <span className="font-mono text-xs">{ws.support?.support_tag_no}</span>
+                    <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{ws.support?.support_mark}</span>
+                    <span className="text-xs text-gray-500">{ws.support?.weight_kg?.toFixed(2)}kg</span>
+                  </>
+                )}
+                renderAvailableItem={(support) => (
+                  <>
+                    <span className="font-mono text-xs">{support.support_tag_no}</span>
+                    <span className="px-2 py-0.5 bg-gray-100 rounded text-xs">{support.support_mark}</span>
+                    <span className="text-xs text-gray-500">{support.iso_number}</span>
+                  </>
+                )}
+                getItemId={(ws) => ws.support_id}
+                getAvailableId={(s) => s.id}
+              />
+            )}
+            
+            {/* FIX #6: Flanges Tab */}
+            {activeTab === 'flanges' && isPiping && (
+              <EditContentSection
+                title="Accoppiamenti Flangiati"
+                icon="⚙️"
+                items={wpFlanges}
+                itemsToAdd={flangesToAdd}
+                itemsToRemove={flangesToRemove}
+                onAdd={(id) => setFlangesToAdd([...flangesToAdd, id])}
+                onRemove={(id) => setFlangesToRemove([...flangesToRemove, id])}
+                onUndoAdd={(id) => setFlangesToAdd(flangesToAdd.filter(i => i !== id))}
+                onUndoRemove={(id) => setFlangesToRemove(flangesToRemove.filter(i => i !== id))}
+                availableItems={availableFlanges}
+                renderItem={(wf) => (
+                  <>
+                    <span className="font-mono text-amber-700">{wf.flange?.flange_tag}</span>
+                    <span className="text-xs text-gray-500">{wf.flange?.iso_number}</span>
+                    <span className="text-xs">{wf.flange?.diameter_inch}" • {wf.flange?.flange_type}</span>
+                  </>
+                )}
+                renderAvailableItem={(flange) => (
+                  <>
+                    <span className="font-mono text-amber-700">{flange.flange_tag}</span>
+                    <span className="text-xs text-gray-500">{flange.iso_number}</span>
+                    <span className="text-xs">{flange.diameter_inch}" • {flange.flange_type}</span>
+                  </>
+                )}
+                getItemId={(wf) => wf.flange_id}
+                getAvailableId={(f) => f.id}
+              />
             )}
           </div>
           
           {/* Footer */}
-          <div className="flex justify-end gap-3 p-4 border-t bg-gray-50">
-            <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
-            
-            {activeEditTab === 'info' && (
-              <button onClick={handleSaveInfo} disabled={saving} className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}>
-                {saving ? 'Salvataggio...' : '✓ Salva Info'}
-              </button>
-            )}
-            
-            {activeEditTab === 'content' && contentChanged && (
-              <button onClick={handleSaveContent} disabled={saving} className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}>
-                {saving ? 'Salvataggio...' : '✓ Salva Modifiche Contenuto'}
-              </button>
-            )}
+          <div className="flex justify-between gap-3 p-4 border-t bg-gray-50">
+            <div>
+              {contentChanged && (
+                <span className="text-sm text-amber-600">⚠️ Modifiche non salvate</span>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Chiudi</button>
+              
+              {activeTab === 'info' && (
+                <button onClick={handleSaveInfo} disabled={saving} className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}>
+                  {saving ? 'Salvataggio...' : '✓ Salva Info'}
+                </button>
+              )}
+              
+              {activeTab !== 'info' && contentChanged && (
+                <button onClick={() => setShowConfirmSave(true)} disabled={saving} className={`px-6 py-2 text-white rounded-lg disabled:opacity-50 ${buttonColor}`}>
+                  {saving ? 'Salvataggio...' : '✓ Salva Modifiche'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
       
-      {/* Add Spools Modal */}
-      {addingSpools && (
-        <AddSpoolsModal 
-          availableSpools={availableSpools}
-          onAdd={handleAddSpools}
-          onClose={() => setAddingSpools(false)}
-        />
-      )}
-      
-      {/* Confirm Changes Modal */}
-      {showConfirmModal && (
+      {/* Confirm Save Modal */}
+      {showConfirmSave && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-gray-800 mb-4">⚠️ Conferma Modifiche</h3>
             <p className="text-gray-600 mb-4">
-              Stai per modificare il contenuto del WP. Questa azione incrementerà il numero di revisione.
+              Stai per modificare il contenuto del WP. La revisione passerà da <strong>Rev.{wp.revision}</strong> a <strong>Rev.{(wp.revision || 0) + 1}</strong>.
             </p>
-            <div className="bg-gray-50 rounded-lg p-3 mb-4">
-              <p className="text-sm">
-                {pendingChanges?.added > 0 && <span className="text-green-600">+{pendingChanges.added} spools</span>}
-                {pendingChanges?.added > 0 && pendingChanges?.removed > 0 && ', '}
-                {pendingChanges?.removed > 0 && <span className="text-red-600">-{pendingChanges.removed} spools</span>}
-              </p>
+            <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm space-y-1">
+              {(spoolsToAdd.length > 0 || spoolsToRemove.length > 0) && (
+                <p>📦 Spools: <span className="text-green-600">+{spoolsToAdd.length}</span> / <span className="text-red-600">-{spoolsToRemove.length}</span></p>
+              )}
+              {(weldsToAdd.length > 0 || weldsToRemove.length > 0) && (
+                <p>🔥 Saldature: <span className="text-green-600">+{weldsToAdd.length}</span> / <span className="text-red-600">-{weldsToRemove.length}</span></p>
+              )}
+              {(supportsToAdd.length > 0 || supportsToRemove.length > 0) && (
+                <p>🔩 Supporti: <span className="text-green-600">+{supportsToAdd.length}</span> / <span className="text-red-600">-{supportsToRemove.length}</span></p>
+              )}
+              {(flangesToAdd.length > 0 || flangesToRemove.length > 0) && (
+                <p>⚙️ Flangie: <span className="text-green-600">+{flangesToAdd.length}</span> / <span className="text-red-600">-{flangesToRemove.length}</span></p>
+              )}
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setShowConfirmModal(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100">Annulla</button>
-              <button onClick={confirmContentChanges} disabled={saving} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+              <button onClick={() => setShowConfirmSave(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100">Annulla</button>
+              <button onClick={handleSaveContent} disabled={saving} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
                 {saving ? 'Salvando...' : 'Conferma'}
               </button>
             </div>
           </div>
         </div>
       )}
-      
-      {/* PHASE B: Completion Alert */}
-      {showCompletionAlert && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-8 text-center animate-pulse">
-            <div className="text-6xl mb-4">🎉</div>
-            <h3 className="text-2xl font-bold text-emerald-600 mb-2">WP Completato!</h3>
-            <p className="text-gray-600 mb-4">
-              <span className="font-mono font-bold text-lg">{wp.code}</span> è stato completato con successo.
-            </p>
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-emerald-600 text-2xl">✓</span>
-                <span className="text-emerald-700 font-medium">100% Completato</span>
-              </div>
-              {wp.created_at && (
-                <p className="text-sm text-emerald-600 mt-2">
-                  Durata totale: {calculateDaysBetween(wp.created_at, new Date().toISOString())} giorni
-                </p>
-              )}
-            </div>
-            <button 
-              onClick={() => { setShowCompletionAlert(false); onSuccess(); }}
-              className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-            >
-              Chiudi
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {/* Conflict Modal */}
-      {showConflictModal && formData.squad_id && getSquadInfo() && (
-        <ResourceConflictModal
-          conflicts={conflicts}
-          squadInfo={getSquadInfo()}
-          newWPDates={{ start: formData.planned_start, end: formData.planned_end }}
-          onSplitResources={() => { setSplitResources(true); setShowConflictModal(false); }}
-          onChangeSquad={() => { setFormData({...formData, squad_id: originalSquadId || ''}); setSplitResources(wp.split_resources || false); setShowConflictModal(false); setConflicts([]); }}
-          onClose={() => setShowConflictModal(false)}
-        />
-      )}
     </>
   );
 };
 
 // ============================================================================
-// ADD SPOOLS MODAL
+// EDIT CONTENT SECTION - Componente riutilizzabile per edit di spools/welds/supports/flanges
 // ============================================================================
 
-const AddSpoolsModal = ({ availableSpools, onAdd, onClose }) => {
-  const [selected, setSelected] = useState([]);
-  const [search, setSearch] = useState('');
+const EditContentSection = ({ 
+  title, icon, items, itemsToAdd, itemsToRemove, 
+  onAdd, onRemove, onUndoAdd, onUndoRemove,
+  availableItems, renderItem, renderAvailableItem,
+  getItemId, getAvailableId
+}) => {
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   
-  const filtered = availableSpools.filter(s => {
-    if (!search) return true;
-    const term = search.toLowerCase();
-    return s.spool_no?.toLowerCase().includes(term) || 
-           s.full_spool_no?.toLowerCase().includes(term) ||
-           s.iso_number?.toLowerCase().includes(term);
+  const filteredAvailable = availableItems.filter(item => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return JSON.stringify(item).toLowerCase().includes(search);
   });
-
-  const toggleSpool = (id) => {
-    setSelected(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
-        <div className="p-4 border-b">
-          <h3 className="text-lg font-bold text-gray-800">➕ Aggiungi Spools</h3>
-          <input 
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Cerca spool..."
-            className="w-full mt-3 px-3 py-2 border rounded-lg"
-          />
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="space-y-2">
-            {filtered.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">Nessuno spool disponibile</p>
-            ) : filtered.map(spool => (
-              <label 
-                key={spool.id}
-                className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${selected.includes(spool.id) ? 'bg-blue-50 border-blue-300' : ''}`}
-              >
-                <input 
-                  type="checkbox"
-                  checked={selected.includes(spool.id)}
-                  onChange={() => toggleSpool(spool.id)}
-                  className="w-4 h-4 text-blue-600 rounded"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-blue-600">{spool.spool_no}</span>
-                    <SiteStatusBadge status={spool.site_status} />
-                  </div>
-                  <div className="text-xs text-gray-500">{spool.iso_number} • Ø{spool.diameter_inch}" • {spool.weight_kg}kg</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-        
-        <div className="flex justify-between items-center p-4 border-t bg-gray-50">
-          <span className="text-sm text-gray-600">{selected.length} selezionati</span>
-          <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg">Annulla</button>
-            <button 
-              onClick={() => onAdd(selected)} 
-              disabled={selected.length === 0}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
-              ➕ Aggiungi ({selected.length})
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// PHASE B: MATERIAL AVAILABILITY TAB
-// ============================================================================
-
-const MaterialAvailabilityTab = ({ materialAvailability, onRefresh }) => {
-  const { flanges = [], supports = [], loading } = materialAvailability;
-  
-  // Calculate summary stats
-  const flangeStats = {
-    total: flanges.length,
-    gasketMissing: flanges.filter(f => f.gasket.status === 'missing').length,
-    boltMissing: flanges.filter(f => f.bolt.status === 'missing').length,
-    insulationMissing: flanges.filter(f => f.insulation.status === 'missing').length
-  };
-  
-  const supportStats = {
-    total: supports.length,
-    missing: supports.filter(s => s.availability.status === 'missing').length
-  };
-  
-  const hasMissingMaterials = flangeStats.gasketMissing > 0 || flangeStats.boltMissing > 0 || 
-                              flangeStats.insulationMissing > 0 || supportStats.missing > 0;
-  
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
-  
-  const MaterialStatusIcon = ({ status }) => {
-    if (status === 'ok') return <span className="text-emerald-600">✓</span>;
-    if (status === 'missing') return <span className="text-red-600">✗</span>;
-    return <span className="text-gray-400">-</span>;
-  };
-  
-  return (
-    <div className="space-y-6">
-      {/* Summary Alert */}
-      {hasMissingMaterials ? (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">⚠️</span>
-            <div>
-              <p className="font-semibold text-red-800">Materiali Mancanti</p>
-              <p className="text-sm text-red-600">
-                Alcuni materiali non sono disponibili in magazzino. 
-                Verifica la disponibilità prima di procedere.
-              </p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">✅</span>
-            <div>
-              <p className="font-semibold text-emerald-800">Materiali Disponibili</p>
-              <p className="text-sm text-emerald-600">
-                Tutti i materiali necessari sono disponibili in magazzino.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Refresh button */}
-      <div className="flex justify-end">
-        <button onClick={onRefresh} className="px-3 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded-lg">
-          🔄 Aggiorna dati
-        </button>
-      </div>
-      
-      {/* Flanges Section */}
-      {flanges.length > 0 && (
-        <div>
-          <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            ⚙️ Flangie ({flanges.length})
-            {(flangeStats.gasketMissing > 0 || flangeStats.boltMissing > 0 || flangeStats.insulationMissing > 0) && (
-              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                Mancanti: {flangeStats.gasketMissing + flangeStats.boltMissing + flangeStats.insulationMissing}
-              </span>
-            )}
-          </h4>
-          
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-3 font-medium">Flange Tag</th>
-                  <th className="text-center p-3 font-medium">Gasket</th>
-                  <th className="text-center p-3 font-medium">Bolt</th>
-                  <th className="text-center p-3 font-medium">Insulation</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flanges.map(flange => (
-                  <tr key={flange.id} className="border-t hover:bg-gray-50">
-                    <td className="p-3">
-                      <div className="font-mono text-amber-700">{flange.flange_tag}</div>
-                      <div className="text-xs text-gray-500">{flange.flange_type} • Ø{flange.diameter_inch}"</div>
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.gasket.status} />
-                        {flange.gasket.code && (
-                          <span className={`text-xs ${flange.gasket.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.gasket.code}
-                          </span>
-                        )}
-                      </div>
-                      {flange.gasket.status === 'missing' && flange.gasket.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.gasket.available}/{flange.gasket.qty_needed}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.bolt.status} />
-                        {flange.bolt.code && (
-                          <span className={`text-xs ${flange.bolt.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.bolt.code} ×{flange.bolt.qty_needed}
-                          </span>
-                        )}
-                      </div>
-                      {flange.bolt.status === 'missing' && flange.bolt.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.bolt.available}/{flange.bolt.qty_needed}
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <MaterialStatusIcon status={flange.insulation.status} />
-                        {flange.insulation.code && (
-                          <span className={`text-xs ${flange.insulation.status === 'missing' ? 'text-red-600' : 'text-gray-600'}`}>
-                            {flange.insulation.code}
-                          </span>
-                        )}
-                      </div>
-                      {flange.insulation.status === 'missing' && flange.insulation.code && (
-                        <div className="text-xs text-red-500 mt-1">
-                          Disp: {flange.insulation.available}/{flange.insulation.qty_needed}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          
-          {/* Legend */}
-          <div className="flex gap-4 text-xs text-gray-500 mt-2">
-            <span className="flex items-center gap-1"><span className="text-emerald-600">✓</span> Disponibile</span>
-            <span className="flex items-center gap-1"><span className="text-red-600">✗</span> Mancante</span>
-            <span className="flex items-center gap-1"><span className="text-gray-400">-</span> Non richiesto</span>
-          </div>
-        </div>
-      )}
-      
-      {/* Supports Section */}
-      {supports.length > 0 && (
-        <div>
-          <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            🔩 Supporti ({supports.length})
-            {supportStats.missing > 0 && (
-              <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                Mancanti: {supportStats.missing}
-              </span>
-            )}
-          </h4>
-          
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left p-3 font-medium">Support Tag</th>
-                  <th className="text-left p-3 font-medium">Mark</th>
-                  <th className="text-center p-3 font-medium">Disponibilità</th>
-                  <th className="text-center p-3 font-medium">Stato</th>
-                </tr>
-              </thead>
-              <tbody>
-                {supports.map(support => (
-                  <tr key={support.id} className={`border-t hover:bg-gray-50 ${support.availability.status === 'missing' ? 'bg-red-50' : ''}`}>
-                    <td className="p-3 font-mono text-xs">{support.support_tag_no}</td>
-                    <td className="p-3">
-                      <span className="px-2 py-0.5 bg-gray-100 rounded text-xs font-medium">{support.support_mark}</span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`text-sm ${support.availability.available > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {support.availability.available} disponibili
-                      </span>
-                      <div className="text-xs text-gray-400">
-                        (Tot. necessari: {support.availability.total_mark_needed})
-                      </div>
-                    </td>
-                    <td className="p-3 text-center">
-                      {support.availability.status === 'ok' ? (
-                        <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">✓ OK</span>
-                      ) : (
-                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium">✗ Mancante</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-      
-      {flanges.length === 0 && supports.length === 0 && (
-        <div className="text-center py-8 text-gray-400">
-          <p>Nessuna flangia o supporto nel WP</p>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// ============================================================================
-// WP DOCUMENTS - Upload, Preview, Download con Audit
-// ============================================================================
-
-const WPDocuments = ({ workPackageId, projectId }) => {
-  const [user, setUser] = useState(null);
-  const [documents, setDocuments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user);
-    };
-    getUser();
-  }, []);
-
-  useEffect(() => {
-    fetchDocuments();
-  }, [workPackageId]);
-
-  const fetchDocuments = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('wp_documents')
-        .select('*')
-        .eq('work_package_id', workPackageId)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setDocuments(data || []);
-    } catch (error) {
-      console.error('Error fetching documents:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpload = async (files) => {
-    if (!files || files.length === 0) return;
-    
-    setUploading(true);
-    try {
-      for (const file of files) {
-        const fileName = `${Date.now()}_${file.name}`;
-        const filePath = `wp-documents/${projectId}/${workPackageId}/${fileName}`;
-        
-        // Upload to storage
-        const { error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(filePath, file);
-        
-        if (uploadError) throw uploadError;
-        
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
-        
-        // Save document record
-        await supabase.from('wp_documents').insert({
-          work_package_id: workPackageId,
-          project_id: projectId,
-          file_name: file.name,
-          file_path: filePath,
-          file_url: publicUrl,
-          file_size: file.size,
-          file_type: file.type,
-          uploaded_by: user?.id,
-          uploaded_by_name: user?.email
-        });
-      }
-      
-      fetchDocuments();
-    } catch (error) {
-      alert('Errore upload: ' + error.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleDelete = async (doc) => {
-    if (!confirm(`Eliminare ${doc.file_name}?`)) return;
-    
-    try {
-      await supabase
-        .from('wp_documents')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('id', doc.id);
-      
-      fetchDocuments();
-    } catch (error) {
-      alert('Errore: ' + error.message);
-    }
-  };
-
-  const formatFileSize = (bytes) => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  };
 
   return (
     <div className="space-y-4">
-      {/* Upload area */}
-      <div 
-        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${dragOver ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files); }}
-      >
-        <input 
-          type="file" 
-          id="file-upload"
-          multiple
-          className="hidden"
-          onChange={(e) => handleUpload(e.target.files)}
-        />
-        <label htmlFor="file-upload" className="cursor-pointer">
-          <div className="text-4xl mb-2">📎</div>
-          <p className="text-gray-600">
-            {uploading ? 'Caricamento...' : 'Trascina qui i file o clicca per caricare'}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">PDF, DOC, XLS, immagini</p>
-        </label>
+      <div className="flex items-center justify-between">
+        <h4 className="font-medium text-gray-700">{icon} {title} ({items.length - itemsToRemove.length + itemsToAdd.length})</h4>
+        <button onClick={() => setShowAddModal(true)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+          ➕ Aggiungi
+        </button>
       </div>
       
-      {/* Documents list */}
-      {loading ? (
-        <div className="text-center py-4 text-gray-400">Caricamento...</div>
-      ) : documents.length === 0 ? (
-        <div className="text-center py-4 text-gray-400">Nessun documento caricato</div>
-      ) : (
-        <div className="space-y-2">
-          {documents.map(doc => (
-            <div key={doc.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
-              <div className="text-2xl">
-                {doc.file_type?.includes('pdf') ? '📄' : 
-                 doc.file_type?.includes('image') ? '🖼️' :
-                 doc.file_type?.includes('sheet') || doc.file_type?.includes('excel') ? '📊' :
-                 doc.file_type?.includes('word') || doc.file_type?.includes('document') ? '📝' : '📎'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-700 truncate">{doc.file_name}</p>
-                <p className="text-xs text-gray-500">
-                  {formatFileSize(doc.file_size)} • {new Date(doc.created_at).toLocaleDateString('it-IT')}
-                </p>
-              </div>
-              <div className="flex items-center gap-1">
-                <a 
-                  href={doc.file_url} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="p-2 hover:bg-gray-200 rounded text-blue-600"
-                  title="Scarica"
-                >
-                  ⬇️
-                </a>
-                <button 
-                  onClick={() => handleDelete(doc)}
-                  className="p-2 hover:bg-red-50 rounded text-red-500"
-                  title="Elimina"
-                >
-                  🗑️
-                </button>
-              </div>
+      <div className="border rounded-lg max-h-[400px] overflow-y-auto">
+        {/* Current items */}
+        {items.filter(item => !itemsToRemove.includes(getItemId(item))).map(item => (
+          <div key={item.id} className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50">
+            <div className="flex items-center gap-3 flex-wrap">
+              {renderItem(item)}
             </div>
-          ))}
+            <button onClick={() => onRemove(getItemId(item))} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Rimuovi">
+              🗑️
+            </button>
+          </div>
+        ))}
+        
+        {/* Items to add (pending) */}
+        {itemsToAdd.map(id => {
+          const item = availableItems.find(i => getAvailableId(i) === id) || 
+                       [...availableItems].find(i => getAvailableId(i) === id);
+          if (!item) return null;
+          return (
+            <div key={id} className="flex items-center justify-between p-3 border-b last:border-b-0 bg-green-50">
+              <div className="flex items-center gap-3 flex-wrap">
+                {renderAvailableItem(item)}
+                <span className="text-xs text-green-600 font-medium">➕ Nuovo</span>
+              </div>
+              <button onClick={() => onUndoAdd(id)} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded">
+                ✕
+              </button>
+            </div>
+          );
+        })}
+        
+        {/* Items marked for removal */}
+        {items.filter(item => itemsToRemove.includes(getItemId(item))).map(item => (
+          <div key={item.id} className="flex items-center justify-between p-3 border-b last:border-b-0 bg-red-50 opacity-50">
+            <div className="flex items-center gap-3 flex-wrap line-through">
+              {renderItem(item)}
+              <span className="text-xs text-red-600 font-medium no-underline">🗑️ Da rimuovere</span>
+            </div>
+            <button onClick={() => onUndoRemove(getItemId(item))} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Annulla rimozione">
+              ↩️
+            </button>
+          </div>
+        ))}
+        
+        {items.length === 0 && itemsToAdd.length === 0 && (
+          <div className="p-8 text-center text-gray-400">Nessun elemento</div>
+        )}
+      </div>
+      
+      {/* Add Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-bold text-gray-800">Aggiungi {title}</h3>
+            </div>
+            
+            <div className="p-4 border-b">
+              <input 
+                type="text" 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)}
+                placeholder="Cerca..."
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {filteredAvailable.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">Nessun elemento disponibile</div>
+              ) : (
+                filteredAvailable.slice(0, 50).map(item => (
+                  <div key={getAvailableId(item)} className="flex items-center justify-between p-3 border-b hover:bg-gray-50">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {renderAvailableItem(item)}
+                    </div>
+                    <button 
+                      onClick={() => { onAdd(getAvailableId(item)); }}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200"
+                    >
+                      ➕ Aggiungi
+                    </button>
+                  </div>
+                ))
+              )}
+              {filteredAvailable.length > 50 && (
+                <div className="p-3 text-center text-xs text-gray-500">Mostrati 50 di {filteredAvailable.length}. Usa la ricerca per filtrare.</div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t bg-gray-50">
+              <button onClick={() => setShowAddModal(false)} className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                Chiudi
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
