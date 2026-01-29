@@ -840,16 +840,30 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
   
   // Weld detail modal
   const [viewingWeld, setViewingWeld] = useState(null);
+  
+  // All existing WP codes (including deleted ones for unique constraint)
+  const [allExistingCodes, setAllExistingCodes] = useState([]);
+  
+  useEffect(() => {
+    const fetchAllCodes = async () => {
+      const { data } = await supabase
+        .from('work_packages')
+        .select('code')
+        .eq('project_id', projectId);
+      setAllExistingCodes(data?.map(wp => wp.code) || []);
+    };
+    fetchAllCodes();
+  }, [projectId]);
 
-  // Generate next code
+  // Generate next code (considering ALL existing codes including deleted)
   const nextCode = useMemo(() => {
-    const pipingWPs = workPackages.filter(wp => wp.wp_type === 'piping');
-    const maxNum = pipingWPs.reduce((max, wp) => {
-      const match = wp.code.match(/WP-P-(\d+)/);
+    const pipingCodes = allExistingCodes.filter(code => code?.startsWith('WP-P-'));
+    const maxNum = pipingCodes.reduce((max, code) => {
+      const match = code.match(/WP-P-(\d+)/);
       return match ? Math.max(max, parseInt(match[1])) : max;
     }, 0);
     return `WP-P-${String(maxNum + 1).padStart(3, '0')}`;
-  }, [workPackages]);
+  }, [allExistingCodes]);
 
   // Filter available welds (not assigned to other WPs)
   const assignedWeldIds = useMemo(() => {
@@ -1312,7 +1326,7 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                         <th className="text-left p-2 font-medium">ISO</th>
                         <th className="text-center p-2 font-medium">Peso (kg)</th>
                         <th className="text-center p-2 font-medium bg-blue-50">Qty Nec.</th>
-                        <th className="text-center p-2 font-medium bg-green-50">Qty Disp.</th>
+                        <th className="text-center p-2 font-medium bg-green-50">Qty Mag.</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1326,8 +1340,8 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                           const s = supports.find(sup => sup.id === id);
                           return s?.support_mark === support.support_mark;
                         }).length;
-                        const qtyAvailable = summaryItem ? (summaryItem.qty_warehouse - summaryItem.qty_delivered) : 0;
-                        const hasEnough = qtyAvailable >= qtyNeeded;
+                        const qtyWarehouse = summaryItem?.qty_warehouse || 0;
+                        const hasEnough = qtyWarehouse >= qtyNeeded;
                         
                         // Get spool info
                         const linkedSpool = spools.find(sp => sp.full_spool_no === support.full_spool_no);
@@ -1354,7 +1368,7 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                             <td className="p-2 text-center text-xs">{support.weight_kg?.toFixed(2) || '-'}</td>
                             <td className="p-2 text-center bg-blue-50 font-medium text-blue-700">{qtyNeeded}</td>
                             <td className={`p-2 text-center font-medium ${hasEnough ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                              {qtyAvailable}
+                              {qtyWarehouse}
                               {!hasEnough && <span className="ml-1">⚠️</span>}
                             </td>
                           </tr>
@@ -1403,11 +1417,11 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                         <th></th>
                         <th></th>
                         <th className="p-1 bg-purple-50">Codice</th>
-                        <th className="p-1 bg-purple-100">Nec/Disp</th>
+                        <th className="p-1 bg-purple-100">Nec/Mag</th>
                         <th className="p-1 bg-gray-100">Codice</th>
-                        <th className="p-1 bg-gray-200">Nec/Disp</th>
+                        <th className="p-1 bg-gray-200">Nec/Mag</th>
                         <th className="p-1 bg-amber-50">Codice</th>
-                        <th className="p-1 bg-amber-100">Nec/Disp</th>
+                        <th className="p-1 bg-amber-100">Nec/Mag</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1443,14 +1457,14 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                           return sum + (f?.insulation_qty || 1);
                         }, 0);
                         
-                        // Get available quantities from inventory
+                        // Get warehouse quantities from inventory
                         const gasketSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.gasket_code && m.material_type === 'gasket');
                         const boltSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.bolt_code && m.material_type === 'bolt');
                         const indSummary = flangeMaterialsSummary?.find(m => m.material_code === flange.insulation_code && m.material_type === 'insulation');
                         
-                        const gasketAvail = gasketSummary ? (gasketSummary.qty_warehouse - (gasketSummary.qty_delivered || 0)) : 0;
-                        const boltAvail = boltSummary ? (boltSummary.qty_warehouse - (boltSummary.qty_delivered || 0)) : 0;
-                        const indAvail = indSummary ? (indSummary.qty_warehouse - (indSummary.qty_delivered || 0)) : 0;
+                        const gasketWarehouse = gasketSummary?.qty_warehouse || 0;
+                        const boltWarehouse = boltSummary?.qty_warehouse || 0;
+                        const indWarehouse = indSummary?.qty_warehouse || 0;
                         
                         return (
                           <tr key={flangeId} className={`border-t hover:bg-gray-50 ${flange.is_critical ? 'bg-red-50' : ''}`}>
@@ -1478,8 +1492,8 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                                 <span className="font-mono text-xs text-purple-700">{flange.gasket_code}</span>
                               ) : '-'}
                             </td>
-                            <td className={`p-2 text-center text-xs font-medium ${flange.gasket_code ? (gasketAvail >= gasketNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
-                              {flange.gasket_code ? `${gasketNeeded}/${gasketAvail}` : '-'}
+                            <td className={`p-2 text-center text-xs font-medium ${flange.gasket_code ? (gasketWarehouse >= gasketNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.gasket_code ? `${gasketNeeded}/${gasketWarehouse}` : '-'}
                             </td>
                             {/* Bolts */}
                             <td className="p-2 text-center bg-gray-50">
@@ -1487,8 +1501,8 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                                 <span className="font-mono text-xs">{flange.bolt_code} <span className="text-gray-400">×{flange.bolt_qty}</span></span>
                               ) : '-'}
                             </td>
-                            <td className={`p-2 text-center text-xs font-medium ${flange.bolt_code ? (boltAvail >= boltNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
-                              {flange.bolt_code ? `${boltNeeded}/${boltAvail}` : '-'}
+                            <td className={`p-2 text-center text-xs font-medium ${flange.bolt_code ? (boltWarehouse >= boltNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.bolt_code ? `${boltNeeded}/${boltWarehouse}` : '-'}
                             </td>
                             {/* Insulation */}
                             <td className="p-2 text-center bg-amber-50">
@@ -1496,8 +1510,8 @@ const CreateWPPWizard = ({ workPackages, squads, isometrics, spools, welds, supp
                                 <span className="font-mono text-xs text-amber-700">{flange.insulation_code}</span>
                               ) : '-'}
                             </td>
-                            <td className={`p-2 text-center text-xs font-medium ${flange.insulation_code ? (indAvail >= indNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
-                              {flange.insulation_code ? `${indNeeded}/${indAvail}` : '-'}
+                            <td className={`p-2 text-center text-xs font-medium ${flange.insulation_code ? (indWarehouse >= indNeeded ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700') : ''}`}>
+                              {flange.insulation_code ? `${indNeeded}/${indWarehouse}` : '-'}
                             </td>
                           </tr>
                         );
@@ -1737,15 +1751,30 @@ const CreateWPAModal = ({ workPackages, squads, projectId, onClose, onSuccess })
     area: '',
     estimated_hours: ''
   });
+  
+  // All existing WP codes (including deleted ones for unique constraint)
+  const [allExistingCodes, setAllExistingCodes] = useState([]);
+  
+  useEffect(() => {
+    const fetchAllCodes = async () => {
+      const { data } = await supabase
+        .from('work_packages')
+        .select('code')
+        .eq('project_id', projectId);
+      setAllExistingCodes(data?.map(wp => wp.code) || []);
+    };
+    fetchAllCodes();
+  }, [projectId]);
 
+  // Generate next code (considering ALL existing codes including deleted)
   const nextCode = useMemo(() => {
-    const actionWPs = workPackages.filter(wp => wp.wp_type === 'action');
-    const maxNum = actionWPs.reduce((max, wp) => {
-      const match = wp.code.match(/WP-A-(\d+)/);
+    const actionCodes = allExistingCodes.filter(code => code?.startsWith('WP-A-'));
+    const maxNum = actionCodes.reduce((max, code) => {
+      const match = code.match(/WP-A-(\d+)/);
       return match ? Math.max(max, parseInt(match[1])) : max;
     }, 0);
     return `WP-A-${String(maxNum + 1).padStart(3, '0')}`;
-  }, [workPackages]);
+  }, [allExistingCodes]);
 
   const handleSave = async () => {
     if (!formData.description) {
