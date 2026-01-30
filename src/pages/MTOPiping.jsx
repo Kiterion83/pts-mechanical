@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 
 // ============================================================================
 // MTO PIPING - Material Take Off Piping
-// V2 - Con WP Coverage, Date Display, Nuovi Campi, Autocomplete, Click Dropdown
+// V3 - Bug Fix: Autocomplete Welds separato, Edit Modal completo, colonne Excel
 // ============================================================================
 
 export default function MTOPiping() {
@@ -1600,8 +1600,14 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
   const [formData, setFormData] = useState({});
   const [isoSearch, setIsoSearch] = useState('');
   const [showIsoDropdown, setShowIsoDropdown] = useState(false);
+  // Support spool selection (single dropdown)
   const [spoolSearch, setSpoolSearch] = useState('');
   const [showSpoolDropdown, setShowSpoolDropdown] = useState(false);
+  // Weld spool selection (separate dropdowns for Spool 1 and Spool 2)
+  const [spool1Search, setSpool1Search] = useState('');
+  const [spool2Search, setSpool2Search] = useState('');
+  const [showSpool1Dropdown, setShowSpool1Dropdown] = useState(false);
+  const [showSpool2Dropdown, setShowSpool2Dropdown] = useState(false);
   
   // Filtered lists for autocomplete
   const filteredIsos = useMemo(() => {
@@ -1610,11 +1616,26 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
     return isometrics.filter(iso => iso.iso_number.toLowerCase().includes(search)).slice(0, 10);
   }, [isometrics, isoSearch]);
   
+  // For Support spool selection
   const filteredSpools = useMemo(() => {
     if (!spoolSearch) return spools.slice(0, 10);
     const search = spoolSearch.toLowerCase();
     return spools.filter(s => s.full_spool_no.toLowerCase().includes(search)).slice(0, 10);
   }, [spools, spoolSearch]);
+  
+  // For Weld Spool 1 selection
+  const filteredSpools1 = useMemo(() => {
+    if (!spool1Search) return spools.slice(0, 10);
+    const search = spool1Search.toLowerCase();
+    return spools.filter(s => s.full_spool_no.toLowerCase().includes(search)).slice(0, 10);
+  }, [spools, spool1Search]);
+  
+  // For Weld Spool 2 selection
+  const filteredSpools2 = useMemo(() => {
+    if (!spool2Search) return spools.slice(0, 10);
+    const search = spool2Search.toLowerCase();
+    return spools.filter(s => s.full_spool_no.toLowerCase().includes(search)).slice(0, 10);
+  }, [spools, spool2Search]);
   
   // Auto-populate weld fields from spools
   const autoPopulateWeldFromSpools = (spool1FullNo, spool2FullNo) => {
@@ -1857,11 +1878,11 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                     onChange={e => { 
                       const newVal = e.target.value;
                       setFormData({...formData, full_first_spool: newVal}); 
-                      setSpoolSearch(newVal); 
+                      setSpool1Search(newVal); 
                     }}
-                    onFocus={() => setShowSpoolDropdown(true)}
+                    onFocus={() => setShowSpool1Dropdown(true)}
                     onBlur={() => setTimeout(() => {
-                      setShowSpoolDropdown(false);
+                      setShowSpool1Dropdown(false);
                       // Auto-populate when both spools selected
                       if (formData.full_first_spool && formData.full_second_spool) {
                         const updates = autoPopulateWeldFromSpools(formData.full_first_spool, formData.full_second_spool);
@@ -1871,9 +1892,9 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                     placeholder="Cerca spool..."
                     className="w-full px-3 py-2 border rounded-lg" 
                   />
-                  {showSpoolDropdown && filteredSpools.length > 0 && (
+                  {showSpool1Dropdown && filteredSpools1.length > 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                      {filteredSpools.map(s => (
+                      {filteredSpools1.map(s => (
                         <div key={s.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono" onClick={() => { 
                           const newData = {...formData, full_first_spool: s.full_spool_no};
                           if (newData.full_second_spool) {
@@ -1882,7 +1903,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                           } else {
                             setFormData(newData);
                           }
-                          setShowSpoolDropdown(false); 
+                          setShowSpool1Dropdown(false); 
                         }}>
                           {s.full_spool_no}
                         </div>
@@ -1898,11 +1919,11 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                     onChange={e => { 
                       const newVal = e.target.value;
                       setFormData({...formData, full_second_spool: newVal}); 
-                      setSpoolSearch(newVal); 
+                      setSpool2Search(newVal); 
                     }}
-                    onFocus={() => setShowSpoolDropdown(true)}
+                    onFocus={() => setShowSpool2Dropdown(true)}
                     onBlur={() => setTimeout(() => {
-                      setShowSpoolDropdown(false);
+                      setShowSpool2Dropdown(false);
                       // Auto-populate when both spools selected
                       if (formData.full_first_spool && formData.full_second_spool) {
                         const updates = autoPopulateWeldFromSpools(formData.full_first_spool, formData.full_second_spool);
@@ -1912,9 +1933,9 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                     placeholder="Cerca spool..."
                     className="w-full px-3 py-2 border rounded-lg" 
                   />
-                  {showSpoolDropdown && filteredSpools.length > 0 && (
+                  {showSpool2Dropdown && filteredSpools2.length > 0 && (
                     <div className="absolute z-20 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                      {filteredSpools.map(s => (
+                      {filteredSpools2.map(s => (
                         <div key={s.id} className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-xs font-mono" onClick={() => { 
                           const newData = {...formData, full_second_spool: s.full_spool_no};
                           if (newData.full_first_spool) {
@@ -1923,7 +1944,7 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
                           } else {
                             setFormData(newData);
                           }
-                          setShowSpoolDropdown(false); 
+                          setShowSpool2Dropdown(false); 
                         }}>
                           {s.full_spool_no}
                         </div>
@@ -1958,98 +1979,304 @@ const AddModal = ({ type, spools, isometrics, onSave, onClose }) => {
   );
 };
 
-// Edit Modal
+// Edit Modal - FULL EDIT (tutti i campi modificabili)
 const EditModal = ({ item, type, onSave, onClose }) => {
   const [formData, setFormData] = useState({ ...item });
 
   const handleSave = () => {
     const updates = {};
     if (type === 'spool') {
+      // Dati base
+      updates.spool_no = formData.spool_no || null;
+      updates.iso_number = formData.iso_number || null;
+      updates.service_class = formData.service_class || null;
+      updates.service_category = formData.service_category || null;
+      updates.diameter_inch = formData.diameter_inch ? parseFloat(formData.diameter_inch) : null;
+      updates.thickness_mm = formData.thickness_mm ? parseFloat(formData.thickness_mm) : null;
+      updates.material_code = formData.material_code || null;
+      updates.weight_kg = formData.weight_kg ? parseFloat(formData.weight_kg) : null;
+      updates.length_m = formData.length_m ? parseFloat(formData.length_m) : null;
+      // Tracking
       updates.shipment_date = formData.shipment_date || null;
       updates.ir_number = formData.ir_number || null;
+      updates.ir_date = formData.ir_date || null;
       updates.laydown_arrival = formData.laydown_arrival || null;
       updates.to_site = formData.to_site || null;
       updates.erected_ongoing = formData.erected_ongoing || null;
       updates.erected = formData.erected || null;
+      updates.week_plan = formData.week_plan || null;
     } else if (type === 'support') {
+      // Dati base
+      updates.support_tag_no = formData.support_tag_no || null;
+      updates.iso_number = formData.iso_number || null;
+      updates.support_name = formData.support_name || null;
+      updates.support_mark = formData.support_mark || null;
+      updates.full_spool_no = formData.full_spool_no || null;
+      updates.weight_kg = formData.weight_kg ? parseFloat(formData.weight_kg) : null;
+      // Tracking
       updates.ir_number = formData.ir_number || null;
+      updates.ir_date = formData.ir_date || null;
       updates.delivered_to_site = formData.delivered_to_site || null;
+      updates.delivered_to = formData.delivered_to || null;
       updates.assembly_date = formData.assembly_date || null;
+      updates.week_plan = formData.week_plan || null;
     } else if (type === 'flange') {
-      updates.ir_number = formData.ir_number || null;
-      updates.delivered_to_site = formData.delivered_to_site || null;
-      updates.assembly_date = formData.assembly_date || null;
+      // Dati base
+      updates.flange_tag = formData.flange_tag || null;
+      updates.iso_number = formData.iso_number || null;
+      updates.flange_type = formData.flange_type || null;
+      updates.first_part_code = formData.first_part_code || null;
+      updates.second_part_code = formData.second_part_code || null;
+      updates.diameter_inch = formData.diameter_inch ? parseFloat(formData.diameter_inch) : null;
+      updates.pressure_rating = formData.pressure_rating || null;
+      updates.is_critical = formData.is_critical || false;
+      updates.critical_class = formData.critical_class || null;
+      // Materiali
+      updates.gasket_code = formData.gasket_code || null;
+      updates.gasket_qty = formData.gasket_qty ? parseInt(formData.gasket_qty) : 1;
+      updates.bolt_code = formData.bolt_code || null;
+      updates.bolt_qty = formData.bolt_qty ? parseInt(formData.bolt_qty) : 0;
+      updates.insulation_code = formData.insulation_code || null;
+      updates.insulation_qty = formData.insulation_qty ? parseFloat(formData.insulation_qty) : null;
+      // Ident
       updates.ident_code_1 = formData.ident_code_1 || null;
-      updates.ident_qty_1 = formData.ident_qty_1 || null;
+      updates.ident_qty_1 = formData.ident_qty_1 ? parseInt(formData.ident_qty_1) : null;
       updates.ident_code_2 = formData.ident_code_2 || null;
-      updates.ident_qty_2 = formData.ident_qty_2 || null;
+      updates.ident_qty_2 = formData.ident_qty_2 ? parseInt(formData.ident_qty_2) : null;
+      // Tracking
+      updates.ir_number = formData.ir_number || null;
+      updates.ir_date = formData.ir_date || null;
+      updates.delivered_to_site = formData.delivered_to_site || null;
+      updates.delivered_to = formData.delivered_to || null;
+      updates.assembly_date = formData.assembly_date || null;
+      updates.week_plan = formData.week_plan || null;
     } else if (type === 'weld') {
+      // Dati base
+      updates.weld_no = formData.weld_no || null;
+      updates.iso_number = formData.iso_number || null;
+      updates.full_first_spool = formData.full_first_spool || null;
+      updates.full_second_spool = formData.full_second_spool || null;
+      updates.first_material_code = formData.first_material_code || null;
+      updates.second_material_code = formData.second_material_code || null;
+      updates.weld_type = formData.weld_type || null;
+      updates.weld_category = formData.weld_category || null;
+      updates.diameter_inch = formData.diameter_inch ? parseFloat(formData.diameter_inch) : null;
+      updates.thickness_mm = formData.thickness_mm ? parseFloat(formData.thickness_mm) : null;
+      updates.is_dissimilar = formData.is_dissimilar || false;
+      // Tracking
       updates.fitup_date = formData.fitup_date || null;
       updates.weld_date = formData.weld_date || null;
+      updates.week_plan = formData.week_plan || null;
     }
     onSave(updates);
   };
 
-  const titles = { spool: `📦 Modifica: ${item.spool_no}`, support: `🔩 Modifica: ${item.support_tag_no}`, flange: `⚙️ Modifica: ${item.flange_tag}`, weld: `🔥 Modifica: ${item.weld_no}` };
+  const titles = { 
+    spool: `📦 Modifica: ${item.spool_no}`, 
+    support: `🔩 Modifica: ${item.support_tag_no}`, 
+    flange: `⚙️ Modifica: ${item.flange_tag}`, 
+    weld: `🔥 Modifica: ${item.weld_no}` 
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b sticky top-0 bg-white z-10">
           <h2 className="text-lg font-bold text-gray-800">{titles[type]}</h2>
+          <p className="text-xs text-gray-500 mt-1">Modifica tutti i campi necessari</p>
         </div>
         <div className="p-6 space-y-4">
           {type === 'spool' && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Shipment Date</label><input type="date" value={formData.shipment_date || ''} onChange={e => setFormData({...formData, shipment_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="bg-blue-50 p-3 rounded-lg mb-4">
+                <p className="text-xs text-blue-600 font-medium">ID: {item.full_spool_no}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Laydown Arrival</label><input type="date" value={formData.laydown_arrival || ''} onChange={e => setFormData({...formData, laydown_arrival: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">To Site</label><input type="date" value={formData.to_site || ''} onChange={e => setFormData({...formData, to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">In Erezione (ongoing)</label><input type="date" value={formData.erected_ongoing || ''} onChange={e => setFormData({...formData, erected_ongoing: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-                <div><label className="block text-sm font-medium text-gray-700 mb-1">Erected</label><input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              </div>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📋 Dati Base</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Spool No</label><input type="text" value={formData.spool_no || ''} onChange={e => setFormData({...formData, spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Spessore (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Material Code</label><input type="text" value={formData.material_code || ''} onChange={e => setFormData({...formData, material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Lunghezza (m)</label><input type="number" step="0.01" value={formData.length_m || ''} onChange={e => setFormData({...formData, length_m: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Service Class</label><input type="text" value={formData.service_class || ''} onChange={e => setFormData({...formData, service_class: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📅 Tracking</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Shipment Date</label><input type="date" value={formData.shipment_date || ''} onChange={e => setFormData({...formData, shipment_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Laydown Arrival</label><input type="date" value={formData.laydown_arrival || ''} onChange={e => setFormData({...formData, laydown_arrival: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">To Site</label><input type="date" value={formData.to_site || ''} onChange={e => setFormData({...formData, to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">In Erezione (ongoing)</label><input type="date" value={formData.erected_ongoing || ''} onChange={e => setFormData({...formData, erected_ongoing: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Erected</label><input type="date" value={formData.erected || ''} onChange={e => setFormData({...formData, erected: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
             </>
           )}
           {type === 'support' && (
             <>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
+              <div className="bg-gray-50 p-3 rounded-lg mb-4">
+                <p className="text-xs text-gray-600 font-medium">ID: {item.support_tag_no}</p>
+              </div>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📋 Dati Base</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Support Mark</label><input type="text" value={formData.support_mark || ''} onChange={e => setFormData({...formData, support_mark: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Support Name</label><input type="text" value={formData.support_name || ''} onChange={e => setFormData({...formData, support_name: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Peso (kg)</label><input type="number" step="0.01" value={formData.weight_kg || ''} onChange={e => setFormData({...formData, weight_kg: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-xs text-gray-500 mb-1">Full Spool No (collegamento)</label>
+                  <input type="text" value={formData.full_spool_no || ''} onChange={e => setFormData({...formData, full_spool_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+                </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📅 Tracking</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Delivered To</label><input type="text" value={formData.delivered_to || ''} onChange={e => setFormData({...formData, delivered_to: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
             </>
           )}
           {type === 'flange' && (
             <>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div className="border-t pt-4 mt-2">
-                <p className="text-sm font-medium text-gray-700 mb-2">Ident Codes</p>
-                <div className="grid grid-cols-2 gap-4">
+              <div className="bg-amber-50 p-3 rounded-lg mb-4">
+                <p className="text-xs text-amber-700 font-medium">ID: {item.flange_tag}</p>
+              </div>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📋 Dati Base</legend>
+                <div className="grid grid-cols-3 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Type</label>
+                    <select value={formData.flange_type || ''} onChange={e => setFormData({...formData, flange_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm">
+                      <option value="">--</option><option value="SP">SP</option><option value="SM">SM</option><option value="SE">SE</option><option value="SV">SV</option><option value="SI">SI</option>
+                    </select>
+                  </div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Critical</label>
+                    <select value={formData.critical_class || ''} onChange={e => setFormData({...formData, critical_class: e.target.value, is_critical: e.target.value === 'L1' || e.target.value === 'L2'})} className="w-full px-3 py-2 border rounded-lg text-sm">
+                      <option value="">No</option><option value="L1">L1</option><option value="L2">L2</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Pressure Rating</label><input type="text" value={formData.pressure_rating || ''} onChange={e => setFormData({...formData, pressure_rating: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="150#" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">First Part Code</label><input type="text" value={formData.first_part_code || ''} onChange={e => setFormData({...formData, first_part_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Second Part Code</label><input type="text" value={formData.second_part_code || ''} onChange={e => setFormData({...formData, second_part_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">🔧 Materiali</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Gasket Code</label><input type="text" value={formData.gasket_code || ''} onChange={e => setFormData({...formData, gasket_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Gasket Qty</label><input type="number" value={formData.gasket_qty || ''} onChange={e => setFormData({...formData, gasket_qty: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Bolt Code</label><input type="text" value={formData.bolt_code || ''} onChange={e => setFormData({...formData, bolt_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Bolt Qty</label><input type="number" value={formData.bolt_qty || ''} onChange={e => setFormData({...formData, bolt_qty: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Insulation Code</label><input type="text" value={formData.insulation_code || ''} onChange={e => setFormData({...formData, insulation_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Insulation Qty</label><input type="number" step="0.01" value={formData.insulation_qty || ''} onChange={e => setFormData({...formData, insulation_qty: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
+              <fieldset className="border border-indigo-200 rounded-lg p-4 bg-indigo-50/50">
+                <legend className="text-sm font-medium text-indigo-700 px-2">🏷️ Ident Codes</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
                   <div><label className="block text-xs text-gray-500 mb-1">Ident Code 1</label><input type="text" value={formData.ident_code_1 || ''} onChange={e => setFormData({...formData, ident_code_1: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                  <div><label className="block text-xs text-gray-500 mb-1">Qty 1</label><input type="number" value={formData.ident_qty_1 || ''} onChange={e => setFormData({...formData, ident_qty_1: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 1</label><input type="number" value={formData.ident_qty_1 || ''} onChange={e => setFormData({...formData, ident_qty_1: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mt-2">
                   <div><label className="block text-xs text-gray-500 mb-1">Ident Code 2</label><input type="text" value={formData.ident_code_2 || ''} onChange={e => setFormData({...formData, ident_code_2: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
-                  <div><label className="block text-xs text-gray-500 mb-1">Qty 2</label><input type="number" value={formData.ident_qty_2 || ''} onChange={e => setFormData({...formData, ident_qty_2: parseInt(e.target.value)})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Qty 2</label><input type="number" value={formData.ident_qty_2 || ''} onChange={e => setFormData({...formData, ident_qty_2: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
                 </div>
-              </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📅 Tracking</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">IR Number</label><input type="text" value={formData.ir_number || ''} onChange={e => setFormData({...formData, ir_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Delivered To</label><input type="text" value={formData.delivered_to || ''} onChange={e => setFormData({...formData, delivered_to: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Delivered to Site</label><input type="date" value={formData.delivered_to_site || ''} onChange={e => setFormData({...formData, delivered_to_site: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Assembly Date</label><input type="date" value={formData.assembly_date || ''} onChange={e => setFormData({...formData, assembly_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
             </>
           )}
           {type === 'weld' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Fitup Date</label><input type="date" value={formData.fitup_date || ''} onChange={e => setFormData({...formData, fitup_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Weld Date</label><input type="date" value={formData.weld_date || ''} onChange={e => setFormData({...formData, weld_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg" /></div>
-            </div>
+            <>
+              <div className="bg-orange-50 p-3 rounded-lg mb-4">
+                <p className="text-xs text-orange-700 font-medium">ID: {item.full_weld_no}</p>
+              </div>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📋 Dati Base</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Weld No</label><input type="text" value={formData.weld_no || ''} onChange={e => setFormData({...formData, weld_no: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">ISO Number</label><input type="text" value={formData.iso_number || ''} onChange={e => setFormData({...formData, iso_number: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">Type</label>
+                    <select value={formData.weld_type || ''} onChange={e => setFormData({...formData, weld_type: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm">
+                      <option value="">--</option><option value="BW">BW</option><option value="SW">SW</option><option value="FW">FW</option>
+                    </select>
+                  </div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Diametro (")</label><input type="number" step="0.5" value={formData.diameter_inch || ''} onChange={e => setFormData({...formData, diameter_inch: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Spessore (mm)</label><input type="number" step="0.01" value={formData.thickness_mm || ''} onChange={e => setFormData({...formData, thickness_mm: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">🔗 Collegamenti Spools</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Full First Spool</label><input type="text" value={formData.full_first_spool || ''} onChange={e => setFormData({...formData, full_first_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Full Second Spool</label><input type="text" value={formData.full_second_spool || ''} onChange={e => setFormData({...formData, full_second_spool: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div><label className="block text-xs text-gray-500 mb-1">First Material Code</label><input type="text" value={formData.first_material_code || ''} onChange={e => setFormData({...formData, first_material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Second Material Code</label><input type="text" value={formData.second_material_code || ''} onChange={e => setFormData({...formData, second_material_code: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm font-mono" /></div>
+                </div>
+                <div className="mt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={formData.is_dissimilar || false} onChange={e => setFormData({...formData, is_dissimilar: e.target.checked})} className="w-4 h-4" />
+                    <span className="text-sm text-gray-700">⚠️ Saldatura Dissimile</span>
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset className="border rounded-lg p-4">
+                <legend className="text-sm font-medium text-gray-700 px-2">📅 Tracking</legend>
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div><label className="block text-xs text-gray-500 mb-1">Fitup Date</label><input type="date" value={formData.fitup_date || ''} onChange={e => setFormData({...formData, fitup_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                  <div><label className="block text-xs text-gray-500 mb-1">Weld Date</label><input type="date" value={formData.weld_date || ''} onChange={e => setFormData({...formData, weld_date: e.target.value})} className="w-full px-3 py-2 border rounded-lg text-sm" /></div>
+                </div>
+              </fieldset>
+            </>
           )}
         </div>
         <div className="flex justify-end gap-3 p-4 border-t bg-gray-50 sticky bottom-0">
           <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-lg">Annulla</button>
-          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva</button>
+          <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">✓ Salva Modifiche</button>
         </div>
       </div>
     </div>
