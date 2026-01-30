@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 
 // ============================================================================
 // MTO PIPING - Material Take Off Piping
-// V3 - Bug Fix: Autocomplete Welds separato, Edit Modal completo, colonne Excel
+// V4 - Fix: % WP Coverage max 100%, rimossa colonna Shipment, aggiunta In Erezione
 // ============================================================================
 
 export default function MTOPiping() {
@@ -1013,8 +1013,11 @@ const MiniStat = ({ icon, value, label, sub, color }) => {
 
 // Coverage stat showing MTO vs WP
 const CoverageStat = ({ icon, total, covered, label }) => {
-  const pct = total > 0 ? Math.round((covered / total) * 100) : 0;
-  const uncovered = total - covered;
+  // Cap percentage at 100% max (handles duplicate assignments)
+  const rawPct = total > 0 ? Math.round((covered / total) * 100) : 0;
+  const pct = Math.min(rawPct, 100);
+  const uncovered = Math.max(0, total - covered);
+  const overcovered = covered > total;
   const bgColor = pct === 100 ? 'bg-green-50 border-green-300' : pct > 50 ? 'bg-yellow-50 border-yellow-300' : 'bg-red-50 border-red-300';
   const textColor = pct === 100 ? 'text-green-700' : pct > 50 ? 'text-yellow-700' : 'text-red-700';
   
@@ -1024,9 +1027,10 @@ const CoverageStat = ({ icon, total, covered, label }) => {
         <span className="text-sm">{icon}</span>
         <span className={`text-xs font-bold ${textColor}`}>{pct}%</span>
       </div>
-      <div className="text-lg font-bold text-gray-700">{covered}<span className="text-gray-400 text-xs">/{total}</span></div>
+      <div className="text-lg font-bold text-gray-700">{Math.min(covered, total)}<span className="text-gray-400 text-xs">/{total}</span></div>
       <div className="text-[10px] text-gray-500 truncate">{label}</div>
       {uncovered > 0 && <div className="text-[10px] text-red-500">-{uncovered} senza WP</div>}
+      {overcovered && <div className="text-[10px] text-blue-500">✓ tutti in WP</div>}
     </div>
   );
 };
@@ -1045,7 +1049,7 @@ const SpoolStatusBadge = ({ status }) => {
   return <span className={`px-2 py-1 rounded-full text-xs font-medium ${config.color}`}>{config.label}</span>;
 };
 
-// Spools Table - with date display
+// Spools Table - with date display (Shipment rimosso, aggiunto In Erezione)
 const SpoolsTable = ({ spools, formatDate, onEdit, onDelete }) => (
   <div className="overflow-x-auto border rounded-lg">
     <table className="w-full text-sm">
@@ -1058,9 +1062,9 @@ const SpoolsTable = ({ spools, formatDate, onEdit, onDelete }) => (
           <th className="text-center p-3 font-medium">Mat.</th>
           <th className="text-center p-3 font-medium">Peso</th>
           <th className="text-center p-3 font-medium">Stato</th>
-          <th className="text-center p-3 font-medium">Shipment</th>
           <th className="text-center p-3 font-medium">Laydown</th>
           <th className="text-center p-3 font-medium">To Site</th>
+          <th className="text-center p-3 font-medium">In Erez.</th>
           <th className="text-center p-3 font-medium">Erected</th>
           <th className="text-center p-3 font-medium">Azioni</th>
         </tr>
@@ -1080,16 +1084,14 @@ const SpoolsTable = ({ spools, formatDate, onEdit, onDelete }) => (
             <td className="p-3 text-center text-xs font-mono">{spool.material_code || '—'}</td>
             <td className="p-3 text-center">{spool.weight_kg?.toFixed(1)} kg</td>
             <td className="p-3 text-center"><SpoolStatusBadge status={spool.site_status} /></td>
-            <td className="p-3 text-center text-xs">{formatDate(spool.shipment_date)}</td>
             <td className="p-3 text-center text-xs">{formatDate(spool.laydown_arrival)}</td>
             <td className="p-3 text-center text-xs">{formatDate(spool.to_site)}</td>
             <td className="p-3 text-center text-xs">
-              {spool.erected_ongoing && !spool.erected ? (
-                <span className="text-lime-600" title={`In corso: ${formatDate(spool.erected_ongoing)}`}>🔄 {formatDate(spool.erected_ongoing)}</span>
-              ) : (
-                formatDate(spool.erected)
-              )}
+              {spool.erected_ongoing ? (
+                <span className="text-lime-600">🔄 {formatDate(spool.erected_ongoing)}</span>
+              ) : '—'}
             </td>
+            <td className="p-3 text-center text-xs">{formatDate(spool.erected)}</td>
             <td className="p-3 text-center">
               <button onClick={() => onEdit(spool)} className="p-1.5 hover:bg-blue-100 rounded text-blue-600">✏️</button>
               <button onClick={() => onDelete(spool.id)} className="p-1.5 hover:bg-red-100 rounded text-red-600 ml-1">🗑️</button>
